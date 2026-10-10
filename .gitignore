@@ -1,0 +1,18 @@
+# Rust
+/target
+debug/
+**/*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Fichiers locaux
+*.local.*
+.env
