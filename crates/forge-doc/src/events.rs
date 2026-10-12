@@ -38,7 +38,12 @@ pub struct NewEvent {
 
 impl NewEvent {
     /// Construit un nouvel événement.
-    pub fn new(event_type: &str, schema_version: u32, actor: &str, data: serde_json::Value) -> Self {
+    pub fn new(
+        event_type: &str,
+        schema_version: u32,
+        actor: &str,
+        data: serde_json::Value,
+    ) -> Self {
         Self {
             event_type: event_type.to_string(),
             schema_version,

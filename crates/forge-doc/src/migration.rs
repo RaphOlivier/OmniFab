@@ -35,8 +35,7 @@ impl MigrationRegistry {
 
     /// Déclare la version de schéma la plus récente connue pour un type.
     pub fn declare(&mut self, event_type: &str, latest_version: u32) {
-        self.latest
-            .insert(event_type.to_string(), latest_version);
+        self.latest.insert(event_type.to_string(), latest_version);
     }
 
     /// Enregistre l'étape de migration `from_version → from_version + 1`.

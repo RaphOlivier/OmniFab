@@ -56,7 +56,12 @@ fn aller_retour_complet() {
 fn rejeu_dans_l_ordre() {
     let mut doc = Document::new();
     for i in 0..5 {
-        doc.append(NewEvent::new("demo.evenement", 1, "test", json!({ "i": i })));
+        doc.append(NewEvent::new(
+            "demo.evenement",
+            1,
+            "test",
+            json!({ "i": i }),
+        ));
     }
     let mut seqs = Vec::new();
     doc.replay(|event| {
@@ -70,7 +75,10 @@ fn rejeu_dans_l_ordre() {
 #[test]
 fn version_conteneur_non_supportee() {
     let bytes = archive(&[
-        ("manifest.json", r#"{"format":"omnifab-document","version":99}"#.to_string()),
+        (
+            "manifest.json",
+            r#"{"format":"omnifab-document","version":99}"#.to_string(),
+        ),
         ("events.jl", String::new()),
     ]);
     match Document::from_bytes(&bytes) {
@@ -85,7 +93,10 @@ fn version_conteneur_non_supportee() {
 #[test]
 fn format_conteneur_inconnu() {
     let bytes = archive(&[
-        ("manifest.json", r#"{"format":"autre-chose","version":1}"#.to_string()),
+        (
+            "manifest.json",
+            r#"{"format":"autre-chose","version":1}"#.to_string(),
+        ),
         ("events.jl", String::new()),
     ]);
     match Document::from_bytes(&bytes) {

@@ -134,8 +134,8 @@ fn rejeu_deterministe() {
         let mut graph = ValueGraph::new();
         graph.set_input("w", 12.0);
         graph
-        .set_expression("x", "sqrt(w * w + 1) + cos(0)")
-        .unwrap();
+            .set_expression("x", "sqrt(w * w + 1) + cos(0)")
+            .unwrap();
         graph.value("x").unwrap()
     };
     assert!((build() - build()).abs() < 1e-12);

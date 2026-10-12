@@ -260,15 +260,15 @@ impl DemoApp {
         let (response, painter) = ui.allocate_painter(ui.available_size(), egui::Sense::hover());
         let rect = response.rect;
         let margin = 30.0;
-        let scale = ((rect.width() - 2.0 * margin) / width)
-            .min((rect.height() - 2.0 * margin) / height)
+        let scale = ((rect.width() - 2.0 * margin) as f64 / width)
+            .min((rect.height() - 2.0 * margin) as f64 / height)
             .max(1.0);
         let shape = egui::Rect::from_center_size(
             rect.center(),
-            egui::vec2(width * scale, height * scale),
+            egui::vec2((width * scale) as f32, (height * scale) as f32),
         );
         painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
-        painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5, egui::Color32::WHITE));
+        painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
         painter.text(
             shape.left_bottom() + egui::vec2(0.0, 16.0),
             egui::Align2::LEFT_TOP,

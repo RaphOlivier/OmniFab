@@ -46,7 +46,9 @@ impl Length {
 
     /// Construit une longueur à partir de mètres.
     pub fn from_meters(meters: f64) -> Self {
-        Self { mm: meters * 1000.0 }
+        Self {
+            mm: meters * 1000.0,
+        }
     }
 
     /// Construit une longueur à partir de pouces (1 pouce = 25,4 mm).

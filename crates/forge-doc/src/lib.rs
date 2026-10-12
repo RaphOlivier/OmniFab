@@ -108,10 +108,7 @@ impl Document {
     /// Rejoue le journal dans l'ordre : chaque événement est passé au
     /// `handler`, qui peut échouer avec son propre type d'erreur `E`
     /// (la projection est du ressort des couches métier, pas de forge-doc).
-    pub fn replay<E>(
-        &self,
-        mut handler: impl FnMut(&Event) -> Result<(), E>,
-    ) -> Result<(), E> {
+    pub fn replay<E>(&self, mut handler: impl FnMut(&Event) -> Result<(), E>) -> Result<(), E> {
         for event in &self.events {
             handler(event)?;
         }
@@ -169,10 +166,7 @@ impl Document {
     }
 
     /// Charge un document en appliquant les migrations du registre donné.
-    pub fn from_bytes_with(
-        bytes: &[u8],
-        migrations: MigrationRegistry,
-    ) -> Result<Self, DocError> {
+    pub fn from_bytes_with(bytes: &[u8], migrations: MigrationRegistry) -> Result<Self, DocError> {
         container::read(bytes, migrations)
     }
 
@@ -229,7 +223,11 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let mp = (5 * doy + 2) / 153;
     let day = doy - (153 * mp + 2) / 5 + 1;
     let month = if mp < 10 { mp + 3 } else { mp - 9 };
-    (if month <= 2 { year + 1 } else { year }, month as u32, day as u32)
+    (
+        if month <= 2 { year + 1 } else { year },
+        month as u32,
+        day as u32,
+    )
 }
 
 #[cfg(test)]
