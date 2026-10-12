@@ -1,6 +1,9 @@
 # OmniFab
 
-> **⚠️ Statut : jalon 0 en cours.** ADR-0000 à 0004 validés (2026-10-11) ; le noyau minimal est implémenté : `forge-units`, `forge-doc`, `forge-values` et le démonstrateur `omnifab-desktop`. Reste à livrer pour clore le jalon : la preuve de concept egui sur Android (tactile, clavier virtuel).
+[![CI](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml/badge.svg)](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml)
+[![Licence : GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
+
+> **🚧 Statut : jalon 0 en cours.** ADR-0000 à 0004 validés (2026-10-11) ; noyau minimal implémenté (`forge-units`, `forge-doc`, `forge-values` + démonstrateur `omnifab-desktop`) et **CI verte** (fmt, clippy `-D warnings`, tests, rustdoc, multi-OS). Reste à livrer pour clore le jalon : la preuve de concept egui sur Android (tactile, clavier virtuel).
 
 **OmniFab** est un logiciel libre de fabrication numérique A→Z : **CAO** (conception assistée par ordinateur), **CAM** (fabrication assistée par ordinateur), génération de **G-code** et **pilotage machine**.
 
@@ -25,7 +28,7 @@ L'objectif : couvrir toute la chaîne, de l'idée du meuble à la pièce usinée
 | Concurrence | tokio + canaux |
 | Licence | GPL-3.0+ (MPL/Apache pour les crates isolées) |
 
-> 📝 Le fichier `LICENSE` sera ajouté en local depuis la source canonique (gnu.org) avant toute publication publique.
+> 📄 **Licences** : GPL-3.0 à la racine (`LICENSE`), MPL-2.0 pour chaque crate (`crates/*/LICENSE`). Les données (matériaux, machines, normes) seront publiées sous licences ouvertes dédiées (ODbL/CC0/CC-BY) — jamais GPL.
 
 ## Structure du dépôt
 
@@ -59,7 +62,7 @@ cargo run -p omnifab-desktop  # démonstrateur : paramètres, journal, viewport,
 
 ## Langue
 
-> 📝 Toute la documentation de ce dépôt est **en français** pendant la phase de développement privé. Elle sera traduite en anglais avant le passage public du dépôt.
+> 🌍 La documentation de ce dépôt est **en français**. Une traduction en anglais accompagnera l'ouverture du projet à une communauté internationale.
 
 ---
 
