@@ -1,0 +1,35 @@
+[package]
+name = "omnifab-android"
+description = "Preuve de concept egui sur Android (jalon 0) : tactile, glisser, clavier virtuel."
+license = "GPL-3.0-or-later"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+# cdylib : bibliothèque partagée embarquée dans l'APK par cargo-apk (ADR-0005).
+# rlib : permet à la CI de compiler et tester la crate sur les cibles bureau.
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# Renderer glow pour le PoC : eframe 0.29 n'active pas le backend GLES de wgpu
+# (écrans noirs Android connus) — cf. ADR-0005. Le tactile et le clavier
+# virtuel ne dépendent pas du renderer.
+eframe = { version = "0.29", default-features = false, features = [
+    "android-native-activity",
+    "default_fonts",
+    "glow",
+] }
+# winit : nécessaire au point d'entrée Android (AndroidApp + trait
+# EventLoopBuilderExtAndroid). egui-winit recommande de ne PAS dépendre
+# directement d'android-activity : winit unifie la version.
+winit = "0.30"
+
+# Métadonnées du manifeste Android lues par cargo-apk (ADR-0005).
+[package.metadata.android]
+package = "org.omnifab.poc"
+apk_name = "omnifab-poc"
+build_targets = ["aarch64-linux-android"]
+
+[package.metadata.android.application]
+label = "OmniFab PoC"

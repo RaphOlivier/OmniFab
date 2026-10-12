@@ -1,0 +1,84 @@
+name: CI Android
+
+on:
+  push:
+    paths:
+      - "apps/omnifab-android/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
+  pull_request:
+    paths:
+      - "apps/omnifab-android/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/android.yml"
+
+env:
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  build-apk:
+    name: build APK (aarch64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+      - name: Installation de cargo-apk
+        run: cargo install cargo-apk
+      - name: Compilation de l'APK
+        id: apk
+        run: |
+          set -u
+          echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-non defini}"
+          if cargo apk build --release --package omnifab-android --target aarch64-linux-android > apk.log 2>&1; then
+            BUILD=0
+          else
+            BUILD=1
+          fi
+          APK=$(find target -name '*.apk' -print -quit)
+          if [ "$BUILD" = "0" ] && [ -n "$APK" ]; then
+            echo "APK produit : $APK"
+            echo "fail=0" >> "$GITHUB_OUTPUT"
+            echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          else
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+      - name: Publication de l'artefact (APK)
+        if: steps.apk.outputs.fail == '0'
+        uses: actions/upload-artifact@v4
+        with:
+          name: omnifab-android-apk
+          path: ${{ steps.apk.outputs.apk }}
+          retention-days: 30
+      - name: Rapport d'erreurs (issue)
+        if: steps.apk.outputs.fail == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec du build APK Android sur le job **build-apk** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo ""
+            echo "### apk.log (150 dernieres lignes)"
+            echo '```text'
+            tail -n 150 apk.log
+            echo '```'
+          } > rapport.md
+          cat rapport.md
+          gh issue create --title "CI : echec build-apk @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.apk.outputs.fail == '1'
+        run: |
+          echo "Le build APK a echoue - voir l'issue de rapport."
+          exit 1

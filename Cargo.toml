@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "apps/omnifab-android",
     "apps/omnifab-desktop",
     "crates/forge-doc",
     "crates/forge-units",
