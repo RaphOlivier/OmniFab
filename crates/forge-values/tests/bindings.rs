@@ -13,7 +13,10 @@ fn chaine_de_liaisons_simple() {
     graph.set_input("width_mm", 800.0);
     graph.set_input("height_mm", 600.0);
     graph
-        .set_expression("diagonal", "sqrt(width_mm * width_mm + height_mm * height_mm)")
+        .set_expression(
+            "diagonal",
+            "sqrt(width_mm * width_mm + height_mm * height_mm)",
+        )
         .unwrap();
     let diagonal = graph.value("diagonal").unwrap();
     assert!((diagonal - 1000.0).abs() < 1e-9);
@@ -75,7 +78,9 @@ fn expression_invalide() {
     let mut graph = ValueGraph::new();
     let error = graph.set_expression("x", "1 +").unwrap_err();
     assert_code(&error, "OF-VAL-0003");
-    let error = graph.set_expression("y", "fonction_inconnue(2)").unwrap_err();
+    let error = graph
+        .set_expression("y", "fonction_inconnue(2)")
+        .unwrap_err();
     assert_code(&error, "OF-VAL-0003");
 }
 
@@ -113,7 +118,9 @@ fn fonctions_et_precedence() {
     let mut graph = ValueGraph::new();
     graph.set_input("w", 800.0);
     graph.set_input("h", 600.0);
-    graph.set_expression("ratio", "min(w, h) / max(w, h)").unwrap();
+    graph
+        .set_expression("ratio", "min(w, h) / max(w, h)")
+        .unwrap();
     let ratio = graph.value("ratio").unwrap();
     assert!((ratio - 0.75).abs() < 1e-12);
 
@@ -126,7 +133,9 @@ fn rejeu_deterministe() {
     let build = || {
         let mut graph = ValueGraph::new();
         graph.set_input("w", 12.0);
-        graph.set_expression("x", "sqrt(w * w + 1) + cos(0)").unwrap();
+        graph
+        .set_expression("x", "sqrt(w * w + 1) + cos(0)")
+        .unwrap();
         graph.value("x").unwrap()
     };
     assert!((build() - build()).abs() < 1e-12);

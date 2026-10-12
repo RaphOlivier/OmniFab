@@ -81,12 +81,16 @@ impl Length {
 
     /// La plus petite des deux longueurs.
     pub fn min(self, other: Self) -> Self {
-        Self { mm: self.mm.min(other.mm) }
+        Self {
+            mm: self.mm.min(other.mm),
+        }
     }
 
     /// La plus grande des deux longueurs.
     pub fn max(self, other: Self) -> Self {
-        Self { mm: self.mm.max(other.mm) }
+        Self {
+            mm: self.mm.max(other.mm),
+        }
     }
 
     /// Égalité à la tolérance géométrique près ([`TOLERANCE_MM`]).
@@ -98,14 +102,18 @@ impl Length {
 impl Add for Length {
     type Output = Length;
     fn add(self, rhs: Self) -> Self::Output {
-        Self { mm: self.mm + rhs.mm }
+        Self {
+            mm: self.mm + rhs.mm,
+        }
     }
 }
 
 impl Sub for Length {
     type Output = Length;
     fn sub(self, rhs: Self) -> Self::Output {
-        Self { mm: self.mm - rhs.mm }
+        Self {
+            mm: self.mm - rhs.mm,
+        }
     }
 }
 
@@ -218,14 +226,18 @@ impl Neg for Angle {
 impl Mul<f64> for Angle {
     type Output = Angle;
     fn mul(self, rhs: f64) -> Self::Output {
-        Self { rad: self.rad * rhs }
+        Self {
+            rad: self.rad * rhs,
+        }
     }
 }
 
 impl Div<f64> for Angle {
     type Output = Angle;
     fn div(self, rhs: f64) -> Self::Output {
-        Self { rad: self.rad / rhs }
+        Self {
+            rad: self.rad / rhs,
+        }
     }
 }
 
