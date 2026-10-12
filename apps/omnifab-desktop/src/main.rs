@@ -140,7 +140,10 @@ impl DemoApp {
                 return;
             }
         }
-        self.info = Some(format!("Projet rechargé : {} événements rejoués.", events.len()));
+        self.info = Some(format!(
+            "Projet rechargé : {} événements rejoués.",
+            events.len()
+        ));
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {

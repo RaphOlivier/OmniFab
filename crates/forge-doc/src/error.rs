@@ -30,7 +30,9 @@ pub enum DocError {
         reason: String,
     },
     /// Séquence d'événements non strictement croissante (OF-DOC-0004).
-    #[error("OF-DOC-0004 : séquence d'événements incohérente : attendu {expected}, trouvé {found}")]
+    #[error(
+        "OF-DOC-0004 : séquence d'événements incohérente : attendu {expected}, trouvé {found}"
+    )]
     BadSequence {
         /// Numéro de séquence attendu.
         expected: u64,

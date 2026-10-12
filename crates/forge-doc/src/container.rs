@@ -101,12 +101,11 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         if line.is_empty() {
             continue;
         }
-        let mut event: Event = serde_json::from_str(line).map_err(|error| {
-            DocError::CorruptJournal {
+        let mut event: Event =
+            serde_json::from_str(line).map_err(|error| DocError::CorruptJournal {
                 line: index + 1,
                 reason: error.to_string(),
-            }
-        })?;
+            })?;
         let expected = events.len() as u64 + 1;
         if event.seq != expected {
             return Err(DocError::BadSequence {
