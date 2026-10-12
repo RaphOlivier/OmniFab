@@ -5,50 +5,147 @@ on:
   pull_request:
 
 env:
-  CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   lint-test:
     name: fmt + clippy + tests + rustdoc (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Formatage (rustfmt)
-        run: cargo fmt --all -- --check
-      - name: Linter (clippy, warnings bloquants)
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Tests (dont vérification du registre docs/error-codes.md)
-        run: cargo test --workspace
-      - name: Rustdoc (warnings bloquants)
-        run: cargo doc --workspace --no-deps
+      - name: Verifications
+        id: verifs
+        run: |
+          set -u
+          FAIL=0
+          run_check() {
+            name="$1"; shift
+            echo "::group::$name"
+            if "$@" >"$name.log" 2>&1; then
+              echo "$name : OK"
+            else
+              echo "$name : ECHEC (code $?)"
+              FAIL=1
+            fi
+            echo "::endgroup::"
+          }
+          run_check fmt cargo fmt --all -- --check
+          run_check clippy cargo clippy --workspace --all-targets -- -D warnings
+          run_check test cargo test --workspace
+          run_check doc env "RUSTDOCFLAGS=-D warnings" cargo doc --workspace --no-deps
+          echo "fail=$FAIL" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Rapport d'erreurs (issue)
+        if: steps.verifs.outputs.fail == '1'
         env:
-          RUSTDOCFLAGS: -D warnings
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec des verifications CI sur le job **lint-test** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            for f in clippy.log fmt.log test.log doc.log; do
+              [ -s "$f" ] || continue
+              echo ""
+              echo "### $f (120 dernieres lignes)"
+              echo '```text'
+              tail -n 120 "$f"
+              echo '```'
+            done
+          } > rapport-complet.md
+          head -c 55000 rapport-complet.md > rapport.md
+          cat rapport.md
+          gh issue create --title "CI : echec lint-test @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.verifs.outputs.fail == '1'
+        run: |
+          echo "Des verifications ont echoue - voir l'issue de rapport."
+          exit 1
 
   build:
     name: build (${{ matrix.os }})
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-24.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Compilation
-        run: cargo build --workspace
+        id: compil
+        shell: bash
+        run: |
+          if cargo build --workspace > build.log 2>&1; then
+            echo "fail=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+      - name: Rapport d'erreurs (issue)
+        if: steps.compil.outputs.fail == '1'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec de compilation CI sur le job **build (${{ matrix.os }})** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo '```text'
+            tail -n 150 build.log
+            echo '```'
+          } > rapport.md
+          cat rapport.md
+          gh issue create --title "CI : echec build (${{ matrix.os }}) @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.compil.outputs.fail == '1'
+        shell: bash
+        run: |
+          echo "La compilation a echoue - voir l'issue de rapport."
+          exit 1
 
   check-aarch64:
     name: check aarch64 (Linux)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
-      - name: Vérification croisée
-        run: cargo check --workspace --target aarch64-unknown-linux-gnu
+      - name: Verification croisee
+        id: cross
+        run: |
+          if cargo check --workspace --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
+            echo "fail=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+      - name: Rapport d'erreurs (issue)
+        if: steps.cross.outputs.fail == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec de la verification croisee aarch64 - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo '```text'
+            tail -n 150 aarch64.log
+            echo '```'
+          } > rapport.md
+          cat rapport.md
+          gh issue create --title "CI : echec check aarch64 @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.cross.outputs.fail == '1'
+        run: |
+          echo "La verification croisee a echoue - voir l'issue de rapport."
+          exit 1
