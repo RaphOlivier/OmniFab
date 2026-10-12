@@ -1,0 +1,10 @@
+[package]
+name = "forge-units"
+description = "Newtypes d'unités strictes (longueur, angle) — crate de base du noyau OmniFab (ADR-0000, verrou 5)."
+license = "MPL-2.0"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+# Invariant (ADR-0000) : forge-units ne dépend d'aucune autre crate.

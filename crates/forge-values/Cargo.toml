@@ -1,0 +1,10 @@
+[package]
+name = "forge-values"
+description = "Moteur unique de liaisons paramétriques : graphe réactif paresseux + expressions déterministes (ADR-0000 verrou 6, ADR-0002)."
+license = "MPL-2.0"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+thiserror.workspace = true
