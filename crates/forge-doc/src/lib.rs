@@ -118,6 +118,17 @@ impl Document {
         Ok(())
     }
 
+    /// Ré-applique les migrations du registre du document à son journal.
+    ///
+    /// Utile lorsque le registre a été enrichi (`declare`/`register`) après
+    /// le chargement du document, pour amener chaque événement à la version
+    /// de schéma la plus récente connue (ADR-0001).
+    pub fn migrate_events(&mut self) -> Result<(), DocError> {
+        for event in &mut self.events {
+            *event = self.migrations.migrate(event)?;
+        }
+        Ok(())
+    }
     /// Enregistre un objet binaire (maillage, image…), sous `objects/`.
     pub fn set_blob(&mut self, name: &str, data: Vec<u8>) {
         self.blobs.insert(name.to_string(), data);
