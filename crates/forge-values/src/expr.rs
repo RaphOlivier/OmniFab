@@ -64,7 +64,7 @@ impl Function {
     }
 
     /// Nombre d'arguments attendus.
-    fn arity(self) -> usize {
+    fn arity(&self) -> usize {
         match self {
             Function::Min | Function::Max => 2,
             _ => 1,
