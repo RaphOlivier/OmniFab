@@ -40,7 +40,7 @@ fn toutes_les_variantes() -> Vec<DocError> {
         },
         DocError::Archive(zip::result::ZipError::InvalidArchive("archive")),
         DocError::Serialization(serde_json::from_str::<i32>("invalide").unwrap_err()),
-        DocError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test")),
+        DocError::Io(std::io::Error::other("test")),
         DocError::EntryTooLarge {
             entry: "objects/x".to_string(),
             found: 1,
