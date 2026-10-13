@@ -45,3 +45,18 @@ pub enum ValuesError {
         name: String,
     },
 }
+
+impl ValuesError {
+    /// Code stable de l'erreur (ADR-0003), présent dans le registre
+    /// central `docs/error-codes.md`. Le match est exhaustif : ajouter
+    /// une variante sans code fait échouer la compilation.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Cycle { .. } => "OF-VAL-0001",
+            Self::UnknownReference { .. } => "OF-VAL-0002",
+            Self::InvalidExpression { .. } => "OF-VAL-0003",
+            Self::Evaluation { .. } => "OF-VAL-0004",
+            Self::UnknownValue { .. } => "OF-VAL-0005",
+        }
+    }
+}

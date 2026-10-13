@@ -98,3 +98,26 @@ pub enum DocError {
         name: String,
     },
 }
+
+impl DocError {
+    /// Code stable de l'erreur (ADR-0003), présent dans le registre
+    /// central `docs/error-codes.md`. Le match est exhaustif : ajouter
+    /// une variante sans code fait échouer la compilation.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::UnsupportedContainerVersion { .. } => "OF-DOC-0001",
+            Self::UnknownContainerFormat { .. } => "OF-DOC-0002",
+            Self::CorruptJournal { .. } => "OF-DOC-0003",
+            Self::BadSequence { .. } => "OF-DOC-0004",
+            Self::SchemaTooNew { .. } => "OF-DOC-0005",
+            Self::MissingMigration { .. } => "OF-DOC-0006",
+            Self::MissingEntry { .. } => "OF-DOC-0007",
+            Self::Archive(_) => "OF-DOC-0008",
+            Self::Serialization(_) => "OF-DOC-0009",
+            Self::Io(_) => "OF-DOC-0010",
+            Self::EntryTooLarge { .. } => "OF-DOC-0011",
+            Self::TooManyEntries { .. } => "OF-DOC-0012",
+            Self::InvalidBlobName { .. } => "OF-DOC-0013",
+        }
+    }
+}
