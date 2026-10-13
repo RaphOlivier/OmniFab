@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use forge_doc::{iso8601_from_unix, DocError, Document, MigrationRegistry, NewEvent};
+use forge_doc::{iso8601_from_unix, DocError, Document, FixedClock, MigrationRegistry, NewEvent};
 use serde_json::json;
 
 const MANIFEST_V1: &str = r#"{"format":"omnifab-document","version":1}"#;
@@ -231,6 +231,19 @@ fn blob_absent() {
 fn horodatage_iso8601() {
     assert_eq!(iso8601_from_unix(0), "1970-01-01T00:00:00Z");
     assert_eq!(iso8601_from_unix(951782400), "2000-02-29T00:00:00Z");
+}
+
+#[test]
+fn horloge_fixe_deterministe() {
+    // Une horloge figée rend le journal déterministe : l'horodatage ne
+    // dépend plus de l'heure d'exécution.
+    let mut doc = Document::new().with_clock(Box::new(FixedClock { unix: 951782400 }));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    assert_eq!(doc.events()[0].timestamp, "2000-02-29T00:00:00Z");
+
+    let bytes = doc.to_bytes().unwrap();
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(reloaded.events()[0].timestamp, "2000-02-29T00:00:00Z");
 }
 
 #[test]

@@ -163,5 +163,6 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         blobs,
         snapshot,
         migrations,
+        clock: Box::new(crate::SystemClock),
     })
 }

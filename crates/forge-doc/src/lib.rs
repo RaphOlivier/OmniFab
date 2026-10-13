@@ -23,19 +23,20 @@
 //!   l'accès disque est isolé derrière la feature `native`
 //!   (`Document::save_to_path`, `Document::open_from_path`).
 
+mod clock;
 mod container;
 mod error;
 mod events;
 mod migration;
 mod snapshot;
 
+pub use clock::{Clock, FixedClock, SystemClock};
 pub use error::DocError;
 pub use events::{Event, NewEvent};
 pub use migration::{MigrationFn, MigrationRegistry};
 pub use snapshot::Snapshot;
 
 use std::collections::BTreeMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Format du conteneur de projet (champ `format` du manifeste).
 pub const CONTAINER_FORMAT: &str = "omnifab-document";
@@ -59,7 +60,7 @@ pub const SNAPSHOT_PATH: &str = "snapshot.json";
 pub const BLOBS_PREFIX: &str = "objects/";
 
 /// Document OmniFab : conteneur ZIP versionné + journal d'événements.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Document {
     /// Journal complet, dans l'ordre.
     pub(crate) events: Vec<Event>,
@@ -69,6 +70,22 @@ pub struct Document {
     pub(crate) snapshot: Option<Snapshot>,
     /// Registre de migrations appliqué au chargement.
     pub(crate) migrations: MigrationRegistry,
+    /// Horloge injectable : horodatage des événements ajoutés
+    /// (d'autres horloges que l'horloge système rendent le journal
+    /// déterministe en test).
+    pub(crate) clock: Box<dyn Clock>,
+}
+
+impl Default for Document {
+    fn default() -> Self {
+        Self {
+            events: Vec::new(),
+            blobs: BTreeMap::new(),
+            snapshot: None,
+            migrations: MigrationRegistry::new(),
+            clock: Box::new(SystemClock),
+        }
+    }
 }
 
 impl Document {
@@ -85,15 +102,23 @@ impl Document {
         }
     }
 
+    /// Remplace l'horloge du document (horloge figée en test).
+    pub fn with_clock(mut self, clock: Box<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
     /// Ajoute un événement au journal : lui attribue le prochain numéro de
-    /// séquence et un horodatage ISO 8601, puis retourne le numéro attribué.
+    /// séquence et un horodatage ISO 8601 fourni par l'horloge du
+    /// document, puis retourne le numéro attribué.
     pub fn append(&mut self, new_event: NewEvent) -> u64 {
         let seq = self.events.len() as u64 + 1;
+        let timestamp = iso8601_from_unix(self.clock.now_unix());
         self.events.push(Event {
             seq,
             event_type: new_event.event_type,
             schema_version: new_event.schema_version,
-            timestamp: now_iso8601(),
+            timestamp,
             actor: new_event.actor,
             data: new_event.data,
         });
@@ -203,14 +228,6 @@ impl Document {
     }
 }
 
-/// Horodatage ISO 8601 UTC courant.
-fn now_iso8601() -> String {
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as i64)
-        .unwrap_or(0);
-    iso8601_from_unix(secs)
-}
 
 /// Convertit un horodatage Unix (secondes) en chaîne ISO 8601 UTC.
 ///
