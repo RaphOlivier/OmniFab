@@ -38,9 +38,7 @@ fn nan_rejete() {
 fn litteral_non_fini_rejete_a_la_syntaxe() {
     let mut graph = ValueGraph::new();
     graph.set_input("a", 1.0);
-    let erreur = graph
-        .set_expression("x", &"9".repeat(400))
-        .unwrap_err();
+    let erreur = graph.set_expression("x", &"9".repeat(400)).unwrap_err();
     assert!(
         erreur.to_string().contains("OF-VAL-0003"),
         "un littéral non fini doit être refusé au parse, obtenu {erreur}"
