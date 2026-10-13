@@ -121,6 +121,7 @@ impl Document {
             timestamp,
             actor: new_event.actor,
             data: new_event.data,
+            txn: new_event.txn,
         });
         seq
     }

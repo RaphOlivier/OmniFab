@@ -286,6 +286,23 @@ fn trop_d_entrees_rejetees() {
 }
 
 #[test]
+fn transaction_propagee_et_persistee() {
+    // Les événements d'un même groupe portent le même identifiant de
+    // transaction, persisté et conservé à la relecture (schéma A validé).
+    let txn = "demo-txn-1";
+    let mut doc = Document::new();
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})).in_txn(txn));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    assert_eq!(doc.events()[0].txn.as_deref(), Some(txn));
+    assert_eq!(doc.events()[1].txn, None);
+
+    let bytes = doc.to_bytes().unwrap();
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(reloaded.events()[0].txn.as_deref(), Some(txn));
+    assert_eq!(reloaded.events()[1].txn, None);
+}
+
+#[test]
 fn derniere_ligne_tronquee_toleree() {
     // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
     // est tolérée (et signalée) ; les événements précédents sont conservés.

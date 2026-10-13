@@ -20,6 +20,10 @@ pub struct Event {
     pub actor: String,
     /// Données propres à l'événement (petit enregistrement fermé).
     pub data: serde_json::Value,
+    /// Identifiant de transaction, si l'événement appartient à un groupe
+    /// à appliquer ensemble (absent des événements hors transaction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub txn: Option<String>,
 }
 
 /// Événement neuf, avant attribution du numéro de séquence et de
@@ -34,6 +38,8 @@ pub struct NewEvent {
     pub actor: String,
     /// Données propres à l'événement.
     pub data: serde_json::Value,
+    /// Identifiant de transaction, `None` hors transaction.
+    pub txn: Option<String>,
 }
 
 impl NewEvent {
@@ -49,6 +55,14 @@ impl NewEvent {
             schema_version,
             actor: actor.to_string(),
             data,
+            txn: None,
         }
+    }
+
+    /// Marque l'événement comme appartenant à la transaction donnée : les
+    /// événements d'un même groupe portent le même identifiant.
+    pub fn in_txn(mut self, txn: impl Into<String>) -> Self {
+        self.txn = Some(txn.into());
+        self
     }
 }
