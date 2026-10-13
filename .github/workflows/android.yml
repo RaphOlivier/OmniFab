@@ -51,7 +51,7 @@ jobs:
         run: |
           set -u
           echo "ANDROID_NDK_ROOT=${ANDROID_NDK_ROOT:-non defini}"
-          if cargo apk build --release --package omnifab-android --target aarch64-linux-android > apk.log 2>&1; then
+          if cargo apk build --package omnifab-android --target aarch64-linux-android > apk.log 2>&1; then
             BUILD=0
           else
             BUILD=1
