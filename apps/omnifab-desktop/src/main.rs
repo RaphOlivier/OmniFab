@@ -182,15 +182,15 @@ impl DemoApp {
             let mut mm = self.graph.value(name).unwrap_or(0.0);
             ui.horizontal(|ui| {
                 ui.label(label);
-                if ui
-                    .add(
-                        egui::DragValue::new(&mut mm)
-                            .speed(1.0)
-                            .range(1.0..=5000.0)
-                            .suffix(" mm"),
-                    )
-                    .changed()
-                {
+                let response = ui.add(
+                    egui::DragValue::new(&mut mm)
+                        .speed(1.0)
+                        .range(1.0..=5000.0)
+                        .suffix(" mm"),
+                );
+                // Un événement à la fin du geste (drag_stopped) ou pour une
+                // édition clavier — pas un événement par frame de glissement.
+                if response.drag_stopped() || (response.changed() && !response.dragged()) {
                     edited = Some((name, mm));
                 }
             });
