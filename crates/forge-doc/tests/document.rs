@@ -333,7 +333,11 @@ fn snapshot_lie_au_journal_et_poursuit_le_rejeu() {
     doc.set_snapshot(json!({"values": []})).unwrap();
     let at_seq = doc.snapshot().unwrap().at_seq;
     assert_eq!(at_seq, 2);
-    assert!(doc.snapshot().unwrap().journal_digest.starts_with("sha256:"));
+    assert!(doc
+        .snapshot()
+        .unwrap()
+        .journal_digest
+        .starts_with("sha256:"));
 
     let bytes = doc.to_bytes().unwrap();
     let reloaded = Document::from_bytes(&bytes).unwrap();
@@ -360,9 +364,9 @@ fn snapshot_invalide_si_journal_diverge() {
     doc.append(NewEvent::new("demo.test", 1, "test", json!({"i": 1})));
     doc.set_snapshot(json!({"values": []})).unwrap();
     let bytes = doc.to_bytes().unwrap();
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut zip_source = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
     let mut snapshot_json = String::new();
-    archive
+    zip_source
         .by_name("snapshot.json")
         .unwrap()
         .read_to_string(&mut snapshot_json)
@@ -371,9 +375,9 @@ fn snapshot_invalide_si_journal_diverge() {
     let mut autre = Document::new();
     autre.append(NewEvent::new("demo.test", 1, "test", json!({"i": 999})));
     let autre_bytes = autre.to_bytes().unwrap();
-    let mut archive2 = zip::ZipArchive::new(std::io::Cursor::new(autre_bytes)).unwrap();
+    let mut zip_autre = zip::ZipArchive::new(std::io::Cursor::new(autre_bytes)).unwrap();
     let mut journal = String::new();
-    archive2
+    zip_autre
         .by_name("events.jl")
         .unwrap()
         .read_to_string(&mut journal)
