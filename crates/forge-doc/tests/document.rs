@@ -1,6 +1,6 @@
 use std::io::{Read, Write};
 
-use forge_doc::{iso8601_from_unix, DocError, Document, FixedClock, MigrationRegistry, NewEvent};
+use forge_doc::{DocError, Document, FixedClock, MigrationRegistry, NewEvent, iso8601_from_unix};
 use serde_json::json;
 
 const MANIFEST_V1: &str = r#"{"format":"omnifab-document","version":1}"#;
@@ -333,11 +333,12 @@ fn snapshot_lie_au_journal_et_poursuit_le_rejeu() {
     doc.set_snapshot(json!({"values": []})).unwrap();
     let at_seq = doc.snapshot().unwrap().at_seq;
     assert_eq!(at_seq, 2);
-    assert!(doc
-        .snapshot()
-        .unwrap()
-        .journal_digest
-        .starts_with("sha256:"));
+    assert!(
+        doc.snapshot()
+            .unwrap()
+            .journal_digest
+            .starts_with("sha256:")
+    );
 
     let bytes = doc.to_bytes().unwrap();
     let reloaded = Document::from_bytes(&bytes).unwrap();

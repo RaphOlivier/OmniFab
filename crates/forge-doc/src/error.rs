@@ -8,7 +8,9 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum DocError {
     /// Conteneur écrit par une version plus récente du logiciel (OF-DOC-0001).
-    #[error("OF-DOC-0001 : version du conteneur non supportée : {found} (supportée au plus : {supported})")]
+    #[error(
+        "OF-DOC-0001 : version du conteneur non supportée : {found} (supportée au plus : {supported})"
+    )]
     UnsupportedContainerVersion {
         /// Version rencontrée dans le manifeste.
         found: u32,
@@ -30,9 +32,7 @@ pub enum DocError {
         reason: String,
     },
     /// Séquence d'événements non strictement croissante (OF-DOC-0004).
-    #[error(
-        "OF-DOC-0004 : séquence d'événements incohérente : attendu {expected}, trouvé {found}"
-    )]
+    #[error("OF-DOC-0004 : séquence d'événements incohérente : attendu {expected}, trouvé {found}")]
     BadSequence {
         /// Numéro de séquence attendu.
         expected: u64,
@@ -40,7 +40,9 @@ pub enum DocError {
         found: u64,
     },
     /// Événement d'une version de schéma trop récente (OF-DOC-0005).
-    #[error("OF-DOC-0005 : version de schéma {version} de « {event_type} » supérieure à la plus récente connue")]
+    #[error(
+        "OF-DOC-0005 : version de schéma {version} de « {event_type} » supérieure à la plus récente connue"
+    )]
     SchemaTooNew {
         /// Type de l'événement.
         event_type: String,

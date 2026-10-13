@@ -4,8 +4,8 @@
 
 use std::collections::BTreeSet;
 
-use crate::error::ValuesError;
 use crate::NodeId;
+use crate::error::ValuesError;
 
 /// Opérateur binaire.
 #[derive(Debug, Clone)]

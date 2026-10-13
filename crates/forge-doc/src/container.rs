@@ -10,7 +10,7 @@ use crate::events::Event;
 use crate::migration::MigrationRegistry;
 use crate::snapshot::Snapshot;
 use crate::{
-    Document, BLOBS_PREFIX, CONTAINER_FORMAT, CONTAINER_VERSION, JOURNAL_PATH, MANIFEST_PATH,
+    BLOBS_PREFIX, CONTAINER_FORMAT, CONTAINER_VERSION, Document, JOURNAL_PATH, MANIFEST_PATH,
     SNAPSHOT_PATH, SNAPSHOT_VERSION,
 };
 

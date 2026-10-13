@@ -214,7 +214,7 @@ impl ValueGraph {
             None => {
                 return Err(ValuesError::UnknownValue {
                     name: format!("nœud interne #{id}"),
-                })
+                });
             }
         };
         match state {

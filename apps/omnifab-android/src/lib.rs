@@ -116,10 +116,10 @@ impl eframe::App for PocApp {
                 if response.drag_started() {
                     self.drag_count += 1;
                 }
-                if response.dragged() {
-                    if let Some(pos) = response.interact_pointer_pos() {
-                        self.circle_pos = Some(pos);
-                    }
+                if response.dragged()
+                    && let Some(pos) = response.interact_pointer_pos()
+                {
+                    self.circle_pos = Some(pos);
                 }
                 let center = self.circle_pos.unwrap_or(response.rect.center());
                 painter.circle_filled(center, 18.0, egui::Color32::from_rgb(90, 160, 255));
