@@ -358,7 +358,9 @@ mod tests {
     fn journal_valide_se_rejoue_entierement() {
         let mut app = DemoApp::new();
         let chemin = projet_temporaire();
-        app.doc.save_to_path(&chemin).expect("sauvegarde impossible");
+        app.doc
+            .save_to_path(&chemin)
+            .expect("sauvegarde impossible");
         let doc = Document::open_from_path(&chemin).expect("ouverture impossible");
         let attendu = doc.events().len();
         app.rebuild_from_journal(doc);
