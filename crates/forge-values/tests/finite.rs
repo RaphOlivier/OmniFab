@@ -39,7 +39,7 @@ fn litteral_non_fini_rejete_a_la_syntaxe() {
     let mut graph = ValueGraph::new();
     graph.set_input("a", 1.0);
     let erreur = graph
-        .set_expression("x", "99999999999999999999999999999999")
+        .set_expression("x", &"9".repeat(400))
         .unwrap_err();
     assert!(
         erreur.to_string().contains("OF-VAL-0003"),

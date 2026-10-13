@@ -272,7 +272,9 @@ fn trop_d_entrees_rejetees() {
     writer.start_file("events.jl", options).unwrap();
     let _ = writer.write(b"");
     for i in 0..10_001 {
-        writer.start_file(format!("objects/blob{i}"), options).unwrap();
+        writer
+            .start_file(format!("objects/blob{i}"), options)
+            .unwrap();
         let _ = writer.write(b"x");
     }
     let bytes = writer.finish().unwrap().into_inner();

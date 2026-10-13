@@ -94,9 +94,8 @@ fn bounded_string(
     limit: u64,
 ) -> Result<String, DocError> {
     let data = read_bounded(file, entry, limit)?;
-    String::from_utf8(data).map_err(|error| {
-        DocError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
-    })
+    String::from_utf8(data)
+        .map_err(|error| DocError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error)))
 }
 
 pub(crate) fn write(doc: &Document) -> Result<Vec<u8>, DocError> {
