@@ -29,7 +29,8 @@ pub enum ValuesError {
         /// Explication de l'erreur de syntaxe.
         reason: String,
     },
-    /// Erreur à l'évaluation, ex. division par zéro (OF-VAL-0004).
+    /// Erreur à l'évaluation, ex. division par zéro, racine carrée d'un
+    /// nombre négatif, résultat non fini (OF-VAL-0004).
     #[error("OF-VAL-0004 : erreur d'évaluation de « {node} » : {reason}")]
     Evaluation {
         /// Nom de la valeur fautive.

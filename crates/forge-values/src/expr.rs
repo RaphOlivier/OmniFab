@@ -137,6 +137,12 @@ fn lex(input: &str, node: &str) -> Result<Vec<Token>, ValuesError> {
                     node: node.to_string(),
                     reason: format!("nombre invalide « {text} »"),
                 })?;
+                if !value.is_finite() {
+                    return Err(ValuesError::InvalidExpression {
+                        node: node.to_string(),
+                        reason: format!("littéral non fini « {text} »"),
+                    });
+                }
                 tokens.push(Token::Number(value));
             }
             c if c.is_ascii_alphabetic() || c == '_' => {
@@ -355,6 +361,19 @@ pub(crate) fn parse(
     Ok(parsed)
 }
 
+/// Rejette un résultat non fini : ni NaN ni un infini ne doit pouvoir
+/// entrer dans le journal via une valeur calculée (OF-VAL-0004).
+fn check_finite(value: f64, node: &str) -> Result<f64, ValuesError> {
+    if value.is_finite() {
+        Ok(value)
+    } else {
+        Err(ValuesError::Evaluation {
+            node: node.to_string(),
+            reason: "résultat non fini (NaN ou infini)".to_string(),
+        })
+    }
+}
+
 /// Évalue une expression ; `deps` lit (et recalcule si nécessaire) la valeur
 /// d'un nœud référencé. Déterministe, sans effet de bord (ADR-0002).
 pub(crate) fn evaluate(
@@ -364,33 +383,33 @@ pub(crate) fn evaluate(
 ) -> Result<f64, ValuesError> {
     match expr {
         Expr::Number(value) => Ok(*value),
-        Expr::Ref(id) => deps(*id),
-        Expr::Negate(inner) => Ok(-evaluate(inner, node, deps)?),
+        Expr::Ref(id) => check_finite(deps(*id)?, node),
+        Expr::Negate(inner) => check_finite(-evaluate(inner, node, deps)?, node),
         Expr::Binary(op, lhs, rhs) => {
             let left = evaluate(lhs, node, deps)?;
             let right = evaluate(rhs, node, deps)?;
-            match op {
-                BinOp::Add => Ok(left + right),
-                BinOp::Sub => Ok(left - right),
-                BinOp::Mul => Ok(left * right),
+            let result = match op {
+                BinOp::Add => left + right,
+                BinOp::Sub => left - right,
+                BinOp::Mul => left * right,
                 BinOp::Div => {
                     if right == 0.0 {
-                        Err(ValuesError::Evaluation {
+                        return Err(ValuesError::Evaluation {
                             node: node.to_string(),
                             reason: "division par zéro".to_string(),
-                        })
-                    } else {
-                        Ok(left / right)
+                        });
                     }
+                    left / right
                 }
-            }
+            };
+            check_finite(result, node)
         }
         Expr::Call(function, args) => {
             let mut values: Vec<f64> = Vec::with_capacity(args.len());
             for arg in args {
                 values.push(evaluate(arg, node, deps)?);
             }
-            Ok(match function {
+            let result = match function {
                 Function::Abs => values[0].abs(),
                 Function::Sqrt => {
                     if values[0] < 0.0 {
@@ -399,17 +418,18 @@ pub(crate) fn evaluate(
                             reason: "racine carrée d'un nombre négatif".to_string(),
                         });
                     }
-                    values[0].sqrt()
+                    libm::sqrt(values[0])
                 }
                 Function::Min => values[0].min(values[1]),
                 Function::Max => values[0].max(values[1]),
-                Function::Sin => values[0].sin(),
-                Function::Cos => values[0].cos(),
-                Function::Tan => values[0].tan(),
+                Function::Sin => libm::sin(values[0]),
+                Function::Cos => libm::cos(values[0]),
+                Function::Tan => libm::tan(values[0]),
                 Function::Floor => values[0].floor(),
                 Function::Ceil => values[0].ceil(),
                 Function::Round => values[0].round(),
-            })
+            };
+            check_finite(result, node)
         }
     }
 }

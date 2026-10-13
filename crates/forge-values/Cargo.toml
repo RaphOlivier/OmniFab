@@ -7,4 +7,5 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
+libm.workspace = true
 thiserror.workspace = true

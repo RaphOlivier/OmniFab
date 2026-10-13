@@ -22,7 +22,7 @@ Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT`
 | OF-VAL-0001 | Cycle dans le graphe de liaisons | Une expression référence, directement ou transitivement, la valeur qu'elle définit | Supprimer l'une des références circulaires |
 | OF-VAL-0002 | Référence à une valeur inconnue | Faute de frappe dans un nom, ou valeur non encore créée | Corriger le nom, ou créer la valeur avant l'expression |
 | OF-VAL-0003 | Expression invalide | Syntaxe hors du sous-ensemble déterministe accepté (cf. rustdoc de forge-values) | Corriger la syntaxe |
-| OF-VAL-0004 | Erreur d'évaluation | Division par zéro, racine carrée d'un nombre négatif | Corriger les données d'entrée ou l'expression |
+| OF-VAL-0004 | Erreur d'évaluation | Division par zéro, racine carrée d'un nombre négatif, résultat non fini (NaN ou infini) | Corriger les données d'entrée ou l'expression |
 | OF-VAL-0005 | Valeur inconnue | Lecture d'un nom absent du graphe | Vérifier le nom demandé |
 
 ## forge-doc (DOC) — conteneur et journal d'événements
