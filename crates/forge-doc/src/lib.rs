@@ -228,7 +228,6 @@ impl Document {
     }
 }
 
-
 /// Convertit un horodatage Unix (secondes) en chaîne ISO 8601 UTC.
 ///
 /// Exemple : `0` → `1970-01-01T00:00:00Z`.

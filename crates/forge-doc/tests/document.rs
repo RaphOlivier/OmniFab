@@ -262,10 +262,7 @@ fn derniere_ligne_tronquee_toleree() {
     // Une ligne corrompue qui n'est PAS la dernière reste une erreur.
     let bytes = archive(&[
         ("manifest.json", MANIFEST_V1.to_string()),
-        (
-            "events.jl",
-            format!("ceci n'est pas du json\n{ligne}\n"),
-        ),
+        ("events.jl", format!("ceci n'est pas du json\n{ligne}\n")),
     ]);
     match Document::from_bytes(&bytes) {
         Err(DocError::CorruptJournal { line: 1, .. }) => {}
