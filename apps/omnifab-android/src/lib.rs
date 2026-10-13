@@ -25,13 +25,13 @@ const LOG_LEN: usize = 12;
 /// Renvoie `true` si l'événement d'entrée doit apparaître dans le journal
 /// de diagnostic (tactile, texte, touche, zoom).
 fn is_traced_event(event: &egui::Event) -> bool {
-    match event {
+    matches!(
+        event,
         egui::Event::Touch { .. }
-        | egui::Event::Text(_)
-        | egui::Event::Key { .. }
-        | egui::Event::Zoom(_) => true,
-        _ => false,
-    }
+            | egui::Event::Text(_)
+            | egui::Event::Key { .. }
+            | egui::Event::Zoom(_)
+    )
 }
 
 /// Application du PoC : état minimal, aucun domaine du noyau mobilisé.
@@ -102,17 +102,16 @@ impl eframe::App for PocApp {
 
                 ui.heading("1. Tactile — bouton");
                 ui.label(format!("Appuis comptés : {}", self.tap_count));
-                let button = egui::Button::new("Appuyez ici").min_size(egui::vec2(ui.available_width(), 70.0));
+                let button = egui::Button::new("Appuyez ici")
+                    .min_size(egui::vec2(ui.available_width(), 70.0));
                 if ui.add(button).clicked() {
                     self.tap_count += 1;
                 }
                 ui.separator();
 
                 ui.heading("2. Tactile — glisser");
-                let (response, painter) = ui.allocate_painter(
-                    egui::vec2(ui.available_width(), 220.0),
-                    egui::Sense::drag(),
-                );
+                let (response, painter) = ui
+                    .allocate_painter(egui::vec2(ui.available_width(), 220.0), egui::Sense::drag());
                 painter.rect_filled(response.rect, 6.0, egui::Color32::from_rgb(28, 28, 34));
                 if response.drag_started() {
                     self.drag_count += 1;
@@ -135,7 +134,10 @@ impl eframe::App for PocApp {
                 ui.separator();
 
                 ui.heading("4. Journal des événements bruts");
-                ui.label(format!("{} derniers événements touch/texte/touche/zoom :", LOG_LEN));
+                ui.label(format!(
+                    "{} derniers événements touch/texte/touche/zoom :",
+                    LOG_LEN
+                ));
                 if self.log.is_empty() {
                     ui.label("(aucun événement pour l'instant)");
                 }

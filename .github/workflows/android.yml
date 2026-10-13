@@ -33,6 +33,8 @@ jobs:
         with:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
+      - name: Plateforme Android 30 (attendue par cargo-apk)
+        run: sdkmanager --install "platforms;android-30"
       - name: Installation de cargo-apk
         run: cargo install cargo-apk
       - name: Compilation de l'APK
