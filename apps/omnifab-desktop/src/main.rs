@@ -71,12 +71,15 @@ impl DemoApp {
         app
     }
 
-    /// Enregistre l'événement dans le journal puis l'applique au graphe.
+    /// Applique l'événement au graphe et ne l'écrit au journal qu'en cas
+    /// de succès : un événement invalide ne pollue jamais le journal, donc
+    /// le rejeu d'un projet de ce document ne peut plus échouer.
     fn record(&mut self, event: NewEvent) {
-        self.doc.append(event.clone());
         if let Err(error) = self.apply(&event) {
             self.error = Some(error.to_string());
+            return;
         }
+        self.doc.append(event);
     }
 
     /// Applique un événement au graphe de liaisons (projection).
@@ -320,4 +323,51 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|_cc| Ok(Box::new(DemoApp::new()))),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Chemin du projet temporaire pour l'aller-retour de test.
+    fn projet_temporaire() -> std::path::PathBuf {
+        std::env::temp_dir().join("omnifab-tests-jalon0.omnifab")
+    }
+
+    /// Une expression invalide ne laisse aucun événement au journal.
+    #[test]
+    fn expression_invalide_n_ecrit_rien_au_journal() {
+        let mut app = DemoApp::new();
+        let avant = app.doc.events().len();
+        app.record(NewEvent::new(
+            EVENT_EXPRESSION_SET,
+            1,
+            "tests",
+            serde_json::json!({"name": "diagonal", "expression": "inconnu + 1"}),
+        ));
+        assert_eq!(
+            app.doc.events().len(),
+            avant,
+            "aucun événement ne doit être ajouté"
+        );
+        assert!(app.error.is_some(), "l'erreur doit être signalée");
+    }
+
+    /// Un journal valide se rejoue en entier à la réouverture.
+    #[test]
+    fn journal_valide_se_rejoue_entierement() {
+        let mut app = DemoApp::new();
+        let chemin = projet_temporaire();
+        app.doc.save_to_path(&chemin).expect("sauvegarde impossible");
+        let doc = Document::open_from_path(&chemin).expect("ouverture impossible");
+        let attendu = doc.events().len();
+        app.rebuild_from_journal(doc);
+        assert!(app.error.is_none(), "rejeu sans erreur");
+        assert_eq!(app.doc.events().len(), attendu, "journal rejoué en entier");
+        assert!(
+            app.graph.value("diagonal").is_ok(),
+            "la projection est complète"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
 }
