@@ -41,7 +41,6 @@ fn codes_du_registre() -> Vec<String> {
         .filter(|line| line.starts_with("| OF-VAL-"))
         .map(|line| {
             line.trim_start_matches('|')
-                .trim()
                 .split_whitespace()
                 .next()
                 .unwrap_or_default()
@@ -78,12 +77,7 @@ fn registre_coherent_dans_les_deux_sens() {
         );
     }
     for code in &registre {
-        let porte = variantes
-            .iter()
-            .any(|erreur| erreur.code() == code);
-        assert!(
-            porte,
-            "code {code} du registre inconnu de ValuesError"
-        );
+        let porte = variantes.iter().any(|erreur| erreur.code() == code);
+        assert!(porte, "code {code} du registre inconnu de ValuesError");
     }
 }

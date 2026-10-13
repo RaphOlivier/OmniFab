@@ -22,7 +22,10 @@ fn toutes_les_variantes() -> Vec<DocError> {
             line: 1,
             reason: "json invalide".to_string(),
         },
-        DocError::BadSequence { expected: 1, found: 2 },
+        DocError::BadSequence {
+            expected: 1,
+            found: 2,
+        },
         DocError::SchemaTooNew {
             event_type: "demo.test".to_string(),
             version: 2,
@@ -35,16 +38,9 @@ fn toutes_les_variantes() -> Vec<DocError> {
         DocError::MissingEntry {
             path: "manifest.json".to_string(),
         },
-        DocError::Archive(zip::result::ZipError::InvalidArchive(
-            "archive".to_string(),
-        )),
-        DocError::Serialization(
-            serde_json::from_str::<i32>("invalide").unwrap_err(),
-        ),
-        DocError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "test",
-        )),
+        DocError::Archive(zip::result::ZipError::InvalidArchive("archive")),
+        DocError::Serialization(serde_json::from_str::<i32>("invalide").unwrap_err()),
+        DocError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test")),
         DocError::EntryTooLarge {
             entry: "objects/x".to_string(),
             found: 1,
@@ -64,7 +60,6 @@ fn codes_du_registre() -> Vec<String> {
         .filter(|line| line.starts_with("| OF-DOC-"))
         .map(|line| {
             line.trim_start_matches('|')
-                .trim()
                 .split_whitespace()
                 .next()
                 .unwrap_or_default()
@@ -101,12 +96,7 @@ fn registre_coherent_dans_les_deux_sens() {
         );
     }
     for code in &registre {
-        let porte = variantes
-            .iter()
-            .any(|erreur| erreur.code() == code);
-        assert!(
-            porte,
-            "code {code} du registre inconnu de DocError"
-        );
+        let porte = variantes.iter().any(|erreur| erreur.code() == code);
+        assert!(porte, "code {code} du registre inconnu de DocError");
     }
 }
