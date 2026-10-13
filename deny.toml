@@ -1,0 +1,48 @@
+# Configuration cargo-deny (revue point 13).
+# Usage local : cargo install cargo-deny && cargo deny check
+# Usage CI : le job est propose dans docs/ci-cargo-deny.md — a activer
+# explicitement par Raphaël (aucune modification de ci.yml sans accord).
+
+[graph]
+all-features = true
+
+[licenses]
+# Noyau : GPL-3.0+ (racine) et crates MPL-2.0 ; dependances : MIT/Apache-2
+# (eframe, serde, thiserror, zip, libm, sha2, uuid, log) + transitives.
+version = 2
+allow = [
+  "MIT",
+  "MIT-0",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Zlib",
+  "MPL-2.0",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+exceptions = []
+
+[advisories]
+version = 2
+yanked = "deny"
+ignore = []
+
+[bans]
+# Les doublons de versions sont frequents dans l'ecosysteme winit/egui :
+# signales sans faire echouer, a resserrer plus tard.
+multiple-versions = "warn"
+multiple-versions-include-dev = false
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
