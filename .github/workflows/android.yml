@@ -35,8 +35,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Plateforme Android 30 (attendue par cargo-apk)
         run: sdkmanager --install "platforms;android-30"
+      - name: Cache du binaire cargo-apk
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-apk
+          key: cargo-apk-${{ runner.os }}-v1
       - name: Installation de cargo-apk
-        run: cargo install cargo-apk
+        run: test -x "$HOME/.cargo/bin/cargo-apk" || cargo install cargo-apk
       - name: Compilation de l'APK
         id: apk
         run: |
