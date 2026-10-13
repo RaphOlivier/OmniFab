@@ -152,8 +152,19 @@ impl Document {
         Ok(())
     }
     /// Enregistre un objet binaire (maillage, image…), sous `objects/`.
-    pub fn set_blob(&mut self, name: &str, data: Vec<u8>) {
+    ///
+    /// Le nom est validé (OF-DOC-0013) et la taille bornée (OF-DOC-0011).
+    pub fn set_blob(&mut self, name: &str, data: Vec<u8>) -> Result<(), DocError> {
+        container::validate_blob_name(name)?;
+        if data.len() as u64 > container::MAX_BLOB_BYTES {
+            return Err(DocError::EntryTooLarge {
+                entry: format!("{BLOBS_PREFIX}{name}"),
+                found: data.len() as u64,
+                max: container::MAX_BLOB_BYTES,
+            });
+        }
         self.blobs.insert(name.to_string(), data);
+        Ok(())
     }
 
     /// Retourne un objet binaire par son nom.

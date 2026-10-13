@@ -72,4 +72,29 @@ pub enum DocError {
     /// Erreur d'entrée/sortie fichier, feature `native` (OF-DOC-0010).
     #[error("OF-DOC-0010 : erreur d'entrée/sortie : {0}")]
     Io(#[from] std::io::Error),
+    /// Entrée dépassant la taille maximale acceptée (OF-DOC-0011).
+    #[error("OF-DOC-0011 : entrée trop volumineuse « {entry} » : {found} octets (maximum {max})")]
+    EntryTooLarge {
+        /// Nom de l'entrée fautive.
+        entry: String,
+        /// Taille rencontrée, en octets.
+        found: u64,
+        /// Taille maximale acceptée, en octets.
+        max: u64,
+    },
+    /// Trop d'entrées dans l'archive (OF-DOC-0012).
+    #[error("OF-DOC-0012 : trop d'entrées dans le conteneur : {found} (maximum {max})")]
+    TooManyEntries {
+        /// Nombre d'entrées rencontré.
+        found: usize,
+        /// Nombre maximal accepté.
+        max: usize,
+    },
+    /// Nom de blob refusé : vide, traversée de répertoire, chemin
+    /// absolu, séparateur Windows ou octet nul (OF-DOC-0013).
+    #[error("OF-DOC-0013 : nom de blob invalide « {name} »")]
+    InvalidBlobName {
+        /// Nom rejeté.
+        name: String,
+    },
 }

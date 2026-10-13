@@ -37,7 +37,7 @@ fn aller_retour_complet() {
         "test",
         json!({"name": "diagonal", "expression": "sqrt(width_mm * width_mm)"}),
     ));
-    doc.set_blob("apercu.png", vec![1, 2, 3]);
+    doc.set_blob("apercu.png", vec![1, 2, 3]).unwrap();
     doc.set_snapshot(json!({"values": []}));
 
     let bytes = doc.to_bytes().unwrap();
@@ -244,6 +244,45 @@ fn horloge_fixe_deterministe() {
     let bytes = doc.to_bytes().unwrap();
     let reloaded = Document::from_bytes(&bytes).unwrap();
     assert_eq!(reloaded.events()[0].timestamp, "2000-02-29T00:00:00Z");
+}
+
+#[test]
+fn nom_de_blob_invalide_rejete() {
+    // OF-DOC-0013 : noms capables de sortir du dossier `objects/`.
+    let mut doc = Document::new();
+    for nom in ["", "../escape", "/absolu", "sous\\windows", "nul\u{0}octet"] {
+        match doc.set_blob(nom, vec![1]) {
+            Err(DocError::InvalidBlobName { .. }) => {}
+            other => panic!("nom « {nom} » devait être rejeté, obtenu {other:?}"),
+        }
+    }
+    // Un nom sain reste accepté.
+    doc.set_blob("apercu.png", vec![1, 2, 3]).unwrap();
+    assert_eq!(doc.blob("apercu.png"), Some(&[1u8, 2, 3][..]));
+}
+
+#[test]
+fn trop_d_entrees_rejetees() {
+    // Garde-fou « bombe ZIP » (OF-DOC-0012) : au-delà de 10 000 entrées,
+    // le conteneur est refusé avant même de lire le journal.
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file("manifest.json", options).unwrap();
+    writer.write_all(MANIFEST_V1.as_bytes()).unwrap();
+    writer.start_file("events.jl", options).unwrap();
+    let _ = writer.write(b"");
+    for i in 0..10_001 {
+        writer.start_file(format!("objects/blob{i}"), options).unwrap();
+        let _ = writer.write(b"x");
+    }
+    let bytes = writer.finish().unwrap().into_inner();
+    match Document::from_bytes(&bytes) {
+        Err(DocError::TooManyEntries { found, max }) => {
+            assert_eq!(max, 10_000);
+            assert!(found > max);
+        }
+        other => panic!("trop d'entrées attendu, obtenu {other:?}"),
+    }
 }
 
 #[test]

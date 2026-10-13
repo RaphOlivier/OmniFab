@@ -39,3 +39,6 @@ Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT`
 | OF-DOC-0008 | Erreur d'archive ZIP | Archive endommagée ou illisible | Restaurer une copie saine du projet |
 | OF-DOC-0009 | Erreur de sérialisation | JSON invalide dans le conteneur | Restaurer une copie saine du projet |
 | OF-DOC-0010 | Erreur d'entrée/sortie | Échec de lecture/écriture fichier (feature `native`) | Vérifier chemins et permissions |
+| OF-DOC-0011 | Entrée trop volumineuse | Une entrée (manifeste, journal, snapshot, blob) dépasse la taille maximale acceptée | Fichier projet anormal — restaurer une copie saine |
+| OF-DOC-0012 | Trop d'entrées dans le conteneur | L'archive dépasse le nombre maximal d'entrées (garde-fou « bombe ZIP ») | Fichier projet anormal — restaurer une copie saine |
+| OF-DOC-0013 | Nom de blob invalide | Nom vide, traversée de répertoire (`..`), chemin absolu, séparateur Windows ou octet nul | Corriger le nom du blob |

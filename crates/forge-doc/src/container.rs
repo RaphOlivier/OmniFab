@@ -21,6 +21,65 @@ struct Manifest {
     version: u32,
 }
 
+/// Nombre maximal d'entrées dans l'archive (garde-fou « bombe ZIP »).
+pub(crate) const MAX_ARCHIVE_ENTRIES: usize = 10_000;
+/// Taille maximale du manifeste, en octets.
+pub(crate) const MAX_MANIFEST_BYTES: u64 = 1024 * 1024;
+/// Taille maximale du journal d'événements, en octets.
+pub(crate) const MAX_JOURNAL_BYTES: u64 = 64 * 1024 * 1024;
+/// Taille maximale du snapshot, en octets.
+pub(crate) const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
+/// Taille maximale d'un objet binaire, en octets.
+pub(crate) const MAX_BLOB_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// Valide un nom de blob : ni vide, ni traversée de répertoire (`..`),
+/// ni chemin absolu, ni séparateur Windows, ni octet nul (OF-DOC-0013).
+pub(crate) fn validate_blob_name(name: &str) -> Result<(), DocError> {
+    if name.is_empty()
+        || name.contains("..")
+        || name.starts_with('/')
+        || name.contains('\\')
+        || name.contains('\u{0}')
+    {
+        return Err(DocError::InvalidBlobName {
+            name: name.to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Lit une entrée d'archive en bornant sa taille : une entrée qui
+/// dépasse `limit` est une erreur OF-DOC-0011, sans jamais charger le
+/// dépassement en mémoire (garde-fou « bombe ZIP »).
+fn read_bounded(
+    file: &mut zip::read::ZipFile,
+    entry: &str,
+    limit: u64,
+) -> Result<Vec<u8>, DocError> {
+    let mut data = Vec::new();
+    file.by_ref().take(limit + 1).read_to_end(&mut data)?;
+    if data.len() as u64 > limit {
+        return Err(DocError::EntryTooLarge {
+            entry: entry.to_string(),
+            found: data.len() as u64,
+            max: limit,
+        });
+    }
+    Ok(data)
+}
+
+/// Comme [`read_bounded`], puis décode en UTF-8.
+fn bounded_string(
+    file: &mut zip::read::ZipFile,
+    entry: &str,
+    limit: u64,
+) -> Result<String, DocError> {
+    let data = read_bounded(file, entry, limit)?;
+    String::from_utf8(data).map_err(|error| {
+        DocError::Io(std::io::Error::new(std::io::ErrorKind::InvalidData, error))
+    })
+}
+
 pub(crate) fn write(doc: &Document) -> Result<Vec<u8>, DocError> {
     let manifest = Manifest {
         format: CONTAINER_FORMAT.to_string(),
@@ -60,6 +119,12 @@ pub(crate) fn write(doc: &Document) -> Result<Vec<u8>, DocError> {
 
 pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Document, DocError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(bytes.to_vec()))?;
+    if archive.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(DocError::TooManyEntries {
+            found: archive.len(),
+            max: MAX_ARCHIVE_ENTRIES,
+        });
+    }
 
     // Manifeste : format et version du conteneur.
     let manifest: Manifest = {
@@ -68,8 +133,7 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
             .map_err(|_| DocError::MissingEntry {
                 path: MANIFEST_PATH.to_string(),
             })?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        let content = bounded_string(&mut file, MANIFEST_PATH, MAX_MANIFEST_BYTES)?;
         serde_json::from_str(&content)?
     };
     if manifest.format != CONTAINER_FORMAT {
@@ -91,9 +155,7 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
             .map_err(|_| DocError::MissingEntry {
                 path: JOURNAL_PATH.to_string(),
             })?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
-        content
+        bounded_string(&mut file, JOURNAL_PATH, MAX_JOURNAL_BYTES)?
     };
     let mut events: Vec<Event> = Vec::new();
     // `split('\n')` garde une dernière entrée vide après le saut de
@@ -139,8 +201,7 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
     for name in &names {
         if let Some(blob_name) = name.strip_prefix(BLOBS_PREFIX) {
             let mut file = archive.by_name(name)?;
-            let mut data = Vec::new();
-            file.read_to_end(&mut data)?;
+            let data = read_bounded(&mut file, name, MAX_BLOB_BYTES)?;
             blobs.insert(blob_name.to_string(), data);
         }
     }
@@ -148,8 +209,7 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
     // Snapshot : non autoritaire — ignoré silencieusement si incompatible.
     let snapshot = if names.iter().any(|n| n == SNAPSHOT_PATH) {
         let mut file = archive.by_name(SNAPSHOT_PATH)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        let content = bounded_string(&mut file, SNAPSHOT_PATH, MAX_SNAPSHOT_BYTES)?;
         match serde_json::from_str::<Snapshot>(&content) {
             Ok(snapshot) if snapshot.format_version == SNAPSHOT_VERSION => Some(snapshot),
             _ => None,

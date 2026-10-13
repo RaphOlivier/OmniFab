@@ -19,6 +19,9 @@ fn tous_les_codes_sont_dans_le_registre() {
         "OF-DOC-0008",
         "OF-DOC-0009",
         "OF-DOC-0010",
+        "OF-DOC-0011",
+        "OF-DOC-0012",
+        "OF-DOC-0013",
     ] {
         assert!(
             REGISTRY.contains(code),
