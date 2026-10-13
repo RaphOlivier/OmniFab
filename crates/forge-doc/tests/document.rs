@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::io::{Read, Write};
 
 use forge_doc::{iso8601_from_unix, DocError, Document, FixedClock, MigrationRegistry, NewEvent};
 use serde_json::json;
@@ -38,7 +38,7 @@ fn aller_retour_complet() {
         json!({"name": "diagonal", "expression": "sqrt(width_mm * width_mm)"}),
     ));
     doc.set_blob("apercu.png", vec![1, 2, 3]).unwrap();
-    doc.set_snapshot(json!({"values": []}));
+    doc.set_snapshot(json!({"values": []})).unwrap();
 
     let bytes = doc.to_bytes().unwrap();
     let reloaded = Document::from_bytes(&bytes).unwrap();
@@ -319,6 +319,72 @@ fn identifiant_attribue_et_persiste() {
     let reloaded = Document::from_bytes(&bytes).unwrap();
     assert_eq!(reloaded.events()[0].id.as_deref(), Some(premier));
     assert_eq!(reloaded.events()[1].id.as_deref(), Some(second));
+}
+
+#[test]
+fn snapshot_lie_au_journal_et_poursuit_le_rejeu() {
+    // Schéma B : le snapshot porte le numéro de séquence atteint et un
+    // condensat du journal ; le rejeu reprend après `at_seq`.
+    let mut doc = Document::new();
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    doc.set_snapshot(json!({"values": []})).unwrap();
+    let at_seq = doc.snapshot().unwrap().at_seq;
+    assert_eq!(at_seq, 2);
+    assert!(doc.snapshot().unwrap().journal_digest.starts_with("sha256:"));
+
+    let bytes = doc.to_bytes().unwrap();
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert!(reloaded.snapshot().is_some());
+    assert!(reloaded.events_after(at_seq).is_empty());
+
+    // Un événement de plus : seule la part postérieure au snapshot est à
+    // rejouer.
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    let bytes = doc.to_bytes().unwrap();
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(reloaded.events_after(at_seq).len(), 1);
+    assert!(reloaded.snapshot().is_some(), "le condensat couvre le journal jusqu'à at_seq, pas au-delà");
+}
+
+#[test]
+fn snapshot_invalide_si_journal_diverge() {
+    // Un snapshot réinséré dans un conteneur au journal différent est
+    // ignoré : le condensat ne correspond plus, le journal fait foi.
+    let mut doc = Document::new();
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({"i": 1})));
+    doc.set_snapshot(json!({"values": []})).unwrap();
+    let bytes = doc.to_bytes().unwrap();
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut snapshot_json = String::new();
+    archive
+        .by_name("snapshot.json")
+        .unwrap()
+        .read_to_string(&mut snapshot_json)
+        .unwrap();
+
+    let mut autre = Document::new();
+    autre.append(NewEvent::new("demo.test", 1, "test", json!({"i": 999})));
+    let autre_bytes = autre.to_bytes().unwrap();
+    let mut archive2 = zip::ZipArchive::new(std::io::Cursor::new(autre_bytes)).unwrap();
+    let mut journal = String::new();
+    archive2
+        .by_name("events.jl")
+        .unwrap()
+        .read_to_string(&mut journal)
+        .unwrap();
+
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", journal),
+        ("snapshot.json", snapshot_json),
+    ]);
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert!(
+        reloaded.snapshot().is_none(),
+        "un snapshot au condensat divergent doit être ignoré"
+    );
+    assert_eq!(reloaded.events().len(), 1);
 }
 
 #[test]

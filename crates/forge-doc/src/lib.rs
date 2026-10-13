@@ -45,7 +45,7 @@ pub const CONTAINER_FORMAT: &str = "omnifab-document";
 pub const CONTAINER_VERSION: u32 = 1;
 
 /// Version du format de snapshot.
-pub const SNAPSHOT_VERSION: u32 = 1;
+pub const SNAPSHOT_VERSION: u32 = 2;
 
 /// Chemin du manifeste dans l'archive.
 pub const MANIFEST_PATH: &str = "manifest.json";
@@ -180,12 +180,27 @@ impl Document {
         self.blobs.keys().cloned().collect()
     }
 
-    /// Enregistre un snapshot **non autoritaire** (accélérateur, ADR-0001).
-    pub fn set_snapshot(&mut self, data: serde_json::Value) {
+    /// Enregistre un snapshot **non autoritaire** (accélérateur, ADR-0001),
+    /// lié à l'état du journal au moment de l'enregistrement (schéma B
+    /// validé) : il porte le numéro de séquence atteint et un condensat du
+    /// journal jusqu'à ce point — à la relecture, toute divergence fait
+    /// ignorer le snapshot et rejouer le journal.
+    pub fn set_snapshot(&mut self, data: serde_json::Value) -> Result<(), DocError> {
+        let at_seq = self.events.last().map(|event| event.seq).unwrap_or(0);
         self.snapshot = Some(Snapshot {
             format_version: SNAPSHOT_VERSION,
+            at_seq,
+            journal_digest: container::journal_digest(&self.events, at_seq),
             data,
         });
+        Ok(())
+    }
+
+    /// Événements strictement postérieurs à `at_seq` : la part du journal
+    /// à rejouer après un snapshot enregistré à ce numéro.
+    pub fn events_after(&self, at_seq: u64) -> &[Event] {
+        let index = self.events.partition_point(|event| event.seq <= at_seq);
+        &self.events[index..]
     }
 
     /// Snapshot enregistré, s'il existe et est compatible.

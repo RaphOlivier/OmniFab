@@ -68,6 +68,25 @@ fn read_bounded(
     Ok(data)
 }
 
+/// Condensat SHA-256 du journal jusqu'à `at_seq`, préfixé `sha256:`
+/// (schéma B). Couvre les lignes sérialisées des événements de séquence
+/// inférieure ou égale à `at_seq`, chacune terminée par un saut de ligne.
+pub(crate) fn journal_digest(events: &[Event], at_seq: u64) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    for event in events.iter().take_while(|event| event.seq <= at_seq) {
+        let line = serde_json::to_string(event).unwrap_or_default();
+        hasher.update(line.as_bytes());
+        hasher.update(b"\n");
+    }
+    let digest = hasher.finalize();
+    let mut hex = String::from("sha256:");
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex
+}
+
 /// Comme [`read_bounded`], puis décode en UTF-8.
 fn bounded_string(
     file: &mut zip::read::ZipFile,
@@ -211,7 +230,12 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         let mut file = archive.by_name(SNAPSHOT_PATH)?;
         let content = bounded_string(&mut file, SNAPSHOT_PATH, MAX_SNAPSHOT_BYTES)?;
         match serde_json::from_str::<Snapshot>(&content) {
-            Ok(snapshot) if snapshot.format_version == SNAPSHOT_VERSION => Some(snapshot),
+            // Schéma B : le snapshot n'est accepté que si son condensat
+            // correspond au journal chargé — sinon ignoré, journal fait foi.
+            Ok(snapshot) if snapshot.format_version == SNAPSHOT_VERSION => {
+                let digest = journal_digest(&events, snapshot.at_seq);
+                (digest == snapshot.journal_digest).then_some(snapshot)
+            }
             _ => None,
         }
     } else {
