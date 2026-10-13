@@ -34,7 +34,11 @@ jobs:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
       - name: Plateforme Android 30 (attendue par cargo-apk)
-        run: sdkmanager --install "platforms;android-30"
+        run: |
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKMANAGER" ] || SDKMANAGER=$(find /usr/local/lib/android/sdk -type f -name sdkmanager | head -n 1)
+          echo "sdkmanager : $SDKMANAGER"
+          yes | "$SDKMANAGER" --install "platforms;android-30" > /dev/null 2>&1 || "$SDKMANAGER" --install "platforms;android-30"
       - name: Cache du binaire cargo-apk
         uses: actions/cache@v4
         with:
