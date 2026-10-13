@@ -96,16 +96,28 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         content
     };
     let mut events: Vec<Event> = Vec::new();
+    let total_lines = journal.lines().count();
     for (index, line) in journal.lines().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        let mut event: Event =
-            serde_json::from_str(line).map_err(|error| DocError::CorruptJournal {
-                line: index + 1,
-                reason: error.to_string(),
-            })?;
+        let mut event: Event = match serde_json::from_str(line) {
+            Ok(event) => event,
+            Err(error) => {
+                // Une coupure pendant l'écriture peut tronquer la toute
+                // dernière ligne du journal : elle est tolérée (et
+                // signalée) car le fichier `.bak` garde l'archive intacte.
+                if index + 1 == total_lines {
+                    log::warn!("derniere ligne du journal tronquee, ignoree : {error}");
+                    break;
+                }
+                return Err(DocError::CorruptJournal {
+                    line: index + 1,
+                    reason: error.to_string(),
+                });
+            }
+        };
         let expected = events.len() as u64 + 1;
         if event.seq != expected {
             return Err(DocError::BadSequence {

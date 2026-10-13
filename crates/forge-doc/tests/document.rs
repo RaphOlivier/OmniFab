@@ -232,3 +232,30 @@ fn horodatage_iso8601() {
     assert_eq!(iso8601_from_unix(0), "1970-01-01T00:00:00Z");
     assert_eq!(iso8601_from_unix(951782400), "2000-02-29T00:00:00Z");
 }
+
+#[test]
+fn derniere_ligne_tronquee_toleree() {
+    // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
+    // est tolérée (et signalée) ; les événements précédents sont conservés.
+    let ligne = evenement(1, 1);
+    let tronquee = &ligne[..ligne.len() - 10];
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", format!("{ligne}\n{tronquee}")),
+    ]);
+    let doc = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(doc.events().len(), 1);
+
+    // Une ligne corrompue qui n'est PAS la dernière reste une erreur.
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        (
+            "events.jl",
+            format!("ceci n'est pas du json\n{ligne}\n"),
+        ),
+    ]);
+    match Document::from_bytes(&bytes) {
+        Err(DocError::CorruptJournal { line: 1, .. }) => {}
+        other => panic!("journal corrompu attendu, obtenu {other:?}"),
+    }
+}

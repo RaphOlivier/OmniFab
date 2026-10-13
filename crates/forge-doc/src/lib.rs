@@ -170,10 +170,29 @@ impl Document {
         container::read(bytes, migrations)
     }
 
-    /// Enregistre le document dans un fichier (feature `native`).
+    /// Enregistre le document dans un fichier, de manière atomique
+    /// (feature `native`) : le fichier existant est d'abord conservé en
+    /// `{projet}.bak`, l'archive est écrite dans un fichier temporaire
+    /// synchronisé sur disque, puis renommé — une coupure de courant ne peut
+    /// pas laisser un fichier à moitié écrit à la place du projet.
     #[cfg(feature = "native")]
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), DocError> {
-        std::fs::write(path, self.to_bytes()?)?;
+        let bytes = self.to_bytes()?;
+        if path.exists() {
+            let mut backup = std::ffi::OsString::from(path.as_os_str());
+            backup.push(".bak");
+            std::fs::rename(path, std::path::PathBuf::from(backup))?;
+        }
+        let mut tmp = std::ffi::OsString::from(path.as_os_str());
+        tmp.push(".tmp");
+        let tmp = std::path::PathBuf::from(tmp);
+        {
+            use std::io::Write;
+            let mut file = std::fs::File::create(&tmp)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+        }
+        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 
