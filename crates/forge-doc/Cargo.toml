@@ -19,3 +19,4 @@ serde_json.workspace = true
 thiserror.workspace = true
 zip.workspace = true
 log.workspace = true
+uuid.workspace = true

@@ -114,8 +114,10 @@ impl Document {
     pub fn append(&mut self, new_event: NewEvent) -> u64 {
         let seq = self.events.len() as u64 + 1;
         let timestamp = iso8601_from_unix(self.clock.now_unix());
+        let id = uuid::Uuid::now_v7().to_string();
         self.events.push(Event {
             seq,
+            id: Some(id),
             event_type: new_event.event_type,
             schema_version: new_event.schema_version,
             timestamp,

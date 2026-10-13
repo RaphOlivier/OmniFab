@@ -20,3 +20,4 @@ thiserror = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 log = "0.4"
 libm = "0.2"
+uuid = { version = "1", features = ["v7"] }

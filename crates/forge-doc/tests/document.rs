@@ -303,6 +303,25 @@ fn transaction_propagee_et_persistee() {
 }
 
 #[test]
+fn identifiant_attribue_et_persiste() {
+    // Chaque événement reçoit un identifiant unique (UUIDv7, ordonné dans
+    // le temps), attribué par `append` et conservé à la relecture (schéma C
+    // validé). Deux événements successifs ont des identifiants distincts.
+    let mut doc = Document::new();
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    let premier = doc.events()[0].id.as_deref().expect("id attribué");
+    let second = doc.events()[1].id.as_deref().expect("id attribué");
+    assert_ne!(premier, second);
+    assert_eq!(premier.len(), 36, "format UUID canonique");
+
+    let bytes = doc.to_bytes().unwrap();
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(reloaded.events()[0].id.as_deref(), Some(premier));
+    assert_eq!(reloaded.events()[1].id.as_deref(), Some(second));
+}
+
+#[test]
 fn derniere_ligne_tronquee_toleree() {
     // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
     // est tolérée (et signalée) ; les événements précédents sont conservés.

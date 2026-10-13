@@ -23,7 +23,11 @@ pub struct Event {
     /// Identifiant de transaction, si l'événement appartient à un groupe
     /// à appliquer ensemble (absent des événements hors transaction).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub txn: Option<String>,
+    pub txn: Option<String>,    /// Identifiant unique de l'événement (UUIDv7, attribué par
+    /// [`Document::append`](crate::Document::append) ; absent des journaux
+    /// écrits avant son introduction).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
 }
 
 /// Événement neuf, avant attribution du numéro de séquence et de
