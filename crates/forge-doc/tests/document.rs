@@ -346,7 +346,10 @@ fn snapshot_lie_au_journal_et_poursuit_le_rejeu() {
     let bytes = doc.to_bytes().unwrap();
     let reloaded = Document::from_bytes(&bytes).unwrap();
     assert_eq!(reloaded.events_after(at_seq).len(), 1);
-    assert!(reloaded.snapshot().is_some(), "le condensat couvre le journal jusqu'à at_seq, pas au-delà");
+    assert!(
+        reloaded.snapshot().is_some(),
+        "le condensat couvre le journal jusqu'à at_seq, pas au-delà"
+    );
 }
 
 #[test]
