@@ -96,8 +96,12 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         content
     };
     let mut events: Vec<Event> = Vec::new();
-    let total_lines = journal.lines().count();
-    for (index, line) in journal.lines().enumerate() {
+    // `split('\n')` garde une dernière entrée vide après le saut de
+    // ligne final : une ligne corrompue qui n'est pas la toute dernière
+    // entrée reste une erreur, seule une fin de fichier tronquée est
+    // tolérée.
+    let total_lines = journal.split('\n').count();
+    for (index, line) in journal.split('\n').enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
