@@ -65,6 +65,29 @@ jobs:
             echo "fail=1" >> "$GITHUB_OUTPUT"
           fi
           exit 0
+      - name: Signature moderne (apksigner) + diagnostic
+        run: |
+          set -u
+          APK=$(find target -name '*.apk' -print -quit)
+          [ -n "$APK" ] || { echo "APK introuvable"; exit 1; }
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -n 1)
+          echo "build-tools : $BT"
+          echo "=== apksigner verify (avant) ==="
+          if "$BT/apksigner" verify --print-certs "$APK" 2>verify.log; then
+            echo "Signature deja valide (v2+ OK)"
+          else
+            echo "Signature insuffisante - re-signature en v2/v3 :"
+            keytool -genkeypair -keystore debug.keystore -storepass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+            "$BT/zipalign" -f 4 "$APK" "$APK.aligned"
+            "$BT/apksigner" sign --ks debug.keystore --ks-pass pass:android \
+              --ks-key-alias androiddebugkey --min-sdk-version 24 "$APK.aligned"
+            mv "$APK.aligned" "$APK"
+            "$BT/apksigner" verify --print-certs "$APK"
+          fi
+          echo "=== Metadonnees APK (aapt badging) ==="
+          "$BT/aapt" dump badging "$APK" | head -n 25 || true
       - name: Publication de l'artefact (APK)
         if: steps.apk.outputs.fail == '0'
         uses: actions/upload-artifact@v4
