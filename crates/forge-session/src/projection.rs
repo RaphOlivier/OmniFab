@@ -93,7 +93,7 @@ impl Projection for ValuesProjection {
 }
 
 /// Lit un champ chaîne du schéma v1 du type d'événement.
-fn champ_str(event: &NewEvent, champ: &str) -> Result<&str, SessionError> {
+fn champ_str<'a>(event: &'a NewEvent, champ: &str) -> Result<&'a str, SessionError> {
     event
         .data
         .get(champ)

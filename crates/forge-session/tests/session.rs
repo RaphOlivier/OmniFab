@@ -10,8 +10,18 @@ use forge_session::{
 /// Session de référence : deux entrées + une expression (diagonale 1000).
 fn rectangle() -> Session {
     let mut session = Session::new("tests");
-    session.execute(&SetInput { name: "width_mm".into(), value: 800.0 }).expect("largeur");
-    session.execute(&SetInput { name: "height_mm".into(), value: 600.0 }).expect("hauteur");
+    session
+        .execute(&SetInput {
+            name: "width_mm".into(),
+            value: 800.0,
+        })
+        .expect("largeur");
+    session
+        .execute(&SetInput {
+            name: "height_mm".into(),
+            value: 600.0,
+        })
+        .expect("hauteur");
     session
         .execute(&SetExpression {
             name: "diagonal".into(),
@@ -43,10 +53,18 @@ fn commande_refusee_n_ecrit_rien_au_journal() {
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0002");
-    let erreur = session.execute(&SetInput { name: "  ".into(), value: 1.0 }).unwrap_err();
+    let erreur = session
+        .execute(&SetInput {
+            name: "  ".into(),
+            value: 1.0,
+        })
+        .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
     let erreur = session
-        .execute(&SetInput { name: "x".into(), value: f64::NAN })
+        .execute(&SetInput {
+            name: "x".into(),
+            value: f64::NAN,
+        })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert_eq!(session.document().events().len(), 0, "aucun événement écrit");
@@ -63,11 +81,17 @@ fn undo_redo_restaurent_l_etat() {
         session.graph_mut().value("diagonal").is_err(),
         "la diagonale est défaite"
     );
-    let largeur = session.graph_mut().value("width_mm").expect("largeur intacte");
+    let largeur = session
+        .graph_mut()
+        .value("width_mm")
+        .expect("largeur intacte");
     assert!((largeur - 800.0).abs() < 1e-9);
     assert!(session.can_redo());
     session.redo().expect("redo");
-    let apres = session.graph_mut().value("diagonal").expect("diagonale rétablie");
+    let apres = session
+        .graph_mut()
+        .value("diagonal")
+        .expect("diagonale rétablie");
     assert!((apres - avant).abs() < 1e-9);
 }
 
@@ -91,7 +115,12 @@ fn nouvelle_action_apres_undo_abandonne_le_redo() {
     let mut session = rectangle();
     session.undo().expect("undo");
     assert!(session.can_redo());
-    session.execute(&SetInput { name: "width_mm".into(), value: 900.0 }).expect("largeur");
+    session
+        .execute(&SetInput {
+            name: "width_mm".into(),
+            value: 900.0,
+        })
+        .expect("largeur");
     assert!(!session.can_redo(), "la nouvelle action vide la pile redo");
     assert_eq!(
         session.document().events().len(),
@@ -109,7 +138,10 @@ fn sauvegarde_ecrit_le_journal_visible() {
     session.undo().expect("undo");
     let chemin = std::env::temp_dir().join("omnifab-tests-forge-session.omnifab");
     session.save_to_path(&chemin).expect("sauvegarde");
-    assert!(!session.can_redo(), "enregistrer abandonne le redo en attente");
+    assert!(
+        !session.can_redo(),
+        "enregistrer abandonne le redo en attente"
+    );
     let document = Document::open_from_path(&chemin).expect("ouverture");
     assert_eq!(
         document.events().len(),
@@ -130,7 +162,10 @@ fn aller_retour_en_memoire() {
     let octets = session.save_to_bytes().expect("octets");
     let document = Document::from_bytes(&octets).expect("document");
     let session = Session::from_document("tests", document).expect("rejeu");
-    let diagonale = session.graph_mut().value("diagonal").expect("diagonale rejouée");
+    let diagonale = session
+        .graph_mut()
+        .value("diagonal")
+        .expect("diagonale rejouée");
     assert!((diagonale - 1000.0).abs() < 1e-9);
 }
 
@@ -143,20 +178,41 @@ fn transaction_entiere_annulee_en_un_undo() {
     document.append(entree("c", 3.0));
     let mut session = Session::from_document("tests", document).expect("rejeu");
     session.undo().expect("undo");
-    assert!(session.graph_mut().value("c").is_err(), "l'événement isolé est défait");
-    assert!(session.graph_mut().value("b").is_ok(), "la transaction tient encore");
+    assert!(
+        session.graph_mut().value("c").is_err(),
+        "l'événement isolé est défait"
+    );
+    assert!(
+        session.graph_mut().value("b").is_ok(),
+        "la transaction tient encore"
+    );
     session.undo().expect("undo");
-    assert!(session.graph_mut().value("a").is_err(), "t1 défaite en un seul undo");
-    assert!(session.graph_mut().value("b").is_err(), "t1 défaite en un seul undo");
+    assert!(
+        session.graph_mut().value("a").is_err(),
+        "t1 défaite en un seul undo"
+    );
+    assert!(
+        session.graph_mut().value("b").is_err(),
+        "t1 défaite en un seul undo"
+    );
 }
 
 /// Les types d'événements inconnus sont tolérés (compatibilité avant).
 #[test]
 fn types_inconnus_toleres() {
     let mut document = Document::new();
-    document.append(NewEvent::new("futur.feature", 1, "tests", serde_json::json!({"x": 1})));
+    document.append(NewEvent::new(
+        "futur.feature",
+        1,
+        "tests",
+        serde_json::json!({"x": 1}),
+    ));
     let mut session = Session::from_document("tests", document).expect("rejeu");
-    assert!(session.unknown_types().contains(&"futur.feature".to_string()));
+    assert!(
+        session
+            .unknown_types()
+            .contains(&"futur.feature".to_string())
+    );
 }
 
 /// Un journal altéré (champ absent d'un type connu) est refusé au
@@ -195,7 +251,12 @@ fn refus_d_une_projection_supplementaire() {
     session
         .register_projection(Box::new(Refuseur))
         .expect("projection enregistrée");
-    let erreur = session.execute(&SetInput { name: "a".into(), value: 1.0 }).unwrap_err();
+    let erreur = session
+        .execute(&SetInput {
+            name: "a".into(),
+            value: 1.0,
+        })
+        .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0002");
     assert_eq!(
         session.document().events().len(),
@@ -209,7 +270,12 @@ fn refus_d_une_projection_supplementaire() {
 #[test]
 fn acteur_et_transaction_attribues() {
     let mut session = Session::new("desktop.demo");
-    session.execute(&SetInput { name: "a".into(), value: 1.0 }).expect("commande");
+    session
+        .execute(&SetInput {
+            name: "a".into(),
+            value: 1.0,
+        })
+        .expect("commande");
     let dernier = session.document().events().last().expect("un événement");
     assert_eq!(dernier.actor, "desktop.demo");
     assert!(dernier.txn.is_some(), "une commande = une transaction");
