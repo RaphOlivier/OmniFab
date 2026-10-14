@@ -1,0 +1,12 @@
+[package]
+name = "forge-io"
+description = "Import/export octets ↔ géométrie : STL au jalon 1 (parseur maison à budgets), SVG et DXF ensuite — ADR-0009."
+license = "MPL-2.0"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-geom = { path = "../forge-geom" }
+forge-units = { path = "../forge-units" }
+thiserror.workspace = true

@@ -4,6 +4,8 @@ members = [
     "apps/omnifab-android",
     "apps/omnifab-desktop",
     "crates/forge-doc",
+    "crates/forge-geom",
+    "crates/forge-io",
     "crates/forge-session",
     "crates/forge-units",
     "crates/forge-values",

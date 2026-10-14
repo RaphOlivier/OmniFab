@@ -11,8 +11,8 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session).
-Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT` —
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io).
+Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
 ## forge-values (VAL) — moteur de liaisons
@@ -52,3 +52,21 @@ Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT`
 | OF-SES-0003 | Rien à annuler | Undo demandé alors que tout est déjà annulé | — |
 | OF-SES-0004 | Rien à rétablir | Redo demandé sans événement défait en attente | — |
 | OF-SES-0005 | Données d'événement invalides | Journal altéré : champ manquant ou de type inattendu pour un type connu | Restaurer une copie saine du projet |
+
+## forge-geom (GEO) — géométrie minimale
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-GEO-0001 | Indice de sommet hors du maillage | Triangle référençant un sommet absent | Corriger le maillage source |
+| OF-GEO-0002 | Coordonnée non finie | NaN ou infini dans une coordonnée | Corriger les données d'entrée |
+
+## forge-io (IO) — import/export
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-IO-0001 | Entrée trop volumineuse | Fichier dépassant le budget d'octets du parseur | Vérifier le fichier, ou ajuster le budget |
+| OF-IO-0002 | STL binaire invalide | Structure incohérente (garde pour les extensions du lecteur) | Vérifier l'intégrité du fichier |
+| OF-IO-0003 | Budget de triangles dépassé | Maillage au-delà du budget du parseur, ou export de plus de `u32::MAX` triangles | Ajuster le budget ou simplifier le maillage |
+| OF-IO-0004 | STL ASCII invalide | Syntaxe hors du sous-ensemble accepté, ou octets non UTF-8 | Vérifier le fichier d'entrée |
+| OF-IO-0005 | Format non reconnu | Ni STL binaire cohérent, ni STL ASCII | Vérifier le format du fichier |
+| OF-IO-0006 | Géométrie invalide à l'import | Coordonnée non finie dans les données importées | Vérifier le fichier d'entrée |

@@ -1130,6 +1130,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-geom"
+version = "0.1.0"
+dependencies = [
+ "forge-units",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "forge-io"
+version = "0.1.0"
+dependencies = [
+ "forge-geom",
+ "forge-units",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "forge-session"
 version = "0.1.0"
 dependencies = [
