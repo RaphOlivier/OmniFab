@@ -1,8 +1,8 @@
 //! Projections par domaine (ADR-0008) : état métier reconstruit par rejeu
 //! du journal d'événements.
 
-use crate::command::{EVENT_EXPRESSION_SET, EVENT_INPUT_SET};
 use crate::SessionError;
+use crate::command::{EVENT_EXPRESSION_SET, EVENT_INPUT_SET};
 use forge_doc::NewEvent;
 use forge_values::ValueGraph;
 
@@ -75,12 +75,12 @@ impl Projection for ValuesProjection {
             EVENT_EXPRESSION_SET => {
                 let name = champ_str(event, "name")?;
                 let expression = champ_str(event, "expression")?;
-                self.graph.set_expression(name, expression).map_err(|source| {
-                    SessionError::ProjectionFailed {
+                self.graph
+                    .set_expression(name, expression)
+                    .map_err(|source| SessionError::ProjectionFailed {
                         projection: "values".to_string(),
-                        source: source.to_string(),
-                    }
-                })
+                        message: source.to_string(),
+                    })
             }
             _ => {
                 if !self.unknown.contains(&event.event_type) {

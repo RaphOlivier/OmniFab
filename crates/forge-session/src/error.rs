@@ -14,12 +14,12 @@ pub enum SessionError {
         reason: String,
     },
     /// Rejet par une projection lors de l'application de l'événement (OF-SES-0002).
-    #[error("OF-SES-0002 : la projection « {projection} » rejette l'événement : {source}")]
+    #[error("OF-SES-0002 : la projection « {projection} » rejette l'événement : {message}")]
     ProjectionFailed {
         /// Nom du domaine de la projection qui refuse.
         projection: String,
         /// Message de l'erreur du domaine (avec son code OF-*).
-        source: String,
+        message: String,
     },
     /// Undo demandé alors que tout est déjà annulé (OF-SES-0003).
     #[error("OF-SES-0003 : rien à annuler")]

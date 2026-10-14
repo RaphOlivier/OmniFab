@@ -3,9 +3,7 @@
 //! visible.
 
 use forge_doc::{Document, NewEvent};
-use forge_session::{
-    EVENT_INPUT_SET, Projection, Session, SessionError, SetExpression, SetInput,
-};
+use forge_session::{EVENT_INPUT_SET, Projection, Session, SessionError, SetExpression, SetInput};
 
 /// Session de référence : deux entrées + une expression (diagonale 1000).
 fn rectangle() -> Session {
@@ -67,7 +65,11 @@ fn commande_refusee_n_ecrit_rien_au_journal() {
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
-    assert_eq!(session.document().events().len(), 0, "aucun événement écrit");
+    assert_eq!(
+        session.document().events().len(),
+        0,
+        "aucun événement écrit"
+    );
     assert!(!session.can_undo());
 }
 
@@ -243,7 +245,7 @@ fn refus_d_une_projection_supplementaire() {
         fn apply(&mut self, _evenement: &NewEvent) -> Result<(), SessionError> {
             Err(SessionError::ProjectionFailed {
                 projection: "refuseur".to_string(),
-                source: "domaine de test".to_string(),
+                message: "domaine de test".to_string(),
             })
         }
     }

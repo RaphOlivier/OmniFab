@@ -210,7 +210,11 @@ impl Document {
     /// abandonner les événements défaisables (ADR-0008).
     pub fn pop_after(&mut self, at_seq: u64) -> Vec<Event> {
         let index = self.events.partition_point(|event| event.seq <= at_seq);
-        if self.snapshot.as_ref().is_some_and(|snapshot| snapshot.at_seq > at_seq) {
+        if self
+            .snapshot
+            .as_ref()
+            .is_some_and(|snapshot| snapshot.at_seq > at_seq)
+        {
             self.snapshot = None;
         }
         self.events.split_off(index)
