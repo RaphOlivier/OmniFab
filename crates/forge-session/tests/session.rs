@@ -228,7 +228,9 @@ fn journal_altere_refuse_au_chargement() {
         "tests",
         serde_json::json!({"name": "a"}),
     ));
-    let erreur = Session::from_document("tests", document).err().expect("rejet attendu");
+    let erreur = Session::from_document("tests", document)
+        .err()
+        .expect("rejet attendu");
     assert_eq!(erreur.code(), "OF-SES-0005");
 }
 
