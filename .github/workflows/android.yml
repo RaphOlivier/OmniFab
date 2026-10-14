@@ -66,6 +66,7 @@ jobs:
           fi
           exit 0
       - name: Signature moderne (apksigner) + diagnostic
+        if: steps.apk.outputs.fail == '0'
         run: |
           set -u
           APK=$(find target -name '*.apk' -print -quit)
