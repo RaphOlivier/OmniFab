@@ -20,10 +20,10 @@ endsolid demo
 /// Budgets explicites (la sécurité ne bride pas les fonctions :
 /// chaque budget est réglable, ADR-0009).
 fn budgets(max_bytes: usize, max_triangles: u32) -> StlBudgets {
-    let mut budgets = StlBudgets::default();
-    budgets.max_bytes = max_bytes;
-    budgets.max_triangles = max_triangles;
-    budgets
+    StlBudgets {
+        max_bytes,
+        max_triangles,
+    }
 }
 
 /// Un triangle simple : origine, +1 mm en x, +1 mm en y.

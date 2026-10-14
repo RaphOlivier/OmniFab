@@ -150,7 +150,7 @@ fn sauvegarde_ecrit_le_journal_visible() {
         2,
         "le fichier ne contient pas les événements défaits"
     );
-    let session = Session::from_document("tests", document).expect("rejeu");
+    let mut session = Session::from_document("tests", document).expect("rejeu");
     assert!(!session.can_redo());
     assert!(session.graph_mut().value("width_mm").is_ok());
     let _ = std::fs::remove_file(&chemin);
@@ -163,7 +163,7 @@ fn aller_retour_en_memoire() {
     let mut session = rectangle();
     let octets = session.save_to_bytes().expect("octets");
     let document = Document::from_bytes(&octets).expect("document");
-    let session = Session::from_document("tests", document).expect("rejeu");
+    let mut session = Session::from_document("tests", document).expect("rejeu");
     let diagonale = session
         .graph_mut()
         .value("diagonal")
@@ -209,7 +209,7 @@ fn types_inconnus_toleres() {
         "tests",
         serde_json::json!({"x": 1}),
     ));
-    let mut session = Session::from_document("tests", document).expect("rejeu");
+    let session = Session::from_document("tests", document).expect("rejeu");
     assert!(
         session
             .unknown_types()
@@ -228,7 +228,7 @@ fn journal_altere_refuse_au_chargement() {
         "tests",
         serde_json::json!({"name": "a"}),
     ));
-    let erreur = Session::from_document("tests", document).unwrap_err();
+    let erreur = Session::from_document("tests", document).err().expect("rejet attendu");
     assert_eq!(erreur.code(), "OF-SES-0005");
 }
 

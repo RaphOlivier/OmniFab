@@ -83,9 +83,18 @@ pub fn export(mesh: &Mesh) -> Result<Vec<u8>, IoError> {
     sortie.extend_from_slice(&[0u8; 80 - EN_TETE.len()]);
     sortie.extend_from_slice(&total.to_le_bytes());
     for &[ia, ib, ic] in mesh.triangles() {
-        let a = mesh.vertices().get(ia as usize).expect("indice validé à la construction");
-        let b = mesh.vertices().get(ib as usize).expect("indice validé à la construction");
-        let c = mesh.vertices().get(ic as usize).expect("indice validé à la construction");
+        let a = mesh
+            .vertices()
+            .get(ia as usize)
+            .expect("indice validé à la construction");
+        let b = mesh
+            .vertices()
+            .get(ib as usize)
+            .expect("indice validé à la construction");
+        let c = mesh
+            .vertices()
+            .get(ic as usize)
+            .expect("indice validé à la construction");
         for composante in normale_facette(a, b, c) {
             sortie.extend_from_slice(&composante.to_le_bytes());
         }
@@ -116,7 +125,10 @@ fn est_ascii(bytes: &[u8]) -> bool {
     if bytes.len() < 5 || !bytes[..5].eq_ignore_ascii_case(b"solid") {
         return false;
     }
-    matches!(bytes.get(5), None | Some(b' ') | Some(b'\t') | Some(b'\r') | Some(b'\n'))
+    matches!(
+        bytes.get(5),
+        None | Some(b' ') | Some(b'\t') | Some(b'\r') | Some(b'\n')
+    )
 }
 
 /// Importe un STL binaire (appelée seulement si la taille est cohérente).
@@ -271,7 +283,11 @@ fn normale_facette(a: &Point3, b: &Point3, c: &Point3) -> [f32; 3] {
     if !norme.is_finite() || norme == 0.0 {
         return [0.0, 0.0, 0.0];
     }
-    [(nx / norme) as f32, (ny / norme) as f32, (nz / norme) as f32]
+    [
+        (nx / norme) as f32,
+        (ny / norme) as f32,
+        (nz / norme) as f32,
+    ]
 }
 
 /// Lit le prochain nombre de la ligne, ou erreur ASCII typée.

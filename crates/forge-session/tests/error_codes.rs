@@ -18,7 +18,7 @@ fn toutes_les_variantes() -> Vec<SessionError> {
         },
         SessionError::ProjectionFailed {
             projection: "values".to_string(),
-            source: "OF-VAL-0002".to_string(),
+            message: "OF-VAL-0002".to_string(),
         },
         SessionError::UndoEmpty,
         SessionError::RedoEmpty,
