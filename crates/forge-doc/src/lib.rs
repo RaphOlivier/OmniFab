@@ -17,11 +17,11 @@
 //! - les snapshots sont des **accélérateurs non autoritaires** : un
 //!   snapshot incompatible est ignoré et le journal rejoué ;
 //! - les gros objets ne vivent jamais dans le journal : ils sont des blobs
-//!   (`Document::set_blob`) et les événements n'en portent que des
+//!   ([`Document::set_blob`]) et les événements n'en portent que des
 //!   références ;
 //! - la sérialisation d'archive est en mémoire (compatible wasm) ;
 //!   l'accès disque est isolé derrière la feature `native`
-//!   (`Document::save_to_path`, `Document::open_from_path`).
+//!   ([`Document::save_to_path`], [`Document::open_from_path`]).
 
 mod clock;
 mod container;
@@ -203,6 +203,19 @@ impl Document {
         &self.events[index..]
     }
 
+    /// Retire du journal, en mémoire, les événements de numéro de séquence
+    /// strictement supérieur à `at_seq` et les retourne dans l'ordre. Le
+    /// snapshot, s'il porte sur des événements retirés, est abandonné
+    /// (ADR-0001 : jamais autoritaire). Utilisé par forge-session pour
+    /// abandonner les événements défaisables (ADR-0008).
+    pub fn pop_after(&mut self, at_seq: u64) -> Vec<Event> {
+        let index = self.events.partition_point(|event| event.seq <= at_seq);
+        if self.snapshot.as_ref().is_some_and(|snapshot| snapshot.at_seq > at_seq) {
+            self.snapshot = None;
+        }
+        self.events.split_off(index)
+    }
+
     /// Snapshot enregistré, s'il existe et est compatible.
     pub fn snapshot(&self) -> Option<&Snapshot> {
         self.snapshot.as_ref()
@@ -296,12 +309,42 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
 
 #[cfg(test)]
 mod tests {
-    use super::iso8601_from_unix;
+    use super::{Document, NewEvent, iso8601_from_unix};
 
     #[test]
     fn iso8601() {
         assert_eq!(iso8601_from_unix(0), "1970-01-01T00:00:00Z");
         // 2000-02-29 : année bissextile.
         assert_eq!(iso8601_from_unix(951782400), "2000-02-29T00:00:00Z");
+    }
+
+    /// pop_after retire et retourne les événements au-delà du numéro.
+    #[test]
+    fn pop_after_tronque_et_retourne() {
+        let mut document = Document::new();
+        document.append(NewEvent::new("t", 1, "tests", serde_json::json!({})));
+        document.append(NewEvent::new("t", 1, "tests", serde_json::json!({})));
+        let retires = document.pop_after(1);
+        assert_eq!(retires.len(), 1, "un seul événement retiré");
+        assert_eq!(retires[0].seq, 2);
+        assert_eq!(document.events().len(), 1);
+        assert_eq!(document.events()[0].seq, 1);
+    }
+
+    /// pop_after abandonne un snapshot portant sur des événements
+    /// retirés (jamais autoritaire, ADR-0001).
+    #[test]
+    fn pop_after_abandonne_un_snapshot_perime() {
+        let mut document = Document::new();
+        document.append(NewEvent::new("t", 1, "tests", serde_json::json!({})));
+        document
+            .set_snapshot(serde_json::json!({}))
+            .expect("snapshot enregistré");
+        assert!(document.snapshot().is_some());
+        document.pop_after(0);
+        assert!(
+            document.snapshot().is_none(),
+            "le snapshot portait sur des événements retirés"
+        );
     }
 }

@@ -1,0 +1,22 @@
+[package]
+name = "forge-session"
+description = "Session, commandes et undo/redo par curseur sur le journal d'événements — ADR-0008."
+license = "MPL-2.0"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["native"]
+# Accès fichier natif (sauvegarde sur disque), délégué à forge-doc. Le
+# noyau session reste en mémoire et fonctionne aussi en wasm
+# (ADR-0000 : feature flags native/wasm).
+native = ["forge-doc/native"]
+wasm = ["forge-doc/wasm"]
+
+[dependencies]
+forge-doc = { path = "../forge-doc" }
+forge-values = { path = "../forge-values" }
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

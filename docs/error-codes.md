@@ -11,7 +11,7 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc).
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session).
 Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
@@ -42,3 +42,13 @@ Réservés : `UNT` (forge-units), `GEO`, `CAD`, `CAM`, `GCO`, `LNK`, `IO`, `PNT`
 | OF-DOC-0011 | Entrée trop volumineuse | Une entrée (manifeste, journal, snapshot, blob) dépasse la taille maximale acceptée | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0012 | Trop d'entrées dans le conteneur | L'archive dépasse le nombre maximal d'entrées (garde-fou « bombe ZIP ») | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0013 | Nom de blob invalide | Nom vide, traversée de répertoire (`..`), chemin absolu, séparateur Windows ou octet nul | Corriger le nom du blob |
+
+## forge-session (SES) — session, commandes et undo/redo
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-SES-0001 | Commande refusée à la planification | Données invalides : nom vide, expression vide, nombre non fini | Corriger la commande |
+| OF-SES-0002 | Rejet par une projection | L'événement viole une règle du domaine (ex. expression référençant une valeur inconnue) | Corriger la commande ; le journal est intact |
+| OF-SES-0003 | Rien à annuler | Undo demandé alors que tout est déjà annulé | — |
+| OF-SES-0004 | Rien à rétablir | Redo demandé sans événement défait en attente | — |
+| OF-SES-0005 | Données d'événement invalides | Journal altéré : champ manquant ou de type inattendu pour un type connu | Restaurer une copie saine du projet |
