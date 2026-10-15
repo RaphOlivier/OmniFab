@@ -6,7 +6,7 @@
 
 # --- Fenêtre ---
 
-titre-fenetre = OmniFab — démonstrateur jalon 1
+titre-fenetre = OmniFab — démonstrateur
 
 # --- Barre du haut ---
 
@@ -14,10 +14,12 @@ top-annuler = Annuler
 top-retablir = Rétablir
 top-recalculer = Recalculer tout
 top-enregistrer = Enregistrer
+top-enregistrer-sous = Enregistrer sous…
 top-ouvrir = Ouvrir
 top-nouveau = Nouveau
+top-bibliotheque = Bibliothèque
 
-# --- Import / export (chemins de démonstration, ADR-0011) ---
+# --- Import / export (fichiers choisis par l'utilisateur, ADR-0014) ---
 
 top-importer-svg = Importer SVG
 top-importer-dxf = Importer DXF
@@ -25,6 +27,30 @@ top-importer-stl = Importer STL
 top-exporter-svg = Exporter SVG
 top-exporter-dxf = Exporter DXF
 top-exporter-stl = Exporter STL
+
+# --- Filtres des sélecteurs natifs (ADR-0014) ---
+
+filtre-svg = Fichier SVG
+filtre-dxf = Fichier DXF
+filtre-stl = Maillage STL
+filtre-projet = Projet OmniFab
+
+# --- Écran d'accueil / bibliothèque (ADR-0014) ---
+
+accueil-titre = Bibliothèque de projets
+accueil-nouveau = Nouveau projet
+accueil-ouvrir = Ouvrir un projet…
+accueil-reprendre = Reprendre la session en cours
+accueil-liste-titre = Projets du dossier
+accueil-vide = Aucun projet enregistré pour l'instant : « Enregistrer sous… » range vos projets ici.
+accueil-indisponible = Dossier de la bibliothèque introuvable : la liste est indisponible.
+accueil-ouvrir-projet = Ouvrir
+accueil-date-aujourdhui = aujourd’hui
+accueil-date-hier = hier
+accueil-date-jours = il y a {$n} jours
+accueil-taille-octets = {$n} octets
+accueil-taille-ko = {$n} Ko
+accueil-taille-mio = {$n} Mio
 
 # --- Panneau des paramètres ---
 
@@ -42,19 +68,20 @@ journal-types-ignores = Types ignorés (journal d'une version plus récente ?) :
 
 # --- Viewport ---
 
-viewport-titre = Viewport — rectangle de démonstration et tracés importés
+viewport-titre = Viewport — rectangle de démonstration, tracés et maillage importés
 viewport-erreur = Erreur : {$texte}
 
 # --- Compteurs de géométrie importée ---
 
 geom-traces-compteur = {$traces} tracés · {$sommets} sommets importés
 geom-maillage-compteur = Maillage importé : {$triangles} triangles
+viewport-wireframe-limite = Maillage trop dense pour le wireframe ({$triangles} triangles > {$limite}) : seules la boîte englobante et les statistiques sont affichées.
 
 # --- Messages d'information ---
 
 info-recalcul-ok = Toutes les valeurs sont à jour.
 info-enregistre = Projet enregistré dans « {$chemin} ».
-info-recharge = Projet rechargé : {$n} événements rejoués.
+info-recharge = Projet ouvert : {$n} événements rejoués.
 info-import-traces = Import réussi : {$traces} tracés · {$sommets} sommets.
 info-import-maillage = Import réussi : {$triangles} triangles.
 info-export = Exporté dans « {$chemin} ».
@@ -71,7 +98,7 @@ aide-page-introuvable = Aide introuvable pour « {$identifiant} ».
 aide-top-annuler =
     .titre = Annuler
     .description = Annule le dernier groupe d'actions (saisie, expression ou import) : l'état revient à ce qu'il était juste avant. Les actions annulées restent disponibles pour « Rétablir » jusqu'à la prochaine nouvelle action.
-    .exemple = Importez demo-import.svg puis cliquez : les tracés disparaissent du viewport. Le raccourci Ctrl+Z fait la même chose.
+    .exemple = Importez un SVG puis cliquez : les tracés disparaissent du viewport. Le raccourci Ctrl+Z fait la même chose.
 
 aide-top-retablir =
     .titre = Rétablir
@@ -80,33 +107,33 @@ aide-top-retablir =
 
 aide-top-importer-svg =
     .titre = Importer SVG
-    .description = Lit demo-import.svg dans le répertoire courant et le convertit en tracés 2D sous budgets de sécurité (une unité SVG = 1 mm). Les octets d'origine partent dans un blob du projet, et l'import est une action annulable : une transaction au journal.
-    .exemple = Créez demo-import.svg avec un chemin M 0 0 L 100 0 L 0 100 Z, cliquez : le viewport dessine le triangle en jaune et affiche les compteurs.
+    .description = Ouvre le sélecteur de fichiers natif et convertit le SVG choisi en tracés 2D sous budgets de sécurité (une unité SVG = 1 mm). Les octets d'origine partent dans un blob du projet, et l'import est une action annulable : une transaction au journal.
+    .exemple = Choisissez un SVG contenant un chemin M 0 0 L 100 0 L 0 100 Z : le viewport dessine le triangle en jaune et affiche les compteurs.
 
 aide-top-importer-dxf =
     .titre = Importer DXF
-    .description = Lit demo-import.dxf dans le répertoire courant (entités LINE, LWPOLYLINE, POLYLINE, CIRCLE et ARC ; une unité = 1 mm) et en fait les tracés courants — une action annulable, comme l'import SVG.
-    .exemple = Créez demo-import.dxf contenant une polyligne fermée, cliquez : la forme apparaît en jaune et le compteur affiche tracés et sommets.
+    .description = Ouvre le sélecteur de fichiers natif et convertit le DXF choisi (entités LINE, LWPOLYLINE, POLYLINE, CIRCLE et ARC ; une unité = 1 mm) en tracés courants — une action annulable, comme l'import SVG.
+    .exemple = Choisissez un DXF contenant une polyligne fermée : la forme apparaît en jaune et le compteur affiche tracés et sommets.
 
 aide-top-importer-stl =
     .titre = Importer STL
-    .description = Lit demo-import.stl (binaire ou ASCII, lu en millimètres) et en fait le maillage courant : octets d'origine dans un blob, compteurs au journal. Le maillage n'est pas dessiné au jalon 1 — le rendu arrive au jalon 2.
-    .exemple = Importez un petit STL, cliquez : le compteur « Maillage importé » affiche le nombre de triangles sous le viewport.
+    .description = Ouvre le sélecteur de fichiers natif et convertit le STL choisi (binaire ou ASCII, lu en millimètres) en maillage courant : octets d'origine dans un blob, compteurs au journal. Le maillage se dessine en wireframe cyan dans le viewport.
+    .exemple = Importez un petit STL : le wireframe cyan apparaît par-dessus le rectangle, et le compteur « Maillage importé » affiche le nombre de triangles.
 
 aide-top-exporter-svg =
     .titre = Exporter SVG
-    .description = Écrit les tracés courants dans demo-export.svg : les octets d'origine sont relus depuis leur blob puis re-sérialisés (une unité = 1 mm). L'export ne change pas l'état du projet : rien au journal.
-    .exemple = Après un import, cliquez : le fichier demo-export.svg apparaît dans le répertoire courant.
+    .description = Ouvre le sélecteur et écrit les tracés courants dans le fichier choisi : les octets d'origine sont relus depuis leur blob puis re-sérialisés (une unité = 1 mm). L'export ne change pas l'état du projet : rien au journal.
+    .exemple = Après un import, cliquez et choisissez un emplacement : le fichier SVG y est écrit, lisible par n'importe quel visualiseur.
 
 aide-top-exporter-dxf =
     .titre = Exporter DXF
-    .description = Écrit les tracés courants dans demo-export.dxf, un segment par entité LINE (les tracés fermés sont refermés). Comme tout export, l'action n'est pas journalisée.
-    .exemple = Importez demo-import.svg puis cliquez : demo-export.dxf contient le même dessin en entités LINE.
+    .description = Ouvre le sélecteur et écrit les tracés courants au format DXF, un segment par entité LINE (les tracés fermés sont refermés). Comme tout export, l'action n'est pas journalisée.
+    .exemple = Importez un SVG puis exportez en DXF : le fichier contient le même dessin en entités LINE.
 
 aide-top-exporter-stl =
     .titre = Exporter STL
-    .description = Écrit le maillage courant dans demo-export.stl (binaire, en millimètres, normales recalculées). Le bouton est actif seulement si un maillage a été importé.
-    .exemple = Après un import STL, cliquez : demo-export.stl apparaît dans le répertoire courant, lisible par n'importe quel visualiseur.
+    .description = Ouvre le sélecteur et écrit le maillage courant au format STL binaire (millimètres, normales recalculées). Le bouton est actif seulement si un maillage a été importé.
+    .exemple = Après un import STL, cliquez et choisissez un emplacement : le fichier STL y est écrit, lisible par n'importe quel visualiseur.
 
 aide-top-recalculer =
     .titre = Recalculer tout
@@ -115,18 +142,58 @@ aide-top-recalculer =
 
 aide-top-enregistrer =
     .titre = Enregistrer
-    .description = Enregistre le projet dans le fichier de démonstration du répertoire courant, au format conteneur OmniFab (ZIP : manifeste, journal d'événements et blobs de géométrie). Les actions annulées sont abandonnées.
-    .exemple = Cliquez : le fichier demo-jalon0.omnifab apparaît dans le répertoire courant, prêt à être rouvert par « Ouvrir ».
+    .description = Enregistre le projet dans son fichier courant au format conteneur OmniFab (ZIP : manifeste, journal d'événements et blobs de géométrie). Sans fichier courant, « Enregistrer » ouvre le sélecteur de « Enregistrer sous… », qui propose le dossier de la bibliothèque. Les actions annulées sont abandonnées.
+    .exemple = Après un premier « Enregistrer sous… » dans la bibliothèque, « Enregistrer » réécrit directement ce fichier ; il apparaît dans la liste de l'écran d'accueil.
+
+aide-top-enregistrer-sous =
+    .titre = Enregistrer sous…
+    .description = Enregistre le projet dans un fichier .omnifab choisi dans le sélecteur natif : le dossier de la bibliothèque est proposé par défaut, et le fichier devient le projet courant — « Enregistrer » écrira dedans ensuite.
+    .exemple = Enregistrez sous « caisse.omnifab » : le fichier apparaît dans la bibliothèque de l'écran d'accueil, avec sa date et sa taille.
 
 aide-top-ouvrir =
     .titre = Ouvrir
-    .description = Ouvre le projet de démonstration du répertoire courant et reconstruit l'état complet par rejeu de son journal (event sourcing) : dimensions, expression, journal et géométrie importée.
-    .exemple = Après « Enregistrer », redémarrez l'application puis cliquez : la largeur, la hauteur et la diagonale reviennent à l'état enregistré.
+    .description = Ouvre le sélecteur natif et recharge un projet .omnifab, où qu'il soit sur le disque : l'état complet se reconstruit par rejeu de son journal (event sourcing) — dimensions, expression, journal et géométrie importée.
+    .exemple = Après « Enregistrer », redémarrez l'application puis ouvrez le fichier : la largeur, la hauteur et la diagonale reviennent à l'état enregistré.
 
 aide-top-nouveau =
     .titre = Nouveau
-    .description = Remet le démonstrateur à l'état initial : nouvelle session, journal vidé, dimensions 800 × 600 mm, expression de diagonale par défaut.
+    .description = Remet le démonstrateur à l'état initial : nouvelle session, journal vidé, dimensions 800 × 600 mm, expression de diagonale par défaut — et retour à l'atelier.
     .exemple = Modifiez des valeurs, importez des tracés, puis cliquez : tout revient à l'état de départ.
+
+aide-top-bibliotheque =
+    .titre = Bibliothèque
+    .description = Retourne à l'écran d'accueil : nouveau projet, ouverture, reprise de la session en cours, et liste des projets du dossier de la bibliothèque. La session en cours reste en mémoire tant qu'aucune autre n'est démarrée.
+    .exemple = Cliquez : l'accueil liste vos projets enregistrés, du plus récent au plus ancien ; « Reprendre la session en cours » ramène à l'atelier sans rien changer.
+
+aide-accueil-titre =
+    .titre = Bibliothèque de projets
+    .description = Écran d'accueil du démonstrateur (ADR-0014) : la bibliothèque liste les fichiers .omnifab du dossier OmniFab/Projets de votre dossier personnel — visible et manipulable à la main.
+    .exemple = Enregistrez un projet avec « Enregistrer sous… », puis rouvrez l'application : le fichier apparaît ici avec sa date et sa taille.
+
+aide-accueil-nouveau =
+    .titre = Nouveau projet
+    .description = Démarre une session vierge : journal vidé, dimensions 800 × 600 mm, expression de diagonale par défaut, aucun fichier courant. La session précédente est remplacée — pensez à enregistrer avant.
+    .exemple = Cliquez depuis l'accueil : l'atelier s'ouvre sur le rectangle de démonstration initial.
+
+aide-accueil-ouvrir =
+    .titre = Ouvrir un projet…
+    .description = Ouvre le sélecteur natif de fichiers et charge un projet .omnifab, où qu'il soit sur le disque. L'état se reconstruit intégralement par rejeu du journal.
+    .exemple = Cliquez et choisissez un projet enregistré ailleurs que dans la bibliothèque : il s'ouvre dans l'atelier et devient le projet courant.
+
+aide-accueil-reprendre =
+    .titre = Reprendre la session en cours
+    .description = Retourne à l'atelier sans rien changer : la session en mémoire (celle d'avant l'ouverture de l'accueil) est conservée tant qu'aucun nouveau projet n'est démarré.
+    .exemple = Cliquez « Bibliothèque » en pleine séance de travail, puis « Reprendre » : vous retrouvez l'atelier exactement comme vous l'avez quitté.
+
+aide-accueil-liste =
+    .titre = Projets du dossier
+    .description = Liste des fichiers .omnifab du dossier de la bibliothèque, du plus récemment modifié au plus ancien, avec l'âge et la taille de chaque fichier. Un clic sur « Ouvrir » charge le projet.
+    .exemple = Enregistrez deux projets : le dernier enregistré apparaît en tête de liste.
+
+aide-accueil-projet =
+    .titre = Projet de la bibliothèque
+    .description = Un projet enregistré dans le dossier de la bibliothèque : son nom, son âge et sa taille sont lus depuis le disque. « Ouvrir » le charge et en fait le projet courant.
+    .exemple = Cliquez « Ouvrir » sur le projet le plus récent : l'atelier s'ouvre avec son état complet, prêt à être modifié.
 
 aide-params-titre =
     .titre = Paramètres
@@ -155,10 +222,10 @@ aide-journal-titre =
 
 aide-viewport-titre =
     .titre = Viewport
-    .description = Zone d'affichage : le rectangle de démonstration aux dimensions saisies, avec par-dessus les tracés importés (SVG/DXF) en jaune. Les messages d'erreur et de confirmation s'affichent ici ; le maillage STL attend le rendu 3D du jalon 2.
-    .exemple = Importez demo-import.svg : les tracés se dessinent en jaune par-dessus le rectangle, avec leurs compteurs dessous ; une expression invalide affiche une erreur en rouge sans écrire au journal.
+    .description = Zone d'affichage : le rectangle de démonstration aux dimensions saisies, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan — même mise à l'échelle pour les deux. Les messages d'erreur et de confirmation s'affichent ici.
+    .exemple = Importez un SVG puis un petit STL : le triangle jaune et le wireframe cyan se dessinent ensemble au-dessus du rectangle, avec leurs compteurs dessous.
 
 aide-geom-compteur =
     .titre = Compteur de géométrie importée
-    .description = Compteurs de la géométrie courante : tracés et sommets pour le vectoriel (SVG/DXF), triangles pour le maillage STL. Les tracés sont dessinés en jaune dans le viewport ; le maillage attend le rendu 3D du jalon 2.
+    .description = Compteurs de la géométrie courante : tracés et sommets pour le vectoriel (SVG/DXF), triangles pour le maillage STL. Au-delà du plafond d'affichage du wireframe, seule la boîte englobante du maillage est dessinée — le maillage reste importé et compté.
     .exemple = Importez un SVG de deux rectangles : la ligne indique 2 tracés · 8 sommets importés.
