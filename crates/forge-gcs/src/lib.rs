@@ -233,26 +233,14 @@ impl Diagnostic {
 /// c'est la garantie « wasm-friendly » du projet, dès le spike.
 pub trait Solveur2D {
     /// Ajoute un point au croquis (coordonnées en millimètres).
-    fn ajouter_point(
-        &mut self,
-        x: Length,
-        y: Length,
-    ) -> Result<IdPoint, GcsError>;
+    fn ajouter_point(&mut self, x: Length, y: Length) -> Result<IdPoint, GcsError>;
 
     /// Ajoute une ligne entre deux points existants : les extrémités
     /// sont **partagées** (déplacer un point déplace l'extrémité).
-    fn ajouter_ligne(
-        &mut self,
-        p1: IdPoint,
-        p2: IdPoint,
-    ) -> Result<IdLigne, GcsError>;
+    fn ajouter_ligne(&mut self, p1: IdPoint, p2: IdPoint) -> Result<IdLigne, GcsError>;
 
     /// Ajoute un cercle par centre et rayon.
-    fn ajouter_cercle(
-        &mut self,
-        centre: IdPoint,
-        rayon: Length,
-    ) -> Result<IdCercle, GcsError>;
+    fn ajouter_cercle(&mut self, centre: IdPoint, rayon: Length) -> Result<IdCercle, GcsError>;
 
     /// Ajoute un arc par centre, extrémités, rayon et angles aux
     /// extrémités (radians).
@@ -271,29 +259,17 @@ pub trait Solveur2D {
     fn fixer_point(&mut self, point: IdPoint) -> Result<(), GcsError>;
 
     /// Ajoute une contrainte typée ; renvoie son tag.
-    fn ajouter_contrainte(
-        &mut self,
-        contrainte: Contrainte,
-    ) -> Result<TagContrainte, GcsError>;
+    fn ajouter_contrainte(&mut self, contrainte: Contrainte) -> Result<TagContrainte, GcsError>;
 
     /// Résout le croquis et applique la solution aux positions.
     /// Échec : [`GcsError::ResolutionEchouee`] (croquis conflictuel),
     /// [`GcsError::NonReproductible`] si l'arène a débordé.
-    fn resoudre(
-        &mut self,
-        algorithme: Algorithme,
-    ) -> Result<StatutResolution, GcsError>;
+    fn resoudre(&mut self, algorithme: Algorithme) -> Result<StatutResolution, GcsError>;
 
     /// Position courante d'un point (en millimètres).
-    fn position_point(
-        &self,
-        point: IdPoint,
-    ) -> Result<(Length, Length), GcsError>;
+    fn position_point(&self, point: IdPoint) -> Result<(Length, Length), GcsError>;
 
     /// Analyse le croquis : degrés de liberté, conflits, redondances,
     /// reproductibilité.
-    fn diagnostic(
-        &mut self,
-        algorithme: Algorithme,
-    ) -> Result<Diagnostic, GcsError>;
+    fn diagnostic(&mut self, algorithme: Algorithme) -> Result<Diagnostic, GcsError>;
 }

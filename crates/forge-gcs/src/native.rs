@@ -7,8 +7,8 @@
 //! (cf. `Contrainte`) : c'est ce que pilotera forge-values en phase E.
 
 use crate::{
-    Algorithme, Contrainte, Diagnostic, GcsError, IdArc, IdCercle, IdLigne,
-    IdPoint, Solveur2D, StatutResolution, TagContrainte,
+    Algorithme, Contrainte, Diagnostic, GcsError, IdArc, IdCercle, IdLigne, IdPoint, Solveur2D,
+    StatutResolution, TagContrainte,
 };
 use forge_gcs_sys as sys;
 use forge_units::{Angle, Length};
@@ -38,9 +38,7 @@ impl Systeme2D {
     /// Crée un paramètre fixe (valeur de cote) et renvoie son
     /// identifiant ABI. Usage interne du wrapper.
     fn param_valeur(&mut self, valeur: f64) -> Result<i32, GcsError> {
-        let code = unsafe {
-            sys::gcs_ajouter_parametre(self.systeme, valeur, 1)
-        };
+        let code = unsafe { sys::gcs_ajouter_parametre(self.systeme, valeur, 1) };
         if code < 0 {
             return Err(Self::traduire(code, "gcs_ajouter_parametre"));
         }
@@ -76,45 +74,26 @@ impl Drop for Systeme2D {
 }
 
 impl Solveur2D for Systeme2D {
-    fn ajouter_point(
-        &mut self,
-        x: Length,
-        y: Length,
-    ) -> Result<IdPoint, GcsError> {
-        let code = unsafe {
-            sys::gcs_ajouter_point(
-                self.systeme,
-                x.millimeters(),
-                y.millimeters(),
-            )
-        };
+    fn ajouter_point(&mut self, x: Length, y: Length) -> Result<IdPoint, GcsError> {
+        let code =
+            unsafe { sys::gcs_ajouter_point(self.systeme, x.millimeters(), y.millimeters()) };
         if code < 0 {
             return Err(Self::traduire(code, "gcs_ajouter_point"));
         }
         Ok(IdPoint(code))
     }
 
-    fn ajouter_ligne(
-        &mut self,
-        p1: IdPoint,
-        p2: IdPoint,
-    ) -> Result<IdLigne, GcsError> {
-        let code =
-            unsafe { sys::gcs_ajouter_ligne(self.systeme, p1.0, p2.0) };
+    fn ajouter_ligne(&mut self, p1: IdPoint, p2: IdPoint) -> Result<IdLigne, GcsError> {
+        let code = unsafe { sys::gcs_ajouter_ligne(self.systeme, p1.0, p2.0) };
         if code < 0 {
             return Err(Self::traduire(code, "gcs_ajouter_ligne"));
         }
         Ok(IdLigne(code))
     }
 
-    fn ajouter_cercle(
-        &mut self,
-        centre: IdPoint,
-        rayon: Length,
-    ) -> Result<IdCercle, GcsError> {
-        let code = unsafe {
-            sys::gcs_ajouter_cercle(self.systeme, centre.0, rayon.millimeters())
-        };
+    fn ajouter_cercle(&mut self, centre: IdPoint, rayon: Length) -> Result<IdCercle, GcsError> {
+        let code =
+            unsafe { sys::gcs_ajouter_cercle(self.systeme, centre.0, rayon.millimeters()) };
         if code < 0 {
             return Err(Self::traduire(code, "gcs_ajouter_cercle"));
         }
@@ -155,44 +134,24 @@ impl Solveur2D for Systeme2D {
         Ok(())
     }
 
-    fn ajouter_contrainte(
-        &mut self,
-        contrainte: Contrainte,
-    ) -> Result<TagContrainte, GcsError> {
+    fn ajouter_contrainte(&mut self, contrainte: Contrainte) -> Result<TagContrainte, GcsError> {
         let (code, contexte) = match contrainte {
             Contrainte::Coincidence { p1, p2 } => (
-                unsafe {
-                    sys::gcs_contrainte_coincidence(
-                        self.systeme,
-                        p1.0,
-                        p2.0,
-                    )
-                },
+                unsafe { sys::gcs_contrainte_coincidence(self.systeme, p1.0, p2.0) },
                 "gcs_contrainte_coincidence",
             ),
             Contrainte::Horizontale { ligne } => (
-                unsafe {
-                    sys::gcs_contrainte_horizontale(self.systeme, ligne.0)
-                },
+                unsafe { sys::gcs_contrainte_horizontale(self.systeme, ligne.0) },
                 "gcs_contrainte_horizontale",
             ),
             Contrainte::Verticale { ligne } => (
-                unsafe {
-                    sys::gcs_contrainte_verticale(self.systeme, ligne.0)
-                },
+                unsafe { sys::gcs_contrainte_verticale(self.systeme, ligne.0) },
                 "gcs_contrainte_verticale",
             ),
             Contrainte::Distance { p1, p2, valeur } => {
                 let v = self.param_valeur(valeur.millimeters())?;
                 (
-                    unsafe {
-                        sys::gcs_contrainte_distance(
-                            self.systeme,
-                            p1.0,
-                            p2.0,
-                            v,
-                        )
-                    },
+                    unsafe { sys::gcs_contrainte_distance(self.systeme, p1.0, p2.0, v) },
                     "gcs_contrainte_distance",
                 )
             }
@@ -203,78 +162,37 @@ impl Solveur2D for Systeme2D {
             } => {
                 let v = self.param_valeur(valeur.radians())?;
                 (
-                    unsafe {
-                        sys::gcs_contrainte_angle_l2l(
-                            self.systeme,
-                            ligne1.0,
-                            ligne2.0,
-                            v,
-                        )
-                    },
+                    unsafe { sys::gcs_contrainte_angle_l2l(self.systeme, ligne1.0, ligne2.0, v) },
                     "gcs_contrainte_angle_l2l",
                 )
             }
             Contrainte::MemeLongueur { ligne1, ligne2 } => (
-                unsafe {
-                    sys::gcs_contrainte_meme_longueur(
-                        self.systeme,
-                        ligne1.0,
-                        ligne2.0,
-                    )
-                },
+                unsafe { sys::gcs_contrainte_meme_longueur(self.systeme, ligne1.0, ligne2.0) },
                 "gcs_contrainte_meme_longueur",
             ),
             Contrainte::PointSurLigne { point, ligne } => (
-                unsafe {
-                    sys::gcs_contrainte_point_sur_ligne(
-                        self.systeme,
-                        point.0,
-                        ligne.0,
-                    )
-                },
+                unsafe { sys::gcs_contrainte_point_sur_ligne(self.systeme, point.0, ligne.0) },
                 "gcs_contrainte_point_sur_ligne",
             ),
             Contrainte::Paralleles { ligne1, ligne2 } => (
-                unsafe {
-                    sys::gcs_contrainte_paralleles(
-                        self.systeme,
-                        ligne1.0,
-                        ligne2.0,
-                    )
-                },
+                unsafe { sys::gcs_contrainte_paralleles(self.systeme, ligne1.0, ligne2.0) },
                 "gcs_contrainte_paralleles",
             ),
             Contrainte::Perpendiculaires { ligne1, ligne2 } => (
                 unsafe {
-                    sys::gcs_contrainte_perpendiculaires(
-                        self.systeme,
-                        ligne1.0,
-                        ligne2.0,
-                    )
+                    sys::gcs_contrainte_perpendiculaires(self.systeme, ligne1.0, ligne2.0)
                 },
                 "gcs_contrainte_perpendiculaires",
             ),
             Contrainte::RayonCercle { cercle, valeur } => {
                 let v = self.param_valeur(valeur.millimeters())?;
                 (
-                    unsafe {
-                        sys::gcs_contrainte_rayon_cercle(
-                            self.systeme,
-                            cercle.0,
-                            v,
-                        )
-                    },
+                    unsafe { sys::gcs_contrainte_rayon_cercle(self.systeme, cercle.0, v) },
                     "gcs_contrainte_rayon_cercle",
                 )
             }
             Contrainte::PointSurCercle { point, cercle } => (
-                unsafe {
-                    sys::gcs_contrainte_point_sur_cercle(
-                        self.systeme,
-                        point.0,
-                        cercle.0,
-                    )
-                },
+                unsafe { sys::gcs_contrainte_point_sur_cercle(self.systeme, point.0, cercle.0) },
                 "gcs_contrainte_point_sur_cercle",
             ),
         };
@@ -284,12 +202,8 @@ impl Solveur2D for Systeme2D {
         Ok(TagContrainte(code))
     }
 
-    fn resoudre(
-        &mut self,
-        algorithme: Algorithme,
-    ) -> Result<StatutResolution, GcsError> {
-        let code =
-            unsafe { sys::gcs_resoudre(self.systeme, algorithme.code_abi()) };
+    fn resoudre(&mut self, algorithme: Algorithme) -> Result<StatutResolution, GcsError> {
+        let code = unsafe { sys::gcs_resoudre(self.systeme, algorithme.code_abi()) };
         let statut = match code {
             x if x == sys::GCS_STATUT_SUCCES => StatutResolution::Succes,
             x if x == sys::GCS_STATUT_CONVERGE => StatutResolution::Converge,
@@ -303,39 +217,28 @@ impl Solveur2D for Systeme2D {
         let ordonnes = unsafe { sys::gcs_params_ordonnes(self.systeme) };
         if ordonnes == 0 {
             return Err(GcsError::NonReproductible {
-                contexte: "arène de paramètres débordée : adresses non \
-                           croissantes"
-                    .to_string(),
+                contexte: "arène de paramètres débordée : adresses non croissantes".to_string(),
             });
         }
         Ok(statut)
     }
 
-    fn position_point(
-        &self,
-        point: IdPoint,
-    ) -> Result<(Length, Length), GcsError> {
+    fn position_point(&self, point: IdPoint) -> Result<(Length, Length), GcsError> {
         let mut x: f64 = 0.0;
         let mut y: f64 = 0.0;
-        let code = unsafe {
-            sys::gcs_lire_point(self.systeme, point.0, &mut x, &mut y)
-        };
+        let code = unsafe { sys::gcs_lire_point(self.systeme, point.0, &mut x, &mut y) };
         if code != sys::GCS_OK {
             return Err(Self::traduire(code, "gcs_lire_point"));
         }
         if !x.is_finite() || !y.is_finite() {
             return Err(GcsError::AbiInvalide {
-                contexte: "position de point non finie après résolution"
-                    .to_string(),
+                contexte: "position de point non finie après résolution".to_string(),
             });
         }
         Ok((Length::from_millimeters(x), Length::from_millimeters(y)))
     }
 
-    fn diagnostic(
-        &mut self,
-        algorithme: Algorithme,
-    ) -> Result<Diagnostic, GcsError> {
+    fn diagnostic(&mut self, algorithme: Algorithme) -> Result<Diagnostic, GcsError> {
         let mut brut = sys::GcsDiagnostic {
             dof: 0,
             params_ordonnes: 0,
@@ -346,13 +249,8 @@ impl Solveur2D for Systeme2D {
             partiellement_redondantes: [0; sys::GCS_MAX_TAGS as usize],
             partiellement_redondantes_nombre: 0,
         };
-        let code = unsafe {
-            sys::gcs_diagnostiquer(
-                self.systeme,
-                algorithme.code_abi(),
-                &mut brut,
-            )
-        };
+        let code =
+            unsafe { sys::gcs_diagnostiquer(self.systeme, algorithme.code_abi(), &mut brut) };
         if code != sys::GCS_OK {
             return Err(Self::traduire(code, "gcs_diagnostiquer"));
         }
@@ -366,10 +264,7 @@ impl Solveur2D for Systeme2D {
         Ok(Diagnostic {
             dof: brut.dof.max(0) as usize,
             reproductible: brut.params_ordonnes != 0,
-            conflictuelles: extraire(
-                &brut.conflictuelles,
-                brut.conflictuelles_nombre,
-            ),
+            conflictuelles: extraire(&brut.conflictuelles, brut.conflictuelles_nombre),
             redondantes: extraire(&brut.redondantes, brut.redondantes_nombre),
             partiellement_redondantes: extraire(
                 &brut.partiellement_redondantes,

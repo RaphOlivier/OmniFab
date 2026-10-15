@@ -20,9 +20,8 @@ use std::env;
 use std::path::PathBuf;
 
 fn main() {
-    let manifest = PathBuf::from(
-        env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR requis"),
-    );
+    let manifest =
+        PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR requis"));
     let racine = manifest
         .parent()
         .and_then(|c| c.parent())
@@ -50,8 +49,8 @@ fn main() {
     config.define("CMAKE_BUILD_TYPE", "Release");
     // Windows + vcpkg : toolchain et triplet depuis l'environnement CI.
     if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
-        let triplet = env::var("VCPKG_TARGET_TRIPLET")
-            .unwrap_or_else(|_| "x64-windows".to_string());
+        let triplet =
+            env::var("VCPKG_TARGET_TRIPLET").unwrap_or_else(|_| "x64-windows".to_string());
         config.define("VCPKG_TARGET_TRIPLET", &triplet);
         let toolchain = PathBuf::from(&racine_vcpkg)
             .join("scripts")
@@ -63,7 +62,10 @@ fn main() {
     }
     let dest = config.build();
 
-    println!("cargo:rustc-link-search=native={}", dest.join("lib").display());
+    println!(
+        "cargo:rustc-link-search=native={}",
+        dest.join("lib").display()
+    );
     println!("cargo:rustc-link-lib=static=gcs_shim");
     println!("cargo:rustc-link-lib=static=planegcs");
 
@@ -71,8 +73,8 @@ fn main() {
     // finale doit la relier explicitement (Eigen est header-only).
     let mut fmt_lie = false;
     if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
-        let triplet = env::var("VCPKG_TARGET_TRIPLET")
-            .unwrap_or_else(|_| "x64-windows".to_string());
+        let triplet =
+            env::var("VCPKG_TARGET_TRIPLET").unwrap_or_else(|_| "x64-windows".to_string());
         let dir = PathBuf::from(&racine_vcpkg)
             .join("installed")
             .join(&triplet)

@@ -108,7 +108,7 @@ jobs:
               # vcpkg est préinstallé sur les runners Windows ; triplet
               # statique/MD : liaison statique de planegcs sans DLL à copier.
               "${VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install \
-                --triplet x64-windows-static-md boost-headers eigen3 fmt
+                --triplet x64-windows-static-md boost-graph eigen3 fmt
               echo "VCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
               choco install llvm -y --no-progress
               echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" >> "$GITHUB_ENV"

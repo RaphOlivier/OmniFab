@@ -6,9 +6,7 @@
 //! résolution exacte à la tolérance du projet (1e-6 mm) sur la matrice
 //! CI multi-OS, et reproductibilité des positions (FreeCAD #33399).
 
-use forge_gcs::{
-    Algorithme, Contrainte, GcsError, IdPoint, Solveur2D, Systeme2D,
-};
+use forge_gcs::{Algorithme, Contrainte, GcsError, IdPoint, Solveur2D, Systeme2D};
 use forge_units::{Length, TOLERANCE_MM};
 
 /// Construit le croquis de référence ; renvoie (p1, p2, p3).
@@ -19,10 +17,7 @@ use forge_units::{Length, TOLERANCE_MM};
 fn construire_triangle(
     solveur: &mut impl Solveur2D,
 ) -> Result<(IdPoint, IdPoint, IdPoint), GcsError> {
-    let p1 = solveur.ajouter_point(
-        Length::from_millimeters(0.0),
-        Length::from_millimeters(0.0),
-    )?;
+    let p1 = solveur.ajouter_point(Length::from_millimeters(0.0), Length::from_millimeters(0.0))?;
     // Positions initiales proches de la solution attendue : le solveur
     // converge vers (20, 0) et (20, 15).
     let p2 = solveur.ajouter_point(
