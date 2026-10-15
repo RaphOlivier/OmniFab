@@ -4,7 +4,7 @@
 //! compilation (`include_str!`) : aucune lecture disque à l'exécution,
 //! et la CI vérifie sa complétude (clés et pages d'aide, cf. les tests).
 
-use forge_i18n::Catalogue;
+pub use forge_i18n::Catalogue;
 
 /// Source FTL française — langue de référence du projet (ADR-0010).
 const FR: &str = include_str!("../locales/fr/main.ftl");
