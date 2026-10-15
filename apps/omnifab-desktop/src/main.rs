@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: bc2bdd7f2fcf30419814e1afe0e46302d5898137)//! # omnifab-desktop — démonstrateur des jalons 1 et 2
+//! # omnifab-desktop — démonstrateur des jalons 1 et 2
 //!
 //! Conforme à `docs/architecture.md` et aux ADR-0011/0014 : la
 //! fenêtre egui met en scène le noyau complet, branché de bout en
