@@ -19,8 +19,8 @@
 //! unité de fichier = 1 mm (SVG et DXF) ; le STL est sans unité, lu
 //! et écrit en millimètres.
 
-mod error;
 pub mod dxf;
+mod error;
 pub mod stl;
 pub mod svg;
 

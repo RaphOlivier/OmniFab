@@ -27,7 +27,11 @@ fn toutes_les_variantes() -> Vec<IoError> {
         IoError::InvalidSvg {
             raison: "test".to_string(),
         },
-        IoError::TooManyPaths { found: 3, max: 1, unite: "tracés" },
+        IoError::TooManyPaths {
+            found: 3,
+            max: 1,
+            unite: "tracés",
+        },
         IoError::InvalidDxf {
             raison: "test".to_string(),
         },

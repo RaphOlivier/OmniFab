@@ -40,7 +40,10 @@ fn aplatit_les_courbes() {
 
 #[test]
 fn budget_de_traces_depasse() {
-    let budgets = SvgBudgets { max_paths: 2, ..SvgBudgets::default() };
+    let budgets = SvgBudgets {
+        max_paths: 2,
+        ..SvgBudgets::default()
+    };
     let source = b"<svg><path d=\"M 0 0 L 1 0 M 2 0 L 3 0 M 4 0 L 5 0\"/></svg>";
     let erreur = svg::import(source, &budgets).expect_err("troisième tracé refusé");
     assert_eq!(erreur.code(), "OF-IO-0008");
@@ -48,7 +51,10 @@ fn budget_de_traces_depasse() {
 
 #[test]
 fn entree_trop_volumineuse() {
-    let budgets = SvgBudgets { max_bytes: 8, ..SvgBudgets::default() };
+    let budgets = SvgBudgets {
+        max_bytes: 8,
+        ..SvgBudgets::default()
+    };
     let erreur = svg::import(b"<svg></svg>", &budgets).expect_err("budget d'octets dépassé");
     assert_eq!(erreur.code(), "OF-IO-0001");
 }

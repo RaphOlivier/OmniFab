@@ -11,7 +11,8 @@ use forge_units::Length;
 const LIGNE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n10.0\n20\n20.0\n11\n30.0\n21\n40.0\n0\nENDSEC\n0\nEOF\n";
 
 /// SECTION ENTITIES contenant un `CIRCLE` de centre (1, 2), rayon 1.
-const CERCLE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\n0\n10\n1.0\n20\n2.0\n40\n1.0\n0\nENDSEC\n0\nEOF\n";
+const CERCLE: &[u8] =
+    b"0\nSECTION\n2\nENTITIES\n0\nCIRCLE\n8\n0\n10\n1.0\n20\n2.0\n40\n1.0\n0\nENDSEC\n0\nEOF\n";
 
 /// SECTION ENTITIES contenant un `ARC` de centre (0, 0), rayon 1,
 /// de 0 à 90 degrés.
@@ -82,7 +83,10 @@ fn dxf_invalide() {
 
 #[test]
 fn budget_de_sommets_depasse() {
-    let budgets = DxfBudgets { max_vertices: 1, ..DxfBudgets::default() };
+    let budgets = DxfBudgets {
+        max_vertices: 1,
+        ..DxfBudgets::default()
+    };
     let erreur = dxf::import(LIGNE, &budgets).expect_err("deuxième sommet refusé");
     assert_eq!(erreur.code(), "OF-IO-0008");
 }

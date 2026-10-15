@@ -57,10 +57,8 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
         });
     }
     let options = usvg::Options::default();
-    let arbre = usvg::Tree::from_data(bytes, &options).map_err(|erreur| {
-        IoError::InvalidSvg {
-            raison: erreur.to_string(),
-        }
+    let arbre = usvg::Tree::from_data(bytes, &options).map_err(|erreur| IoError::InvalidSvg {
+        raison: erreur.to_string(),
     })?;
     let mut traces: Vec<Path2> = Vec::new();
     let mut etat = Etat {
@@ -296,5 +294,8 @@ fn aplatis_cubique(
 /// Applique une transformation à un point (espace SVG vers espace
 /// global, en `f64`).
 fn applique(t: &usvg::Transform, x: f32, y: f32) -> (f64, f64) {
-    ((t.sx * x + t.kx * y + t.tx) as f64, (t.ky * x + t.sy * y + t.ty) as f64)
+    (
+        (t.sx * x + t.kx * y + t.tx) as f64,
+        (t.ky * x + t.sy * y + t.ty) as f64,
+    )
 }

@@ -60,10 +60,8 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
         });
     }
     let mut curseur = std::io::Cursor::new(bytes);
-    let dessin = dxf::Drawing::load(&mut curseur).map_err(|erreur| {
-        IoError::InvalidDxf {
-            raison: erreur.to_string(),
-        }
+    let dessin = dxf::Drawing::load(&mut curseur).map_err(|erreur| IoError::InvalidDxf {
+        raison: erreur.to_string(),
     })?;
     let mut traces: Vec<Path2> = Vec::new();
     let mut total = 0usize;
@@ -179,11 +177,7 @@ fn cercle_points(
 /// Discrétise un arc en polyligne ouverte à [`SEGMENTS_ARC`]
 /// segments, de l'angle de départ à l'angle de fin (degrés, sens
 /// trigonométrique).
-fn arc_points(
-    arc: &Arc,
-    total: &mut usize,
-    budgets: &DxfBudgets,
-) -> Result<Vec<Point2>, IoError> {
+fn arc_points(arc: &Arc, total: &mut usize, budgets: &DxfBudgets) -> Result<Vec<Point2>, IoError> {
     let mut span = arc.end_angle - arc.start_angle;
     if span <= 0.0 {
         span += 360.0;
