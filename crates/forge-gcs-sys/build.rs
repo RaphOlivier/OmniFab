@@ -95,6 +95,19 @@ fn main() {
         println!("cargo:rustc-link-lib=dylib=fmt");
     }
 
+    // 3) Runtime C++ : planegcs et le shim utilisent exceptions,
+    // allocation et threads (GCS.cpp embarque un std::async) — le
+    // linker Rust ne fournit pas libstdc++/libc++ de lui-même.
+    // MSVC : rien à émettre, les objets portent leurs directives
+    // /DEFAULTLIB (msvcprt) que link.exe suit automatiquement.
+    let cible = env::var("TARGET").unwrap_or_default();
+    if cible.contains("darwin") {
+        // libc++.dylib ré-exporte libc++abi (__cxa_*) sur macOS.
+        println!("cargo:rustc-link-lib=dylib=c++");
+    } else if !cible.contains("msvc") {
+        println!("cargo:rustc-link-lib=dylib=stdc++");
+    }
+
     println!("cargo:rerun-if-changed={}", entete.display());
     println!(
         "cargo:rerun-if-changed={}",
