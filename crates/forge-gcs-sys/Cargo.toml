@@ -1,0 +1,16 @@
+[package]
+name = "forge-gcs-sys"
+description = "Liaisons brutes vers le shim ABI C de planegcs : build CMake + bindgen, liaison statique — ADR-0013."
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+links = "gcs_shim"
+
+# L'arène et les conventions du vendoring sont documentées dans
+# third_party/planegcs-MANIFEST.md ; les erreurs typées vivent dans
+# forge-gcs (cette crate n'expose volontairement aucune erreur d'exécution).
+
+[build-dependencies]
+bindgen = "0.72"
+cmake = "0.1"

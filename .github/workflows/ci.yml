@@ -17,10 +17,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Dependances natives (planegcs + bindgen)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libeigen3-dev libfmt-dev libboost-dev libclang-dev
       - name: Verifications
         id: verifs
         run: |
@@ -78,8 +85,35 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Dependances natives (planegcs + bindgen, ${{ matrix.os }})
+        shell: bash
+        run: |
+          case "${{ matrix.os }}" in
+            ubuntu-*)
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends \
+                libeigen3-dev libfmt-dev libboost-dev libclang-dev
+              ;;
+            macos-*)
+              brew install eigen fmt boost llvm
+              # eigen est keg-only : on le rend découvrable par CMake.
+              echo "CMAKE_PREFIX_PATH=$(brew --prefix eigen)" >> "$GITHUB_ENV"
+              echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
+              ;;
+            windows-*)
+              # vcpkg est préinstallé sur les runners Windows ; triplet
+              # statique/MD : liaison statique de planegcs sans DLL à copier.
+              "${VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install \
+                --triplet x64-windows-static-md boost-headers eigen3 fmt
+              echo "VCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
+              choco install llvm -y --no-progress
+              echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" >> "$GITHUB_ENV"
+              ;;
+          esac
       - name: Compilation
         id: compil
         shell: bash
@@ -124,7 +158,12 @@ jobs:
       - name: Verification croisee
         id: cross
         run: |
-          if cargo check --workspace --locked --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
+          # forge-gcs et forge-gcs-sys sont exclus de la vérification
+          # croisée : planegcs est du C++ natif, le cross-build CMake
+          # (Eigen3/fmt/MSVC-g++) est hors du périmètre du spike
+          # (ADR-0013). Les crates Rust concernées restent vérifiées
+          # sur les trois OS du job build.
+          if cargo check --workspace --locked --exclude forge-gcs --exclude forge-gcs-sys --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
             echo "fail=0" >> "$GITHUB_OUTPUT"
           else
             echo "fail=1" >> "$GITHUB_OUTPUT"

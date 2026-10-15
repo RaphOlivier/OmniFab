@@ -1,0 +1,24 @@
+[package]
+name = "forge-gcs"
+description = "Solveur de contraintes 2D : wrapper sûr sur planegcs via FFI, trait Solveur2D (native/wasm) — ADR-0013."
+license = "LGPL-2.1-or-later"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+# LGPL-2.1-or-later : héritage direct de planegcs (ADR-0013). Les crates
+# MPL-2.0 du dépôt ne dépendent pas de forge-gcs ; forge-session (phase D)
+# sera la première consommatrice. Cf. LICENSE de la crate.
+
+[dependencies]
+forge-gcs-sys = { path = "../forge-gcs-sys", optional = true }
+forge-units = { path = "../forge-units" }
+thiserror.workspace = true
+
+[features]
+default = ["native"]
+# Implémentation native du trait Solveur2D (planegcs via le shim ABI C).
+native = ["dep:forge-gcs-sys"]
+# Implémentation wasm du même trait : jalon 9 (port Emscripten prouvé,
+# cf. ADR-0013 — décisions futures suspendues).
+wasm = []
