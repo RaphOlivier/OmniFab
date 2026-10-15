@@ -278,12 +278,10 @@ impl DemoApp {
             Ok(value) => {
                 ui.label(self.texte_avec(
                     "params-diagonale",
-                    &[
-                        (
-                            "valeur",
-                            Argument::from(Length::from_millimeters(value).to_string()),
-                        ),
-                    ],
+                    &[(
+                        "valeur",
+                        Argument::from(Length::from_millimeters(value).to_string()),
+                    )],
                 ));
             }
             Err(error) => {
