@@ -151,16 +151,23 @@ fn deux_croquis_identiques_donnent_positions_identiques() -> Result<(), GcsError
     Ok(())
 }
 
-/// Garde anti-valeurs non finies : les newtypes de forge-units
-/// refusent NaN/inf **avant** l'ABI C (convention « jamais de f64 nu ») ;
-/// le shim ABI garde sa propre vérification en défense en profondeur
-/// (OF-GCS-0004 si jamais un chemin futur la contourne).
+/// Garde anti-valeurs non finies (défense en profondeur) : les
+/// newtypes de forge-units ne valident pas la finitude (les
+/// constructeurs acceptent NaN/inf), c'est le shim ABI qui refuse
+/// toute valeur non finie — l'API Rust la traduit en erreur typée
+/// OF-GCS-0004, jamais une valeur corrompue n'entre dans le solveur.
 #[test]
-#[should_panic(expected = "fini")]
 fn valeur_non_finie_est_refusee() {
     let mut solveur = Systeme2D::new().expect("systeme creable");
-    let _ = solveur.ajouter_point(
-        Length::from_millimeters(f64::NAN),
-        Length::from_millimeters(0.0),
+    let erreur = solveur
+        .ajouter_point(
+            Length::from_millimeters(f64::NAN),
+            Length::from_millimeters(0.0),
+        )
+        .expect_err("le NaN doit etre refuse avant le solveur");
+    assert_eq!(erreur.code(), "OF-GCS-0004");
+    assert!(
+        erreur.to_string().contains("non finie"),
+        "le contexte doit expliquer le refus : {erreur}"
     );
 }
