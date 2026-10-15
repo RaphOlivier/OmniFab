@@ -75,7 +75,7 @@ pub fn lister(dossier: &Path) -> Vec<EntreeProjet> {
 /// Tri du plus récent au plus ancien (stable : deux projets modifiés
 /// la même seconde gardent l'ordre du dossier).
 fn trier(projets: &mut [EntreeProjet]) {
-    projets.sort_by(|a, b| b.modifie_le.cmp(&a.modifie_le));
+    projets.sort_by_key(|projet| std::cmp::Reverse(projet.modifie_le));
 }
 
 #[cfg(test)]

@@ -625,7 +625,11 @@ impl DemoApp {
             return;
         };
         let blob = reference.blob.clone();
-        if self.cache_maillage.as_ref().is_some_and(|(nom, _)| *nom == blob) {
+        if self
+            .cache_maillage
+            .as_ref()
+            .is_some_and(|(nom, _)| *nom == blob)
+        {
             return;
         }
         let Some(octets) = self.session.document().blob(&blob) else {
@@ -1217,7 +1221,11 @@ mod tests {
         assert_eq!(app.chemin_projet, Some(chemin.clone()), "chemin mémorisé");
         let mut relue = DemoApp::new(i18n::catalogue());
         relue.ouvrir_projet(&chemin);
-        assert_eq!(relue.chemin_projet, Some(chemin), "chemin repris à l'ouverture");
+        assert_eq!(
+            relue.chemin_projet,
+            Some(chemin),
+            "chemin repris à l'ouverture"
+        );
         assert_eq!(relue.ecran, Ecran::Atelier, "l'atelier s'ouvre");
         let largeur = relue.session.graph_mut().value("width_mm").expect("valeur");
         assert_eq!(largeur, 1234.0, "l'état est rejoué");
