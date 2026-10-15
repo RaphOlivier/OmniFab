@@ -1,0 +1,3 @@
+[submodule "third_party/planegcs"]
+	path = third_party/planegcs
+	url = https://github.com/2wiceUponATime/PlaneGCS
