@@ -12,6 +12,7 @@
 //! erreur typée, levée avant tout traitement ultérieur.
 
 use crate::IoError;
+use dxf::entities::{Arc, Circle, Entity, EntityType, Line};
 use forge_geom::{Path2, Point2};
 use forge_units::Length;
 
@@ -69,31 +70,31 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
     for entite in dessin.entities() {
         let mut points: Vec<Point2> = Vec::new();
         let mut ferme = false;
-        let geometrique = match &entite.entity_type {
-            dxf::EntityType::Line(ligne) => {
+        let geometrique = match &entite.specific {
+            EntityType::Line(ligne) => {
                 points.push(sommet(ligne.p1.x, ligne.p1.y, &mut total, budgets)?);
                 points.push(sommet(ligne.p2.x, ligne.p2.y, &mut total, budgets)?);
                 true
             }
-            dxf::EntityType::LwPolyline(polyligne) => {
+            EntityType::LwPolyline(polyligne) => {
                 for v in &polyligne.vertices {
                     points.push(sommet(v.x, v.y, &mut total, budgets)?);
                 }
                 ferme = polyligne.is_closed();
                 true
             }
-            dxf::EntityType::Polyline(polyligne) => {
+            EntityType::Polyline(polyligne) => {
                 for v in polyligne.vertices() {
                     points.push(sommet(v.location.x, v.location.y, &mut total, budgets)?);
                 }
                 true
             }
-            dxf::EntityType::Circle(cercle) => {
+            EntityType::Circle(cercle) => {
                 points = cercle_points(cercle, &mut total, budgets)?;
                 ferme = true;
                 true
             }
-            dxf::EntityType::Arc(arc) => {
+            EntityType::Arc(arc) => {
                 points = arc_points(arc, &mut total, budgets)?;
                 true
             }
@@ -161,7 +162,7 @@ fn sommet(x: f64, y: f64, total: &mut usize, budgets: &DxfBudgets) -> Result<Poi
 /// Discrétise un cercle en polygone fermé à [`POINTS_CERCLE`]
 /// sommets.
 fn cercle_points(
-    cercle: &dxf::Circle,
+    cercle: &Circle,
     total: &mut usize,
     budgets: &DxfBudgets,
 ) -> Result<Vec<Point2>, IoError> {
@@ -179,7 +180,7 @@ fn cercle_points(
 /// segments, de l'angle de départ à l'angle de fin (degrés, sens
 /// trigonométrique).
 fn arc_points(
-    arc: &dxf::Arc,
+    arc: &Arc,
     total: &mut usize,
     budgets: &DxfBudgets,
 ) -> Result<Vec<Point2>, IoError> {
@@ -210,5 +211,5 @@ fn ajoute_ligne(dessin: &mut dxf::Drawing, debut: &Point2, fin: &Point2) {
         y: fin.y().millimeters(),
         z: 0.0,
     };
-    dessin.add_entity(dxf::Entity::new(dxf::EntityType::Line(dxf::Line::new(p1, p2))));
+    dessin.add_entity(Entity::new(EntityType::Line(Line::new(p1, p2))));
 }

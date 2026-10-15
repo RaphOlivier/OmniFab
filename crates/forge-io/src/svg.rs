@@ -43,19 +43,9 @@ impl Default for SvgBudgets {
     }
 }
 
-/// Transformation identité, point de départ de la composition des
-/// transformations de groupes.
-const IDENTITE: usvg::Transform = usvg::Transform {
-    sx: 1.0,
-    kx: 0.0,
-    ky: 0.0,
-    sy: 1.0,
-    tx: 0.0,
-    ty: 0.0,
-};
-
 /// Importe un SVG en tracés 2D. Convention : une unité SVG = 1 mm ;
-/// les transformations de groupes et de tracés sont composées, les
+/// chaque tracé est collecté avec sa transformation absolue
+/// (usvg compose les transformations des ancêtres et du tracé), les
 /// courbes sont aplaties en polylignes, les nœuds non géométriques
 /// (images, textes) sont ignorés. Les budgets protègent contre les
 /// documents démesurés (ADR-0009).
@@ -78,7 +68,7 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
         sommets: 0,
         budgets,
     };
-    parcourir(arbre.root(), &IDENTITE, &mut traces, &mut etat)?;
+    parcourir(arbre.root(), &mut traces, &mut etat)?;
     Ok(traces)
 }
 
@@ -129,21 +119,20 @@ struct Etat<'a> {
     budgets: &'a SvgBudgets,
 }
 
-/// Parcourt un groupe : compose la transformation parent avec
-/// celle du groupe, puis descend dans les sous-groupes et collecte
-/// les tracés. Les nœuds non géométriques sont ignorés.
+/// Parcourt un groupe : descend dans les sous-groupes et collecte
+/// les tracés, chacun avec sa transformation absolue (ancêtres
+/// compris, fournie par usvg). Les nœuds non géométriques (images,
+/// textes) sont ignorés.
 fn parcourir(
     groupe: &usvg::Group,
-    parent: &usvg::Transform,
     traces: &mut Vec<Path2>,
     etat: &mut Etat,
 ) -> Result<(), IoError> {
-    let composee = compose(parent, &groupe.transform);
     for noeud in groupe.children() {
         match noeud {
-            usvg::Node::Group(sous_groupe) => parcourir(sous_groupe, &composee, traces, etat)?,
+            usvg::Node::Group(sous_groupe) => parcourir(sous_groupe, traces, etat)?,
             usvg::Node::Path(chemin) => {
-                let globale = compose(&composee, &chemin.transform);
+                let globale = chemin.abs_transform();
                 collecte(chemin.data(), &globale, traces, etat)?;
             }
             _ => {}
@@ -302,18 +291,6 @@ fn aplatis_cubique(
         ajoute(x, y, transformation, points, etat)?;
     }
     Ok(())
-}
-
-/// Compose deux transformations (parent appliqué après enfant).
-fn compose(parent: &usvg::Transform, enfant: &usvg::Transform) -> usvg::Transform {
-    usvg::Transform {
-        sx: parent.sx * enfant.sx + parent.kx * enfant.ky,
-        kx: parent.sx * enfant.kx + parent.kx * enfant.sy,
-        ky: parent.ky * enfant.sx + parent.sy * enfant.ky,
-        sy: parent.ky * enfant.kx + parent.sy * enfant.sy,
-        tx: parent.sx * enfant.tx + parent.kx * enfant.ty + parent.tx,
-        ty: parent.ky * enfant.tx + parent.sy * enfant.ty + parent.ty,
-    }
 }
 
 /// Applique une transformation à un point (espace SVG vers espace
