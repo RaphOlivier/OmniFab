@@ -5,6 +5,7 @@ members = [
     "apps/omnifab-desktop",
     "crates/forge-doc",
     "crates/forge-geom",
+    "crates/forge-i18n",
     "crates/forge-io",
     "crates/forge-session",
     "crates/forge-units",

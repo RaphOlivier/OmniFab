@@ -1,0 +1,12 @@
+[package]
+name = "forge-i18n"
+description = "Moteur Fluent embarqué et pages d'aide : catalogue à clés, erreurs typées OF-I18N (ADR-0010)."
+license = "MPL-2.0"
+repository = "https://github.com/RaphOlivier/OmniFab"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+fluent = "0.17.0"
+thiserror = { workspace = true }
+unic-langid = "0.9.6"

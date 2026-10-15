@@ -1313,6 +1313,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-i18n"
+version = "0.1.0"
+dependencies = [
+ "fluent",
+ "thiserror 2.0.21",
+ "unic-langid",
+]
+
+[[package]]
 name = "forge-io"
 version = "0.1.0"
 dependencies = [
@@ -2626,12 +2635,11 @@ name = "omnifab-desktop"
 version = "0.1.0"
 dependencies = [
  "eframe",
- "fluent",
  "forge-doc",
+ "forge-i18n",
  "forge-units",
  "forge-values",
  "serde_json",
- "unic-langid",
 ]
 
 [[package]]

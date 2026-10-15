@@ -15,10 +15,19 @@
 //! - le bouton « Recalculer tout » implémente la commande d'invalidation
 //!   globale requise par l'ADR-0002 (futurement obligatoire avant usinage) ;
 //! - « Enregistrer » / « Ouvrir » font l'aller-retour complet conteneur ZIP
-//!   → rejeu, preuve du verrou nº1 (ADR-0000/0001).
+//!   → rejeu, preuve du verrou nº1 (ADR-0000/0001) ;
+//! - toute l'interface passe par le catalogue Fluent embarqué
+//!   (forge-i18n, ADR-0010) : aucune chaîne d'interface dans le code ;
+//! - chaque widget interactif porte un `help_id` : un clic droit ouvre sa
+//!   page d'aide (convention jalon 1, ADR-0010).
 
+mod aide;
+mod i18n;
+
+use aide::avec_aide;
 use eframe::egui;
 use forge_doc::{Document, Event, NewEvent};
+use forge_i18n::Argument;
 use forge_units::Length;
 use forge_values::ValueGraph;
 
@@ -38,37 +47,70 @@ struct DemoApp {
     error: Option<String>,
     info: Option<String>,
     unknown_types: Vec<String>,
+    i18n: i18n::Catalogue,
+    aide: Option<String>,
 }
 
 impl DemoApp {
-    fn new() -> Self {
+    /// Nouveau démonstrateur, sur le catalogue français embarqué.
+    fn new(i18n: i18n::Catalogue) -> Self {
         let mut app = Self {
             doc: Document::new(),
             graph: ValueGraph::new(),
-            expr_buf: DEFAULT_DIAGONAL_EXPR.to_string(),
+            expr_buf: String::new(),
             error: None,
             info: None,
             unknown_types: Vec::new(),
+            i18n,
+            aide: None,
         };
-        app.record(NewEvent::new(
+        app.reinitialiser();
+        app
+    }
+
+    /// Remet le démonstrateur à l'état initial (bouton « Nouveau ») :
+    /// journal vidé, dimensions et expression par défaut. Le catalogue
+    /// embarqué est conservé.
+    fn reinitialiser(&mut self) {
+        self.doc = Document::new();
+        self.graph = ValueGraph::new();
+        self.expr_buf = DEFAULT_DIAGONAL_EXPR.to_string();
+        self.error = None;
+        self.info = None;
+        self.unknown_types.clear();
+        self.aide = None;
+        self.record(NewEvent::new(
             EVENT_INPUT_SET,
             1,
             "desktop.demo",
             serde_json::json!({"name": "width_mm", "value": 800.0}),
         ));
-        app.record(NewEvent::new(
+        self.record(NewEvent::new(
             EVENT_INPUT_SET,
             1,
             "desktop.demo",
             serde_json::json!({"name": "height_mm", "value": 600.0}),
         ));
-        app.record(NewEvent::new(
+        self.record(NewEvent::new(
             EVENT_EXPRESSION_SET,
             1,
             "desktop.demo",
             serde_json::json!({"name": "diagonal", "expression": DEFAULT_DIAGONAL_EXPR}),
         ));
-        app
+    }
+
+    /// Traduit une clé du catalogue embarqué.
+    fn texte(&self, cle: &str) -> String {
+        self.i18n
+            .traduction(cle)
+            .expect("clé présente dans le FTL (test de la CI)")
+    }
+
+    /// Traduit une clé du catalogue embarqué, avec arguments.
+    fn texte_avec(&self, cle: &str, arguments: &[(&str, Argument)]) -> String {
+        self.i18n
+            .traduction_avec(cle, arguments)
+            .expect("clé présente dans le FTL (test de la CI)")
     }
 
     /// Applique l'événement au graphe et ne l'écrit au journal qu'en cas
@@ -143,46 +185,61 @@ impl DemoApp {
                 return;
             }
         }
-        self.info = Some(format!(
-            "Projet rechargé : {} événements rejoués.",
-            events.len()
-        ));
+        let nombre = Argument::from(events.len());
+        self.info = Some(self.texte_avec("info-recharge", &[("n", nombre)]));
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
-        if ui.button("Recalculer tout").clicked() {
+        let reponse = ui.button(self.texte("top-recalculer"));
+        avec_aide(&reponse, "aide-top-recalculer", &mut self.aide);
+        if reponse.clicked() {
             match self.graph.evaluate_all() {
-                Ok(()) => self.info = Some("Toutes les valeurs sont à jour.".to_string()),
+                Ok(()) => self.info = Some(self.texte("info-recalcul-ok")),
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
-        if ui.button("Enregistrer").clicked() {
+        let reponse = ui.button(self.texte("top-enregistrer"));
+        avec_aide(&reponse, "aide-top-enregistrer", &mut self.aide);
+        if reponse.clicked() {
             match self.doc.save_to_path(std::path::Path::new(DEFAULT_PROJECT)) {
                 Ok(()) => {
-                    self.info = Some(format!("Projet enregistré dans « {DEFAULT_PROJECT} »."));
+                    self.info = Some(self.texte_avec(
+                        "info-enregistre",
+                        &[("chemin", Argument::from(DEFAULT_PROJECT))],
+                    ));
                 }
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
-        if ui.button("Ouvrir").clicked() {
+        let reponse = ui.button(self.texte("top-ouvrir"));
+        avec_aide(&reponse, "aide-top-ouvrir", &mut self.aide);
+        if reponse.clicked() {
             match Document::open_from_path(std::path::Path::new(DEFAULT_PROJECT)) {
                 Ok(doc) => self.rebuild_from_journal(doc),
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
-        if ui.button("Nouveau").clicked() {
-            *self = Self::new();
+        let reponse = ui.button(self.texte("top-nouveau"));
+        avec_aide(&reponse, "aide-top-nouveau", &mut self.aide);
+        if reponse.clicked() {
+            self.reinitialiser();
         }
     }
 
     fn params_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Paramètres");
+        let reponse = ui.heading(self.texte("params-titre"));
+        avec_aide(&reponse, "aide-params-titre", &mut self.aide);
         let mut edited: Option<(&str, f64)> = None;
-        for (name, label) in [("width_mm", "Largeur"), ("height_mm", "Hauteur")] {
+        for (name, cle, help_id) in [
+            ("width_mm", "params-largeur", "aide-params-largeur"),
+            ("height_mm", "params-hauteur", "aide-params-hauteur"),
+        ] {
+            let libelle = self.texte(cle);
             let mut mm = self.graph.value(name).unwrap_or(0.0);
+            let demande = &mut self.aide;
             ui.horizontal(|ui| {
-                ui.label(label);
-                let response = ui.add(
+                ui.label(&libelle);
+                let reponse = ui.add(
                     egui::DragValue::new(&mut mm)
                         .speed(1.0)
                         .range(1.0..=5000.0)
@@ -190,9 +247,10 @@ impl DemoApp {
                 );
                 // Un événement à la fin du geste (drag_stopped) ou pour une
                 // édition clavier — pas un événement par frame de glissement.
-                if response.drag_stopped() || (response.changed() && !response.dragged()) {
+                if reponse.drag_stopped() || (reponse.changed() && !reponse.dragged()) {
                     edited = Some((name, mm));
                 }
+                avec_aide(&reponse, help_id, demande);
             });
         }
         if let Some((name, value)) = edited {
@@ -204,9 +262,10 @@ impl DemoApp {
             ));
         }
         ui.separator();
-        ui.label("Expression de la diagonale :");
-        let response = ui.add(egui::TextEdit::singleline(&mut self.expr_buf).desired_width(240.0));
-        if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+        ui.label(self.texte("params-expression"));
+        let reponse = ui.add(egui::TextEdit::singleline(&mut self.expr_buf).desired_width(240.0));
+        avec_aide(&reponse, "aide-params-expression", &mut self.aide);
+        if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             let expression = self.expr_buf.clone();
             self.record(NewEvent::new(
                 EVENT_EXPRESSION_SET,
@@ -217,7 +276,10 @@ impl DemoApp {
         }
         match self.graph.value("diagonal") {
             Ok(value) => {
-                ui.label(format!("Diagonale : {}", Length::from_millimeters(value)));
+                ui.label(self.texte_avec(
+                    "params-diagonale",
+                    &[("valeur", Argument::from(Length::from_millimeters(value).to_string()))],
+                ));
             }
             Err(error) => {
                 ui.label(egui::RichText::new(error.to_string()).color(egui::Color32::RED));
@@ -226,10 +288,11 @@ impl DemoApp {
     }
 
     fn journal_panel(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Journal d'événements");
-        ui.label(format!(
-            "{} événements · conteneur ZIP · JSON Lines",
-            self.doc.events().len()
+        let reponse = ui.heading(self.texte("journal-titre"));
+        avec_aide(&reponse, "aide-journal-titre", &mut self.aide);
+        ui.label(self.texte_avec(
+            "journal-compteur",
+            &[("n", Argument::from(self.doc.events().len()))],
         ));
         egui::ScrollArea::vertical().show(ui, |ui| {
             for event in self.doc.events().iter().rev().take(200) {
@@ -243,7 +306,7 @@ impl DemoApp {
         if !self.unknown_types.is_empty() {
             ui.separator();
             ui.label(
-                egui::RichText::new("Types ignorés (journal d'une version plus récente ?) :")
+                egui::RichText::new(self.texte("journal-types-ignores"))
                     .color(egui::Color32::YELLOW),
             );
             for event_type in &self.unknown_types {
@@ -253,9 +316,14 @@ impl DemoApp {
     }
 
     fn viewport(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Viewport (vide au jalon 0 — rectangle de démonstration)");
+        let reponse = ui.heading(self.texte("viewport-titre"));
+        avec_aide(&reponse, "aide-viewport-titre", &mut self.aide);
         if let Some(error) = &self.error {
-            ui.label(egui::RichText::new(format!("Erreur : {error}")).color(egui::Color32::RED));
+            let texte = self.texte_avec(
+                "viewport-erreur",
+                &[("texte", Argument::from(error.as_str()))],
+            );
+            ui.label(egui::RichText::new(texte).color(egui::Color32::RED));
         }
         if let Some(info) = &self.info {
             ui.label(egui::RichText::new(info.clone()).color(egui::Color32::LIGHT_GREEN));
@@ -310,18 +378,23 @@ impl eframe::App for DemoApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             self.viewport(ui);
         });
+        aide::fenetre(ctx, &self.i18n, &mut self.aide);
     }
 }
 
 fn main() -> eframe::Result<()> {
+    let catalogue = i18n::catalogue();
+    let titre = catalogue
+        .traduction("titre-fenetre")
+        .expect("clé présente dans le FTL (test de la CI)");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1100.0, 720.0]),
         ..Default::default()
     };
     eframe::run_native(
-        "OmniFab — démonstrateur jalon 0",
+        &titre,
         options,
-        Box::new(|_cc| Ok(Box::new(DemoApp::new()))),
+        Box::new(move |_cc| Ok(Box::new(DemoApp::new(catalogue)))),
     )
 }
 
@@ -337,7 +410,7 @@ mod tests {
     /// Une expression invalide ne laisse aucun événement au journal.
     #[test]
     fn expression_invalide_n_ecrit_rien_au_journal() {
-        let mut app = DemoApp::new();
+        let mut app = DemoApp::new(i18n::catalogue());
         let avant = app.doc.events().len();
         app.record(NewEvent::new(
             EVENT_EXPRESSION_SET,
@@ -356,7 +429,7 @@ mod tests {
     /// Un journal valide se rejoue en entier à la réouverture.
     #[test]
     fn journal_valide_se_rejoue_entierement() {
-        let mut app = DemoApp::new();
+        let mut app = DemoApp::new(i18n::catalogue());
         let chemin = projet_temporaire();
         app.doc
             .save_to_path(&chemin)

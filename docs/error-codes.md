@@ -11,7 +11,7 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io).
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n).
 Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
@@ -73,3 +73,12 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-IO-0007 | SVG invalide | Document refusé par le parseur usvg (syntaxe, XML malformé) | Vérifier le fichier d'entrée |
 | OF-IO-0008 | Budget vectoriel dépassé | Tracés ou sommets au-delà des budgets du parseur SVG/DXF | Ajuster le budget ou simplifier le document |
 | OF-IO-0009 | DXF invalide | Document refusé par le parseur dxf | Vérifier le fichier d'entrée |
+
+## forge-i18n (I18) — internationalisation Fluent et aide intégrée
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-I18N-0001 | Clé absente du catalogue | Message absent du FTL, ou message sans valeur | Ajouter la clé au FTL embarqué |
+| OF-I18N-0002 | Ressource FTL invalide | Syntaxe refusée par le parseur, message en doublon, ou identifiant de langue invalide | Corriger le fichier FTL |
+| OF-I18N-0003 | Page d'aide incomplète | Attribut `titre`, `description` ou `exemple` manquant | Compléter la page dans le FTL |
+| OF-I18N-0004 | Erreur de mise en forme | Argument manquant ou inconnu dans un pattern | Vérifier les arguments passés à la clé |
