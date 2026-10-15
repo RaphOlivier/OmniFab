@@ -31,6 +31,10 @@
 #include <vector>
 
 #if defined(_WIN32)
+// windows.h définit les macros min/max qui cassent std::min/std::max
+// (erreur MSVC C2589 sur std::min à la ligne du diagnostic) : le garde
+// NOMINMAX est le correctif standard, requis pour compiler le shim.
+#define NOMINMAX
 #include <windows.h>
 #else
 #include <sys/mman.h>
