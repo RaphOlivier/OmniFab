@@ -21,9 +21,9 @@ fn importe_un_rectangle() {
     assert_eq!(traces[0].len(), 4);
     let points = traces[0].points();
     assert_eq!(points[0].x().millimeters(), 10.0);
-    assert_eq!(points[0].y().millimeters(), 20.0);
+    assert_eq!(points[0].y().millimeters(), -20.0);
     assert_eq!(points[2].x().millimeters(), 30.0);
-    assert_eq!(points[3].y().millimeters(), 40.0);
+    assert_eq!(points[3].y().millimeters(), -40.0);
 }
 
 #[test]
@@ -80,4 +80,13 @@ fn export_puis_import() {
     assert_eq!(traces[1].len(), 3);
     let dernier = traces[1].points().last().expect("au moins un sommet");
     assert_eq!(dernier.y().millimeters(), 10.0);
+}
+
+#[test]
+fn export_inverse_l_axe_y() {
+    // Le monde monte, le SVG descend : l'export négative le Y.
+    let trace = Path2::from_points(vec![point(0.0, 5.0), point(10.0, 5.0)], false);
+    let octets = svg::export(&[trace]).expect("export svg");
+    let texte = String::from_utf8(octets).expect("svg en utf-8");
+    assert!(texte.contains("M 0 -5 L 10 -5"), "y inversée : {texte}");
 }
