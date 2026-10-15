@@ -1269,6 +1269,9 @@ mod tests {
         let vue = Vue::nouvelle(rect, boite);
         let bas = vue.projetter(5.0, 0.0);
         let haut = vue.projetter(5.0, 10.0);
-        assert!(haut.y < bas.y, "plus haut dans la scène, plus haut à l'écran");
+        assert!(
+            haut.y < bas.y,
+            "plus haut dans la scène, plus haut à l'écran"
+        );
     }
 }
