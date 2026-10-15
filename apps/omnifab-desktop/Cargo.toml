@@ -15,4 +15,5 @@ forge-io = { path = "../../crates/forge-io" }
 forge-session = { path = "../../crates/forge-session" }
 forge-units = { path = "../../crates/forge-units" }
 forge-values = { path = "../../crates/forge-values" }
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 serde_json = "1"
