@@ -14,11 +14,14 @@
 //! ressources réglable, sans DTD ni XXE ; tout dépassement est une
 //! erreur typée, levée avant toute allocation proportionnelle.
 //!
-//! Jalon 1 : STL ([`stl`]). SVG (usvg) et DXF (crate `dxf`) seront
-//! ajoutés dès que `Cargo.lock` embarquera leurs arbres de
-//! dépendances (régénération locale nécessaire).
+//! Jalon 1 : STL ([`stl`], parseur maison), SVG ([`svg`], crate
+//! `usvg`) et DXF ([`dxf`], crate `dxf`). Convention d'unités : une
+//! unité de fichier = 1 mm (SVG et DXF) ; le STL est sans unité, lu
+//! et écrit en millimètres.
 
 mod error;
+pub mod dxf;
 pub mod stl;
+pub mod svg;
 
 pub use error::IoError;

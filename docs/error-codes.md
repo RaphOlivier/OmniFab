@@ -70,3 +70,6 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-IO-0004 | STL ASCII invalide | Syntaxe hors du sous-ensemble accepté, ou octets non UTF-8 | Vérifier le fichier d'entrée |
 | OF-IO-0005 | Format non reconnu | Ni STL binaire cohérent, ni STL ASCII | Vérifier le format du fichier |
 | OF-IO-0006 | Géométrie invalide à l'import | Coordonnée non finie dans les données importées | Vérifier le fichier d'entrée |
+| OF-IO-0007 | SVG invalide | Document refusé par le parseur usvg (syntaxe, XML malformé) | Vérifier le fichier d'entrée |
+| OF-IO-0008 | Budget vectoriel dépassé | Tracés ou sommets au-delà des budgets du parseur SVG/DXF | Ajuster le budget ou simplifier le document |
+| OF-IO-0009 | DXF invalide | Document refusé par le parseur dxf | Vérifier le fichier d'entrée |

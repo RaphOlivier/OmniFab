@@ -47,6 +47,29 @@ pub enum IoError {
     /// (OF-IO-0006).
     #[error("OF-IO-0006 : géométrie invalide à l'import : {0}")]
     InvalidGeometry(#[from] GeomError),
+    /// SVG invalide : document refusé par le parseur usvg (OF-IO-0007).
+    #[error("OF-IO-0007 : SVG invalide : {raison}")]
+    InvalidSvg {
+        /// Explication du refus.
+        raison: String,
+    },
+    /// Budget vectoriel dépassé : tracés ou sommets au-delà des
+    /// budgets du parseur SVG/DXF (OF-IO-0008).
+    #[error("OF-IO-0008 : budget dépassé : {found} {unite}, budget {max}")]
+    TooManyPaths {
+        /// Nombre constaté.
+        found: u64,
+        /// Budget correspondant.
+        max: u64,
+        /// Unité comptée (« tracés » ou « sommets »).
+        unite: &'static str,
+    },
+    /// DXF invalide : document refusé par le parseur `dxf` (OF-IO-0009).
+    #[error("OF-IO-0009 : DXF invalide : {raison}")]
+    InvalidDxf {
+        /// Explication du refus.
+        raison: String,
+    },
 }
 
 impl IoError {
@@ -61,6 +84,9 @@ impl IoError {
             Self::InvalidAscii { .. } => "OF-IO-0004",
             Self::UnknownFormat => "OF-IO-0005",
             Self::InvalidGeometry(_) => "OF-IO-0006",
+            Self::InvalidSvg { .. } => "OF-IO-0007",
+            Self::TooManyPaths { .. } => "OF-IO-0008",
+            Self::InvalidDxf { .. } => "OF-IO-0009",
         }
     }
 }
