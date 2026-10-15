@@ -24,6 +24,14 @@ mod tests {
     /// (aide.rs). Une clé absente = CI en échec.
     const CLES: &[&str] = &[
         "titre-fenetre",
+        "top-annuler",
+        "top-retablir",
+        "top-importer-svg",
+        "top-importer-dxf",
+        "top-importer-stl",
+        "top-exporter-svg",
+        "top-exporter-dxf",
+        "top-exporter-stl",
         "top-recalculer",
         "top-enregistrer",
         "top-ouvrir",
@@ -38,9 +46,14 @@ mod tests {
         "journal-types-ignores",
         "viewport-titre",
         "viewport-erreur",
+        "geom-traces-compteur",
+        "geom-maillage-compteur",
         "info-recalcul-ok",
         "info-enregistre",
         "info-recharge",
+        "info-import-traces",
+        "info-import-maillage",
+        "info-export",
         aide::CLE_TITRE,
         aide::CLE_EXEMPLE,
         aide::CLE_INTROUVABLE,
@@ -49,6 +62,14 @@ mod tests {
     /// Pages d'aide attendues : une par widget interactif et par
     /// titre de panneau (convention `help_id`, ADR-0010).
     const HELP_IDS: &[&str] = &[
+        "aide-top-annuler",
+        "aide-top-retablir",
+        "aide-top-importer-svg",
+        "aide-top-importer-dxf",
+        "aide-top-importer-stl",
+        "aide-top-exporter-svg",
+        "aide-top-exporter-dxf",
+        "aide-top-exporter-stl",
         "aide-top-recalculer",
         "aide-top-enregistrer",
         "aide-top-ouvrir",
@@ -59,6 +80,7 @@ mod tests {
         "aide-params-expression",
         "aide-journal-titre",
         "aide-viewport-titre",
+        "aide-geom-compteur",
     ];
 
     /// Chaque clé utilisée par l'interface existe dans le FTL.

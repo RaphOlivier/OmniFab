@@ -2636,7 +2636,10 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "forge-doc",
+ "forge-geom",
  "forge-i18n",
+ "forge-io",
+ "forge-session",
  "forge-units",
  "forge-values",
  "serde_json",
@@ -4834,3 +4837,4 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+

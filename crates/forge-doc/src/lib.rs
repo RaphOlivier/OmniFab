@@ -180,6 +180,13 @@ impl Document {
         self.blobs.keys().cloned().collect()
     }
 
+    /// Retire un objet binaire du document, et le retourne s'il
+    /// existait. Utilisé par forge-session pour purger les blobs
+    /// orphelins (ADR-0008/0011).
+    pub fn remove_blob(&mut self, name: &str) -> Option<Vec<u8>> {
+        self.blobs.remove(name)
+    }
+
     /// Enregistre un snapshot **non autoritaire** (accélérateur, ADR-0001),
     /// lié à l'état du journal au moment de l'enregistrement (schéma B
     /// validé) : il porte le numéro de séquence atteint et un condensat du
@@ -350,5 +357,18 @@ mod tests {
             document.snapshot().is_none(),
             "le snapshot portait sur des événements retirés"
         );
+    }
+
+    /// remove_blob retire un objet binaire et le retourne, puis ne
+    /// trouve plus rien (purge des blobs orphelins, ADR-0011).
+    #[test]
+    fn remove_blob_retire_puis_retourne_none() {
+        let mut document = Document::new();
+        document
+            .set_blob("geometry/traces", vec![1, 2, 3])
+            .expect("blob valide");
+        let retires = document.remove_blob("geometry/traces");
+        assert_eq!(retires, Some(vec![1, 2, 3]));
+        assert!(document.blob("geometry/traces").is_none());
     }
 }

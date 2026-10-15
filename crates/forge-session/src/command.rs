@@ -1,5 +1,6 @@
-//! Commandes de la session (ADR-0008) : une intention utilisateur = une
-//! validation contre l'état courant, puis 1..n événements.
+//! Commandes de la session (ADR-0008, ADR-0011) : une intention
+//! utilisateur = une validation contre l'état courant, puis 1..n
+//! événements et d'éventuels blobs à déposer.
 
 use crate::{Session, SessionError};
 use forge_doc::NewEvent;
@@ -9,16 +10,42 @@ pub const EVENT_INPUT_SET: &str = "value.input_set";
 /// Type d'événement : expression de liaison fixée (schéma v1 : `name`,
 /// `expression`).
 pub const EVENT_EXPRESSION_SET: &str = "value.expression_set";
+/// Type d'événement : tracés importés (schéma v1 : `format`, `blob`,
+/// `traces`, `sommets`).
+pub const EVENT_TRACES_IMPORTED: &str = "geom.traces.imported";
+/// Type d'événement : maillage importé (schéma v1 : `format`, `blob`,
+/// `triangles`).
+pub const EVENT_MESH_IMPORTED: &str = "geom.mesh.imported";
+
+/// Production d'une commande : ses événements et les blobs à déposer.
+/// L'exécution est tout-ou-rien (ADR-0011) : si une projection refuse
+/// ou un blob est refusé, ni blobs ni événements ne sont écrits.
+#[derive(Debug, Clone, Default)]
+pub struct CommandPlan {
+    /// Événements à écrire au journal (1..n).
+    pub events: Vec<NewEvent>,
+    /// Blobs à déposer (nom, octets) avant l'écriture des événements.
+    pub blobs: Vec<(String, Vec<u8>)>,
+}
+
+impl CommandPlan {
+    /// Plan sans blob (ergonomie des commandes du domaine des liaisons).
+    pub fn new(events: Vec<NewEvent>) -> Self {
+        Self {
+            events,
+            blobs: Vec::new(),
+        }
+    }
+}
 
 /// Une intention utilisateur. La commande se **planifie** contre l'état
-/// courant : elle valide ses données, puis produit 1..n événements. La
-/// session attribue ensuite à chaque événement l'acteur et un identifiant
-/// de transaction (une commande = un groupe d'undo) — la commande ne
-/// s'en occupe pas.
+/// courant : elle valide ses données, puis produit 1..n événements et
+/// d'éventuels blobs. La session attribue ensuite à chaque événement
+/// l'acteur et un identifiant de transaction (une commande = un groupe
+/// d'undo) — la commande ne s'en occupe pas.
 pub trait Command {
-    /// Valide la commande contre l'état courant et produit ses
-    /// événements.
-    fn plan(&self, session: &Session) -> Result<Vec<NewEvent>, SessionError>;
+    /// Valide la commande contre l'état courant et produit son plan.
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError>;
 }
 
 /// Fixe la valeur d'entrée nommée du graphe de liaisons.
@@ -35,7 +62,7 @@ pub struct SetInput {
 }
 
 impl Command for SetInput {
-    fn plan(&self, _session: &Session) -> Result<Vec<NewEvent>, SessionError> {
+    fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
         if self.name.trim().is_empty() {
             return Err(SessionError::CommandRejected {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
@@ -46,12 +73,12 @@ impl Command for SetInput {
                 reason: "la valeur doit être un nombre fini".to_string(),
             });
         }
-        Ok(vec![NewEvent::new(
+        Ok(CommandPlan::new(vec![NewEvent::new(
             EVENT_INPUT_SET,
             1,
             "",
             serde_json::json!({"name": self.name, "value": self.value}),
-        )])
+        )]))
     }
 }
 
@@ -70,7 +97,7 @@ pub struct SetExpression {
 }
 
 impl Command for SetExpression {
-    fn plan(&self, _session: &Session) -> Result<Vec<NewEvent>, SessionError> {
+    fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
         if self.name.trim().is_empty() {
             return Err(SessionError::CommandRejected {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
@@ -81,11 +108,100 @@ impl Command for SetExpression {
                 reason: "l'expression ne peut pas être vide".to_string(),
             });
         }
-        Ok(vec![NewEvent::new(
+        Ok(CommandPlan::new(vec![NewEvent::new(
             EVENT_EXPRESSION_SET,
             1,
             "",
             serde_json::json!({"name": self.name, "expression": self.expression}),
-        )])
+        )]))
+    }
+}
+
+/// Importe des tracés vectoriels (SVG ou DXF) comme géométrie courante
+/// (ADR-0011) : les octets d'origine partent dans un blob, le journal ne
+/// porte que la référence et les compteurs. La validation du contenu
+/// (forge-io, sous budgets) est faite par l'application **avant** la
+/// commande — la commande ne dépend pas de forge-geom et ne porte que
+/// format, octets et compteurs.
+#[derive(Debug, Clone)]
+pub struct ImportTraces {
+    /// Format d'origine : `svg` ou `dxf`.
+    pub format: String,
+    /// Nom du blob où déposer les octets d'origine.
+    pub blob: String,
+    /// Octets d'origine du fichier importé.
+    pub octets: Vec<u8>,
+    /// Nombre de tracés importés.
+    pub traces: usize,
+    /// Nombre total de sommets importés.
+    pub sommets: usize,
+}
+
+impl Command for ImportTraces {
+    fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
+        if self.format != "svg" && self.format != "dxf" {
+            return Err(SessionError::CommandRejected {
+                reason: format!("format de tracés non supporté : « {} »", self.format),
+            });
+        }
+        if self.blob.trim().is_empty() {
+            return Err(SessionError::CommandRejected {
+                reason: "le nom du blob ne peut pas être vide".to_string(),
+            });
+        }
+        let mut plan = CommandPlan::new(vec![NewEvent::new(
+            EVENT_TRACES_IMPORTED,
+            1,
+            "",
+            serde_json::json!({
+                "format": self.format,
+                "blob": self.blob,
+                "traces": self.traces,
+                "sommets": self.sommets,
+            }),
+        )]);
+        plan.blobs.push((self.blob.clone(), self.octets.clone()));
+        Ok(plan)
+    }
+}
+
+/// Importe un maillage (STL) comme géométrie courante (ADR-0011) :
+/// octets d'origine dans un blob, référence et compteurs au journal.
+#[derive(Debug, Clone)]
+pub struct ImportMesh {
+    /// Format d'origine : `stl`.
+    pub format: String,
+    /// Nom du blob où déposer les octets d'origine.
+    pub blob: String,
+    /// Octets d'origine du fichier importé.
+    pub octets: Vec<u8>,
+    /// Nombre de triangles importés.
+    pub triangles: usize,
+}
+
+impl Command for ImportMesh {
+    fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
+        if self.format != "stl" {
+            return Err(SessionError::CommandRejected {
+                reason: format!("format de maillage non supporté : « {} »", self.format),
+            });
+        }
+        if self.blob.trim().is_empty() {
+            return Err(SessionError::CommandRejected {
+                reason: "le nom du blob ne peut pas être vide".to_string(),
+            });
+        }
+        let mut plan = CommandPlan::new(vec![NewEvent::new(
+            EVENT_MESH_IMPORTED,
+            1,
+            "",
+            serde_json::json!({
+                "format": self.format,
+                "blob": self.blob,
+                "triangles": self.triangles,
+            }),
+        )]);
+        plan.blobs.push((self.blob.clone(), self.octets.clone()));
+        Ok(plan)
     }
 }

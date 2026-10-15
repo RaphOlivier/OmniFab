@@ -1,9 +1,12 @@
-//! Tests de forge-session (ADR-0008) : commandes, undo/redo par
-//! curseur, abandon des événements défaisables, sauvegarde du journal
-//! visible.
+//! Tests de forge-session (ADR-0008, ADR-0011) : commandes, undo/redo
+//! par curseur, abandon des événements défaisables, imports de géométrie
+//! et purge des blobs orphelins, sauvegarde du journal visible.
 
 use forge_doc::{Document, NewEvent};
-use forge_session::{EVENT_INPUT_SET, Projection, Session, SessionError, SetExpression, SetInput};
+use forge_session::{
+    EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection, Session, SessionError,
+    SetExpression, SetInput,
+};
 
 /// Session de référence : deux entrées + une expression (diagonale 1000).
 fn rectangle() -> Session {
@@ -283,4 +286,151 @@ fn acteur_et_transaction_attribues() {
     let dernier = session.document().events().last().expect("un événement");
     assert_eq!(dernier.actor, "desktop.demo");
     assert!(dernier.txn.is_some(), "une commande = une transaction");
+}
+
+/// Un import de tracés est annulable : undo vide la géométrie, redo la
+/// restaure (ADR-0011).
+#[test]
+fn import_traces_puis_undo_vide_et_redo_restaure() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&ImportTraces {
+            format: "svg".into(),
+            blob: "geometry/traces".into(),
+            octets: b"<svg/>".to_vec(),
+            traces: 2,
+            sommets: 8,
+        })
+        .expect("import");
+    assert!(session.geom().traces().is_some(), "géométrie importée");
+    session.undo().expect("undo");
+    assert!(session.geom().traces().is_none(), "l'import est défait");
+    session.redo().expect("redo");
+    let traces = session.geom().traces().expect("géométrie rétablie");
+    assert_eq!(traces.traces, 2);
+    assert_eq!(traces.sommets, 8);
+}
+
+/// Une nouvelle commande après un undo purge les blobs orphelins :
+/// le blob de l'import annulé disparaît (ADR-0011).
+#[test]
+fn nouvelle_commande_apres_undo_purge_les_blobs_orphelins() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&ImportTraces {
+            format: "svg".into(),
+            blob: "geometry/premieres".into(),
+            octets: b"<svg/>".to_vec(),
+            traces: 1,
+            sommets: 3,
+        })
+        .expect("premier import");
+    session.undo().expect("undo");
+    session
+        .execute(&ImportTraces {
+            format: "svg".into(),
+            blob: "geometry/nouvelles".into(),
+            octets: b"<svg/>".to_vec(),
+            traces: 2,
+            sommets: 6,
+        })
+        .expect("nouvel import");
+    let blobs = session.document().blob_names();
+    assert!(
+        !blobs.contains(&"geometry/premieres".to_string()),
+        "le blob orphelin est purgé"
+    );
+    assert!(
+        blobs.contains(&"geometry/nouvelles".to_string()),
+        "le blob courant est conservé"
+    );
+}
+
+/// La sauvegarde abandonne les blobs orphelins : l'import annulé
+/// n'emporte pas son blob dans le fichier (ADR-0011).
+#[test]
+fn sauvegarde_abandonne_les_blobs_orphelins() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&ImportTraces {
+            format: "svg".into(),
+            blob: "geometry/traces".into(),
+            octets: b"<svg/>".to_vec(),
+            traces: 1,
+            sommets: 3,
+        })
+        .expect("import");
+    session.undo().expect("undo");
+    let octets = session.save_to_bytes().expect("sauvegarde");
+    let document = Document::from_bytes(&octets).expect("conteneur");
+    assert!(
+        document.blob_names().is_empty(),
+        "aucun blob orphelin dans le fichier"
+    );
+}
+
+/// Le rejeu d'un document sauvegardé restaure la géométrie importée.
+#[test]
+fn rejeu_de_document_restaure_la_geometrie() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&ImportTraces {
+            format: "dxf".into(),
+            blob: "geometry/traces".into(),
+            octets: b"0\nSECTION\n".to_vec(),
+            traces: 4,
+            sommets: 12,
+        })
+        .expect("import");
+    let octets = session.save_to_bytes().expect("sauvegarde");
+    let document = Document::from_bytes(&octets).expect("conteneur");
+    let session = Session::from_document("tests", document).expect("rejeu");
+    let traces = session.geom().traces().expect("géométrie rejouée");
+    assert_eq!(traces.format, "dxf");
+    assert_eq!(traces.blob, "geometry/traces");
+    assert_eq!(traces.traces, 4);
+    assert_eq!(traces.sommets, 12);
+}
+
+/// Un type n'est « ignoré » par l'interface que s'il est inconnu de
+/// toutes les projections : les événements geom sont connus de
+/// GeomProjection, ils n'apparaissent pas comme ignorés (ADR-0011).
+#[test]
+fn types_inconnus_seulement_si_inconnus_de_toutes_les_projections() {
+    let mut document = Document::new();
+    document.append(NewEvent::new(
+        "bidon.truc",
+        1,
+        "tests",
+        serde_json::json!({"x": 1}),
+    ));
+    document.append(NewEvent::new(
+        EVENT_TRACES_IMPORTED,
+        1,
+        "tests",
+        serde_json::json!({"format": "svg", "blob": "geometry/traces", "traces": 1, "sommets": 3}),
+    ));
+    let session = Session::from_document("tests", document).expect("rejeu");
+    let inconnus = session.unknown_types();
+    assert!(inconnus.contains(&"bidon.truc".to_string()));
+    assert!(!inconnus.contains(&EVENT_TRACES_IMPORTED.to_string()));
+}
+
+/// Un import à un format non supporté est refusé au plan : ni événement
+/// ni blob (ADR-0011).
+#[test]
+fn import_au_format_inconnu_est_refuse() {
+    let mut session = Session::new("tests");
+    let erreur = session
+        .execute(&ImportTraces {
+            format: "step".into(),
+            blob: "geometry/traces".into(),
+            octets: vec![],
+            traces: 1,
+            sommets: 3,
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert_eq!(session.document().events().len(), 0);
+    assert!(session.document().blob_names().is_empty());
 }

@@ -3,32 +3,43 @@
 
 //! # forge-session — session, commandes et undo/redo
 //!
-//! (ADR-0008, ouverture du jalon 1.) La session possède le document
-//! (forge-doc) et les projections métier ; les applications ne touchent
-//! plus `Document` directement : elles construisent des
-//! [commandes](Command) et lisent les projections.
+//! (ADR-0008, ouverture du jalon 1 ; ADR-0011, intégration au
+//! démonstrateur.) La session possède le document (forge-doc) et les
+//! projections métier ; les applications ne touchent plus `Document`
+//! directement : elles construisent des [commandes](Command) et lisent
+//! les projections.
 //!
 //! - **commande** : une intention utilisateur se planifie contre l'état
-//!   courant et produit 1..n événements ; la session attribue à chacun
-//!   l'acteur et un identifiant de transaction (une commande = un groupe
-//!   d'undo) ;
-//! - **validation avant écriture** : les événements sont d'abord
-//!   appliqués aux projections ; si l'une refuse, **rien n'est écrit au
-//!   journal** — un journal écrit par la session se rejoue toujours ;
+//!   courant et produit 1..n événements et d'éventuels blobs
+//!   ([`CommandPlan`]) ; la session attribue à chaque événement l'acteur
+//!   et un identifiant de transaction (une commande = un groupe d'undo) ;
+//! - **validation avant écriture, tout-ou-rien** (ADR-0011) : les
+//!   événements sont d'abord appliqués aux projections, les blobs ensuite
+//!   déposés ; si l'une refuse, **rien n'est écrit au journal** — un
+//!   journal écrit par la session se rejoue toujours ;
 //! - **undo/redo par curseur** : le curseur `applied` sépare le journal
 //!   appliqué des événements défaits, qui restent en mémoire pour le
 //!   redo ; une nouvelle commande après un undo **abandonne** les
-//!   événements défaits ;
+//!   événements défaits et purge les blobs orphelins (ADR-0011) ;
+//! - **géométrie dans des blobs, jamais dans le journal** (ADR-0001) :
+//!   les commandes d'import déposent les octets d'origine en blobs, la
+//!   projection [`GeomProjection`] ne porte que références et compteurs ;
 //! - **sauvegarde** : le fichier contient le journal linéaire visible ;
-//!   enregistrer abandonne les événements en attente de redo.
+//!   enregistrer abandonne les événements en attente de redo et purge
+//!   les blobs orphelins.
 
 mod command;
 mod error;
 mod projection;
 
-pub use command::{Command, EVENT_EXPRESSION_SET, EVENT_INPUT_SET, SetExpression, SetInput};
+pub use command::{
+    Command, CommandPlan, EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED,
+    EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, SetExpression, SetInput,
+};
 pub use error::SessionError;
-pub use projection::{Projection, ValuesProjection};
+pub use projection::{
+    GeomProjection, MaillageImporte, Projection, TracesImportees, ValuesProjection,
+};
 
 use forge_doc::{DocError, Document, Event, NewEvent};
 use forge_values::ValueGraph;
@@ -42,6 +53,8 @@ pub struct Session {
     doc: Document,
     /// Projection du domaine des liaisons (jalon 1).
     values: ValuesProjection,
+    /// Projection du domaine de la géométrie importée (ADR-0011).
+    geom: GeomProjection,
     /// Projections des domaines futurs, enregistrées.
     projections: Vec<Box<dyn Projection>>,
     /// Nombre d'événements appliqués aux projections ; les événements
@@ -52,7 +65,8 @@ pub struct Session {
 }
 
 impl Session {
-    /// Session vide, avec la projection des liaisons (jalon 1).
+    /// Session vide, avec les projections des liaisons et de la
+    /// géométrie importée (jalon 1).
     ///
     /// `actor` identifie l'application ou la zone UI à l'origine des
     /// événements (ex. `desktop`, `android.machine`).
@@ -60,6 +74,7 @@ impl Session {
         Self {
             doc: Document::new(),
             values: ValuesProjection::new(),
+            geom: GeomProjection::new(),
             projections: Vec::new(),
             applied: 0,
             actor: actor.to_string(),
@@ -96,17 +111,20 @@ impl Session {
     }
 
     /// Exécute une commande : planification contre l'état courant,
-    /// application aux projections, puis écriture au journal. Un refus
-    /// (au plan ou dans une projection) laisse le journal intact.
-    /// Comme toute nouvelle action, une commande exécutée après un undo
-    /// abandonne les événements défaits (ADR-0008).
+    /// application aux projections, dépôt des blobs, puis écriture au
+    /// journal. L'exécution est tout-ou-rien (ADR-0011) : un refus au
+    /// plan, dans une projection ou au dépôt d'un blob laisse le journal
+    /// intact. Comme toute nouvelle action, une commande exécutée après
+    /// un undo abandonne les événements défaits (ADR-0008) et purge les
+    /// blobs orphelins (ADR-0011).
     pub fn execute(&mut self, command: &dyn Command) -> Result<(), SessionError> {
-        let events = command.plan(self)?;
-        if events.is_empty() {
+        let plan = command.plan(self)?;
+        if plan.events.is_empty() && plan.blobs.is_empty() {
             return Ok(());
         }
         self.truncate_pending();
-        for event in &events {
+        self.gc_blobs(&plan);
+        for event in &plan.events {
             if let Err(error) = self.apply_all(event) {
                 // Rien n'a été écrit au journal : le rejeu du journal
                 // appliqué rétablit exactement l'état d'avant commande.
@@ -114,8 +132,18 @@ impl Session {
                 return Err(error);
             }
         }
+        for (nom, donnees) in plan.blobs {
+            if let Err(erreur) = self.doc.set_blob(&nom, donnees) {
+                // Toujours rien au journal : le rejeu rétablit l'état
+                // d'avant commande, aucun blob ne survit isolément.
+                self.replay_applied()?;
+                return Err(SessionError::BlobRejected {
+                    reason: erreur.to_string(),
+                });
+            }
+        }
         let txn = uuid::Uuid::now_v7().to_string();
-        for mut event in events {
+        for mut event in plan.events {
             event.actor = self.actor.clone();
             event.txn = Some(txn.clone());
             self.doc.append(event);
@@ -174,17 +202,37 @@ impl Session {
         self.values.graph_mut()
     }
 
-    /// Types d'événements ignorés par la projection des liaisons
-    /// (journal écrit par une version plus récente ?).
-    pub fn unknown_types(&self) -> &[String] {
-        self.values.unknown_types()
+    /// Projection de la géométrie importée (références et compteurs,
+    /// lecture) — jamais les objets lourds (ADR-0011).
+    pub fn geom(&self) -> &GeomProjection {
+        &self.geom
+    }
+
+    /// Types d'événements « ignorés » par l'interface : inconnus de
+    /// toutes les projections (values, geom, enregistrées) — un type
+    /// connu d'une seule projection n'est pas un type ignoré (ADR-0011).
+    pub fn unknown_types(&self) -> Vec<String> {
+        self.values
+            .unknown_types()
+            .iter()
+            .filter(|event_type| {
+                !self.geom.types_connus().contains(&event_type.as_str())
+                    && self
+                        .projections
+                        .iter()
+                        .all(|projection| !projection.types_connus().contains(&event_type.as_str()))
+            })
+            .cloned()
+            .collect()
     }
 
     /// Sérialise la session en conteneur ZIP (en mémoire). Les
     /// événements défaisables sont **abandonnés** : le fichier contient
-    /// le journal linéaire visible (ADR-0008).
+    /// le journal linéaire visible (ADR-0008), sans les blobs orphelins
+    /// (ADR-0011).
     pub fn save_to_bytes(&mut self) -> Result<Vec<u8>, DocError> {
         self.truncate_pending();
+        self.gc_blobs(&CommandPlan::default());
         self.doc.to_bytes()
     }
 
@@ -194,6 +242,7 @@ impl Session {
     #[cfg(feature = "native")]
     pub fn save_to_path(&mut self, path: &std::path::Path) -> Result<(), DocError> {
         self.truncate_pending();
+        self.gc_blobs(&CommandPlan::default());
         self.doc.save_to_path(path)
     }
 
@@ -206,9 +255,26 @@ impl Session {
         }
     }
 
+    /// Purge les blobs orphelins (ADR-0011) : ne survit qu'un blob
+    /// référencé par l'état courant d'une projection, ou déposé par le
+    /// plan en cours.
+    fn gc_blobs(&mut self, plan: &CommandPlan) {
+        let mut references = self.geom.referenced_blobs();
+        for projection in &self.projections {
+            references.extend(projection.referenced_blobs());
+        }
+        references.extend(plan.blobs.iter().map(|(nom, _)| nom.clone()));
+        for nom in self.doc.blob_names() {
+            if !references.contains(&nom) {
+                self.doc.remove_blob(&nom);
+            }
+        }
+    }
+
     /// Applique un événement à toutes les projections.
     fn apply_all(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         self.values.apply(event)?;
+        self.geom.apply(event)?;
         for projection in &mut self.projections {
             projection.apply(event)?;
         }
@@ -218,6 +284,7 @@ impl Session {
     /// Réinitialise toutes les projections.
     fn reset_all(&mut self) {
         self.values.reset();
+        self.geom.reset();
         for projection in &mut self.projections {
             projection.reset();
         }

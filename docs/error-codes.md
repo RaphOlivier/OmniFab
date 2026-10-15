@@ -47,11 +47,12 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 
 | Code | Signification | Cause probable | Action corrective |
 |---|---|---|---|
-| OF-SES-0001 | Commande refusée à la planification | Données invalides : nom vide, expression vide, nombre non fini | Corriger la commande |
+| OF-SES-0001 | Commande refusée à la planification | Données invalides : nom vide, expression vide, nombre non fini, format d'import non supporté | Corriger la commande |
 | OF-SES-0002 | Rejet par une projection | L'événement viole une règle du domaine (ex. expression référençant une valeur inconnue) | Corriger la commande ; le journal est intact |
 | OF-SES-0003 | Rien à annuler | Undo demandé alors que tout est déjà annulé | — |
 | OF-SES-0004 | Rien à rétablir | Redo demandé sans événement défait en attente | — |
 | OF-SES-0005 | Données d'événement invalides | Journal altéré : champ manquant ou de type inattendu pour un type connu | Restaurer une copie saine du projet |
+| OF-SES-0006 | Blob refusé par le document | Nom de blob invalide (OF-DOC-0013) ou taille hors bornes (OF-DOC-0011) au dépôt d'une commande | Corriger le nom ou le contenu du blob |
 
 ## forge-geom (GEO) — géométrie minimale
 

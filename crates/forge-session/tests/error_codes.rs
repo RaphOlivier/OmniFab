@@ -26,6 +26,9 @@ fn toutes_les_variantes() -> Vec<SessionError> {
             event_type: "value.input_set".to_string(),
             reason: "champ absent".to_string(),
         },
+        SessionError::BlobRejected {
+            reason: "OF-DOC-0013".to_string(),
+        },
     ]
 }
 

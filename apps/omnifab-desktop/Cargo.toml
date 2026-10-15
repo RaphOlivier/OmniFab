@@ -1,6 +1,6 @@
 [package]
 name = "omnifab-desktop"
-description = "Démonstrateur egui : journal d'événements rejouable, i18n Fluent et aide intégrée (jalon 1)."
+description = "Démonstrateur egui : session, undo/redo, import/export SVG/DXF/STL, i18n Fluent et aide intégrée (jalon 1)."
 license = "GPL-3.0-or-later"
 repository = "https://github.com/RaphOlivier/OmniFab"
 version.workspace = true
@@ -9,7 +9,10 @@ edition.workspace = true
 [dependencies]
 eframe = "0.29"
 forge-doc = { path = "../../crates/forge-doc" }
+forge-geom = { path = "../../crates/forge-geom" }
 forge-i18n = { path = "../../crates/forge-i18n" }
+forge-io = { path = "../../crates/forge-io" }
+forge-session = { path = "../../crates/forge-session" }
 forge-units = { path = "../../crates/forge-units" }
 forge-values = { path = "../../crates/forge-values" }
 serde_json = "1"

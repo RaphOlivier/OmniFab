@@ -35,6 +35,14 @@ pub enum SessionError {
         /// Champ manquant ou de type inattendu.
         reason: String,
     },
+    /// Blob refusé par le document lors de l'exécution d'une commande
+    /// (OF-SES-0006) : nom invalide (OF-DOC-0013) ou taille hors bornes
+    /// (OF-DOC-0011).
+    #[error("OF-SES-0006 : blob refusé par le document : {reason}")]
+    BlobRejected {
+        /// Message de l'erreur du document (avec son code OF-DOC-*).
+        reason: String,
+    },
 }
 
 impl SessionError {
@@ -48,6 +56,7 @@ impl SessionError {
             Self::UndoEmpty => "OF-SES-0003",
             Self::RedoEmpty => "OF-SES-0004",
             Self::InvalidEventData { .. } => "OF-SES-0005",
+            Self::BlobRejected { .. } => "OF-SES-0006",
         }
     }
 }
