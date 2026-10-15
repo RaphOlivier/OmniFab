@@ -32,7 +32,7 @@ use forge_geom::Path2;
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_session::{
-    Command, ImportMesh, ImportTraces, Session, SetExpression, SetInput, EVENT_EXPRESSION_SET,
+    Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
 };
 use forge_units::Length;
 
@@ -258,10 +258,7 @@ impl DemoApp {
             self.error = Some(error.to_string());
             return;
         }
-        self.info = Some(self.texte_avec(
-            "info-export",
-            &[("chemin", Argument::from(chemin))],
-        ));
+        self.info = Some(self.texte_avec("info-export", &[("chemin", Argument::from(chemin))]));
     }
 
     /// Exporte le maillage courant en STL binaire, depuis les octets
@@ -294,10 +291,7 @@ impl DemoApp {
             self.error = Some(error.to_string());
             return;
         }
-        self.info = Some(self.texte_avec(
-            "info-export",
-            &[("chemin", Argument::from(chemin))],
-        ));
+        self.info = Some(self.texte_avec("info-export", &[("chemin", Argument::from(chemin))]));
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -380,7 +374,10 @@ impl DemoApp {
         let reponse = ui.button(self.texte("top-enregistrer"));
         avec_aide(&reponse, "aide-top-enregistrer", &mut self.aide);
         if reponse.clicked() {
-            match self.session.save_to_path(std::path::Path::new(DEFAULT_PROJECT)) {
+            match self
+                .session
+                .save_to_path(std::path::Path::new(DEFAULT_PROJECT))
+            {
                 Ok(()) => {
                     self.info = Some(self.texte_avec(
                         "info-enregistre",
@@ -402,10 +399,9 @@ impl DemoApp {
                             self.cache = None;
                             self.error = None;
                             self.expr_buf = self.expression_courante();
-                            self.info = Some(self.texte_avec(
-                                "info-recharge",
-                                &[("n", Argument::from(nombre))],
-                            ));
+                            self.info = Some(
+                                self.texte_avec("info-recharge", &[("n", Argument::from(nombre))]),
+                            );
                         }
                         Err(error) => self.error = Some(error.to_string()),
                     }
@@ -567,8 +563,8 @@ impl DemoApp {
                 .iter()
                 .map(|point| {
                     egui::pos2(
-                        (centre.x + (point.x().millimeters() - centre_x) * echelle) as f32,
-                        (centre.y + (point.y().millimeters() - centre_y) * echelle) as f32,
+                        (centre.x as f64 + (point.x().millimeters() - centre_x) * echelle) as f32,
+                        (centre.y as f64 + (point.y().millimeters() - centre_y) * echelle) as f32,
                     )
                 })
                 .collect();
@@ -578,7 +574,10 @@ impl DemoApp {
             if trace.is_closed() {
                 points.push(points[0]);
             }
-            painter.add(egui::Shape::line(points, egui::Stroke::new(1.5_f32, couleur)));
+            painter.add(egui::Shape::line(
+                points,
+                egui::Stroke::new(1.5_f32, couleur),
+            ));
         }
     }
 
@@ -597,8 +596,18 @@ impl DemoApp {
         }
         ui.separator();
         self.mettre_a_jour_cache();
-        let width = self.session.graph_mut().value("width_mm").unwrap_or(1.0).max(1.0);
-        let height = self.session.graph_mut().value("height_mm").unwrap_or(1.0).max(1.0);
+        let width = self
+            .session
+            .graph_mut()
+            .value("width_mm")
+            .unwrap_or(1.0)
+            .max(1.0);
+        let height = self
+            .session
+            .graph_mut()
+            .value("height_mm")
+            .unwrap_or(1.0)
+            .max(1.0);
         // Une ligne est réservée sous le viewport pour chaque compteur.
         let mut lignes_reservees = 0.0;
         if self.session.geom().traces().is_some() {
