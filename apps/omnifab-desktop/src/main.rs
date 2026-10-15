@@ -1,4 +1,4 @@
-//! # omnifab-desktop — démonstrateur des jalons 1 et 2
+successfully downloaded text file (SHA: bc2bdd7f2fcf30419814e1afe0e46302d5898137)//! # omnifab-desktop — démonstrateur des jalons 1 et 2
 //!
 //! Conforme à `docs/architecture.md` et aux ADR-0011/0014 : la
 //! fenêtre egui met en scène le noyau complet, branché de bout en
@@ -103,11 +103,14 @@ impl Vue {
         }
     }
 
-    /// Projette un point de la scène, en millimètres, à l'écran.
+    /// Projette un point de la scène, en millimètres, à l'écran :
+    /// l'axe Y du monde monte (convention SVG/DXF), l'axe Y de
+    /// l'écran descend — le Y est inversé, sans quoi la scène
+    /// apparaît en miroir vertical.
     fn projetter(&self, x: f64, y: f64) -> egui::Pos2 {
         let (centre_x, centre_y) = self.centre_mm;
         let ecran_x = self.centre_ecran.x as f64 + (x - centre_x) * self.echelle;
-        let ecran_y = self.centre_ecran.y as f64 + (y - centre_y) * self.echelle;
+        let ecran_y = self.centre_ecran.y as f64 - (y - centre_y) * self.echelle;
         egui::pos2(ecran_x as f32, ecran_y as f32)
     }
 }
@@ -1248,5 +1251,24 @@ mod tests {
         assert_eq!(boite.min_y, 0.0, "origine y commune");
         assert_eq!(boite.max_x, 1.0, "union en x");
         assert_eq!(boite.max_y, 1.0, "union en y");
+    }
+
+    /// L'axe Y monte dans la scène et descend à l'écran : un point
+    /// plus haut apparaît plus haut — sans l'inversion, les fichiers
+    /// asymétriques se reflétaient en miroir (DXF réel importé à la
+    /// validation de la phase B).
+    #[test]
+    fn projection_inverse_l_axe_y() {
+        let rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(100.0, 100.0));
+        let boite = Boite {
+            min_x: 0.0,
+            min_y: 0.0,
+            max_x: 10.0,
+            max_y: 10.0,
+        };
+        let vue = Vue::nouvelle(rect, boite);
+        let bas = vue.projetter(5.0, 0.0);
+        let haut = vue.projetter(5.0, 10.0);
+        assert!(haut.y < bas.y, "plus haut dans la scène, plus haut à l'écran");
     }
 }
