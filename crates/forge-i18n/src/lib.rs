@@ -81,7 +81,9 @@ mod tests {
 
     #[test]
     fn page_d_aide_complete() {
-        let page = catalogue().page_aide("page-aide-demo").expect("page complète");
+        let page = catalogue()
+            .page_aide("page-aide-demo")
+            .expect("page complète");
         assert_eq!(page.titre, "Démo");
         assert!(page.description.contains("démonstration"));
         assert!(page.exemple.contains("journal"));

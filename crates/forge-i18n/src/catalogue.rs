@@ -6,10 +6,17 @@ use unic_langid::LanguageIdentifier;
 
 /// Catalogue d'une langue, embarqué à la compilation par l'application
 /// qui l'utilise (aucun chargement à l'exécution, ADR-0010).
-#[derive(Debug)]
 pub struct Catalogue {
     /// Bundle Fluent sous-jacent (une seule langue au jalon 1).
     bundle: FluentBundle<FluentResource>,
+}
+
+/// `Debug` manuel : `FluentBundle` n'implémente pas `Debug`, le
+/// catalogue s'affiche sans son contenu.
+impl std::fmt::Debug for Catalogue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Catalogue").finish_non_exhaustive()
+    }
 }
 
 /// Valeur d'argument passée à une clé (`{ $nom }` dans le FTL).
@@ -66,11 +73,12 @@ impl Catalogue {
     /// fichier FTL vit dans le dépôt, source unique de l'app, du
     /// manuel et du site web (ADR-0010).
     pub fn depuis_ftl(langue: &str, source: &str) -> Result<Self, I18nError> {
-        let langue: LanguageIdentifier = langue
-            .parse()
-            .map_err(|erreur| I18nError::RessourceInvalide {
-                raison: format!("identifiant de langue « {langue} » invalide : {erreur}"),
-            })?;
+        let langue: LanguageIdentifier =
+            langue
+                .parse()
+                .map_err(|erreur| I18nError::RessourceInvalide {
+                    raison: format!("identifiant de langue « {langue} » invalide : {erreur}"),
+                })?;
         let ressource = FluentResource::try_new(source.to_string()).map_err(|(_, erreurs)| {
             I18nError::RessourceInvalide {
                 raison: erreurs
@@ -81,15 +89,15 @@ impl Catalogue {
             }
         })?;
         let mut bundle = FluentBundle::new(vec![langue]);
-        bundle.add_resource(ressource).map_err(|erreurs| {
-            I18nError::RessourceInvalide {
+        bundle
+            .add_resource(ressource)
+            .map_err(|erreurs| I18nError::RessourceInvalide {
                 raison: erreurs
                     .iter()
                     .map(|erreur| erreur.to_string())
                     .collect::<Vec<_>>()
                     .join(" ; "),
-            }
-        })?;
+            })?;
         Ok(Self { bundle })
     }
 
@@ -146,7 +154,9 @@ impl Catalogue {
             });
         };
         let mut erreurs = Vec::new();
-        let texte = self.bundle.format_pattern(modele, Some(&args), &mut erreurs);
+        let texte = self
+            .bundle
+            .format_pattern(modele, Some(&args), &mut erreurs);
         self.verifie_mise_en_forme(cle, &erreurs)?;
         Ok(texte.into_owned())
     }
@@ -166,9 +176,9 @@ impl Catalogue {
                 cle: help_id.to_string(),
             })?;
         Ok(PageAide {
-            titre: self.attribut(help_id, message, "titre")?,
-            description: self.attribut(help_id, message, "description")?,
-            exemple: self.attribut(help_id, message, "exemple")?,
+            titre: self.attribut(help_id, &message, "titre")?,
+            description: self.attribut(help_id, &message, "description")?,
+            exemple: self.attribut(help_id, &message, "exemple")?,
         })
     }
 
@@ -186,7 +196,9 @@ impl Catalogue {
             });
         };
         let mut erreurs = Vec::new();
-        let texte = self.bundle.format_pattern(attribut.value(), None, &mut erreurs);
+        let texte = self
+            .bundle
+            .format_pattern(attribut.value(), None, &mut erreurs);
         self.verifie_mise_en_forme(help_id, &erreurs)?;
         Ok(texte.into_owned())
     }
