@@ -1,6 +1,9 @@
 //! Import/export SVG (ADR-0009) : parseur `usvg`, budgets intégrés.
 //!
-//! Convention d'unités : une unité SVG = 1 mm. Le parseur `usvg`
+//! Convention d'axes : le SVG descend (Y vers le bas), le monde
+//! monte (Y vers le haut) — l'axe Y est inversé à l'import et à
+//! l'export. Convention d'unités : une unité SVG = 1 mm. Le
+//! parseur `usvg`
 //! n'exécute aucun script, ne charge aucune ressource externe et
 //! n'accepte ni DTD ni XXE ; les formes de base (`rect`,
 //! `circle`, …) sont normalisées en tracés par `usvg`. Les courbes
@@ -47,8 +50,9 @@ impl Default for SvgBudgets {
 /// chaque tracé est collecté avec sa transformation absolue
 /// (usvg compose les transformations des ancêtres et du tracé), les
 /// courbes sont aplaties en polylignes, les nœuds non géométriques
-/// (images, textes) sont ignorés. Les budgets protègent contre les
-/// documents démesurés (ADR-0009).
+/// (images, textes) sont ignorés ; l'axe Y du SVG (vers le bas)
+/// est inversé pour entrer dans le monde (Y vers le haut). Les
+/// budgets protègent contre les documents démesurés (ADR-0009).
 pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
@@ -72,7 +76,8 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
 
 /// Exporte les tracés en SVG : chaque tracé devient un élément
 /// `path` (`M`/`L` par sommet, `Z` si fermé), coordonnées en
-/// millimètres. Le document de sortie est du SVG minimal, sans
+/// millimètres, l'axe Y du monde (vers le haut) inversé — le SVG
+/// descend. Le document de sortie est du SVG minimal, sans
 /// métadonnées.
 pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
     use std::fmt::Write as _;
@@ -94,7 +99,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
                 sortie,
                 "{marque} {} {}",
                 point.x().millimeters(),
-                point.y().millimeters()
+                -point.y().millimeters()
             )
             .expect("écriture en mémoire infaillible");
         }
@@ -198,6 +203,7 @@ fn collecte(
 }
 
 /// Ajoute un sommet (espace transformé), sous garde de budget.
+/// L'axe Y du SVG descend : il est inversé ici — le monde monte.
 fn ajoute(
     x: f32,
     y: f32,
@@ -214,7 +220,7 @@ fn ajoute(
     }
     let (gx, gy) = applique(transformation, x, y);
     let gx_mm = Length::from_millimeters(gx);
-    let gy_mm = Length::from_millimeters(gy);
+    let gy_mm = Length::from_millimeters(-gy);
     let point = Point2::new(gx_mm, gy_mm).map_err(IoError::InvalidGeometry)?;
     points.push(point);
     etat.sommets += 1;
