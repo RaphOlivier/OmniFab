@@ -54,15 +54,11 @@ impl Systeme2D {
         }
         if code == sys::GCS_ERR_VALEUR {
             return GcsError::AbiInvalide {
-                contexte: format!(
-                    "{contexte} : valeur non finie refusée par le shim"
-                ),
+                contexte: format!("{contexte} : valeur non finie refusée par le shim"),
             };
         }
         GcsError::AbiInvalide {
-            contexte: format!(
-                "{contexte} : code ABI {code} (exception C++ rattrapée)"
-            ),
+            contexte: format!("{contexte} : code ABI {code} (exception C++ rattrapée)"),
         }
     }
 }
@@ -92,8 +88,7 @@ impl Solveur2D for Systeme2D {
     }
 
     fn ajouter_cercle(&mut self, centre: IdPoint, rayon: Length) -> Result<IdCercle, GcsError> {
-        let code =
-            unsafe { sys::gcs_ajouter_cercle(self.systeme, centre.0, rayon.millimeters()) };
+        let code = unsafe { sys::gcs_ajouter_cercle(self.systeme, centre.0, rayon.millimeters()) };
         if code < 0 {
             return Err(Self::traduire(code, "gcs_ajouter_cercle"));
         }
@@ -179,9 +174,7 @@ impl Solveur2D for Systeme2D {
                 "gcs_contrainte_paralleles",
             ),
             Contrainte::Perpendiculaires { ligne1, ligne2 } => (
-                unsafe {
-                    sys::gcs_contrainte_perpendiculaires(self.systeme, ligne1.0, ligne2.0)
-                },
+                unsafe { sys::gcs_contrainte_perpendiculaires(self.systeme, ligne1.0, ligne2.0) },
                 "gcs_contrainte_perpendiculaires",
             ),
             Contrainte::RayonCercle { cercle, valeur } => {
