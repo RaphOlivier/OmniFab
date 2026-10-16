@@ -91,8 +91,7 @@ fn importe_un_arc_svg() {
     assert!(traces[0].len() > 2, "arc aplati : {}", traces[0].len());
     let points = traces[0].points();
     let traverse = points.iter().any(|p| {
-        (p.x().millimeters() - 10.0).abs() < 5e-3
-            && (p.y().millimeters().abs() - 10.0).abs() < 5e-3
+        (p.x().millimeters() - 10.0).abs() < 5e-3 && (p.y().millimeters().abs() - 10.0).abs() < 5e-3
     });
     assert!(traverse, "l'arc doit passer par un sommet à 10 mm");
 }
