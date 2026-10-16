@@ -239,7 +239,7 @@ mod tests {
         let mut camera = Camera3D::nouvelle();
         camera.ajuster(Boite3D::du_point(0.0, 0.0, 0.0).etendre(100.0, 50.0, 20.0));
         assert_eq!(camera.cible_mm, (50.0, 25.0, 10.0), "centre de la boîte");
-        let rayon: f64 = (50.0 * 50.0 + 25.0 * 25.0 + 10.0 * 10.0).sqrt();
+        let rayon = (50.0_f64 * 50.0 + 25.0 * 25.0 + 10.0 * 10.0).sqrt();
         let attendue = rayon * 1.1 / std::f64::consts::FRAC_PI_8.sin();
         assert!(
             (camera.distance - attendue).abs() < 1e-9,
