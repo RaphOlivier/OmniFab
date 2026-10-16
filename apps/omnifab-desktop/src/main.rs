@@ -978,9 +978,9 @@ impl DemoApp {
         // Molette : zoom sur le point du dessin sous le curseur ;
         // glisser : la scène suit le pointeur (ADR-0015).
         if response.hovered() {
-            let molette = response
+            let molette: f64 = response
                 .ctx
-                .input(|i| i.raw_scroll_delta.y)
+                .input(|i| i.raw_scroll_delta.y as f64)
                 .clamp(-600.0, 600.0);
             if molette.abs() > 1e-3 {
                 let position = response.hover_pos().unwrap_or(rect.center()) - rect.left_top();
