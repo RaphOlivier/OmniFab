@@ -22,6 +22,11 @@ const MARGE_CADRAGE: f64 = 1.1;
 /// Sensibilité de l'orbite, en radians par pixel glissé.
 const SENSIBILITE: f64 = 0.01;
 
+/// Vecteur de l'espace en millimètres.
+type Vecteur3 = (f64, f64, f64);
+
+/// Base orthonormée de la caméra : (droite, haut, avant).
+type Base = (Vecteur3, Vecteur3, Vecteur3);
 /// Produit vectoriel de deux vecteurs de l'espace.
 fn croise(a: (f64, f64, f64), b: (f64, f64, f64)) -> (f64, f64, f64) {
     (
@@ -77,7 +82,7 @@ impl Camera3D {
     }
 
     /// Base caméra : vecteurs unitaires droite, haut, avant.
-    fn base(&self) -> ((f64, f64, f64), (f64, f64, f64), (f64, f64, f64)) {
+    fn base(&self) -> Base {
         let position = self.position();
         let cible = self.cible_mm;
         let avant = (
@@ -234,7 +239,7 @@ mod tests {
         let mut camera = Camera3D::nouvelle();
         camera.ajuster(Boite3D::du_point(0.0, 0.0, 0.0).etendre(100.0, 50.0, 20.0));
         assert_eq!(camera.cible_mm, (50.0, 25.0, 10.0), "centre de la boîte");
-        let rayon = (50.0 * 50.0 + 25.0 * 25.0 + 10.0 * 10.0).sqrt();
+        let rayon: f64 = (50.0 * 50.0 + 25.0 * 25.0 + 10.0 * 10.0).sqrt();
         let attendue = rayon * 1.1 / std::f64::consts::FRAC_PI_8.sin();
         assert!(
             (camera.distance - attendue).abs() < 1e-9,

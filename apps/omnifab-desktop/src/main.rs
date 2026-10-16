@@ -537,7 +537,7 @@ impl DemoApp {
         }
     }
 
-/// Boîte englobante 3D de la scène importée : union des tracés
+    /// Boîte englobante 3D de la scène importée : union des tracés
     /// posés sur le plan z = 0 et des sommets du maillage en volume
     /// (ADR-0015, phase C2).
     fn boite_scene_3d(traces: &[Path2], maillage: Option<&Mesh>) -> Option<Boite3D> {
@@ -1131,11 +1131,7 @@ impl DemoApp {
                 let oppose = Self::point_ecran(&self.camera, rect, width, height);
                 let shape = egui::Rect::from_two_pos(coin, oppose);
                 painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
-                painter.rect_stroke(
-                    shape,
-                    4.0,
-                    egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
-                );
+                painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
                 painter.text(
                     shape.left_bottom() + egui::vec2(0.0, 16.0),
                     egui::Align2::LEFT_TOP,
