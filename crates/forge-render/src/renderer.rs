@@ -14,7 +14,7 @@ use wgpu::util::DeviceExt;
 #[derive(Clone, Copy, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct Uniforms {
-    /// Taille de la cible, en pixels physiques.
+    /// Taille du viewport (rect du callback), en pixels physiques.
     taille_px: [f32; 2],
     /// Remplissage : un uniform dépasse 16 octets (WebGL).
     remplissage: [f32; 2],
@@ -24,7 +24,7 @@ struct Uniforms {
 #[derive(Clone, Copy, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 pub struct Sommet {
-    /// Position à l'écran, en pixels physiques.
+    /// Position dans le viewport, en pixels physiques, depuis son coin.
     pub position_px: [f32; 2],
     /// Couleur RGBA normalisée.
     pub couleur: [f32; 4],
@@ -146,7 +146,7 @@ impl Renderer2D {
         }
     }
 
-    /// Écrit l'uniform de la frame : taille de la cible.
+    /// Écrit l'uniform de la frame : taille du viewport.
     pub fn ecrire_uniforme(&self, queue: &wgpu::Queue, taille_px: [f32; 2]) {
         let uniforme = Uniforms {
             taille_px,
@@ -177,22 +177,22 @@ pub(crate) fn preparer_sommets(device: &wgpu::Device, sommets: &[Sommet]) -> wgp
 }
 
 /// Triangule la scène : six sommets par segment (deux triangles
-/// extrudés perpendiculairement), en pixels physiques — chaque
-/// position est un décalage par rapport au centre du viewport.
+/// extrudés perpendiculairement), en pixels physiques relatifs au
+/// coin du viewport — `demi_taille` donne sa demi-taille en points.
 pub(crate) fn triangles(
     scene: &Scene2D,
     camera: &Camera2D,
-    centre: (f32, f32),
+    demi_taille: (f32, f32),
     pixels_par_point: f32,
 ) -> Vec<Sommet> {
     let mut sommets = Vec::with_capacity(scene.segments.len() * 6);
     for segment in &scene.segments {
         let depart = camera.vers_ecran(segment.depart);
         let arrivee = camera.vers_ecran(segment.arrivee);
-        let ax = (centre.0 + depart.0 as f32) * pixels_par_point;
-        let ay = (centre.1 + depart.1 as f32) * pixels_par_point;
-        let bx = (centre.0 + arrivee.0 as f32) * pixels_par_point;
-        let by = (centre.1 + arrivee.1 as f32) * pixels_par_point;
+        let ax = (demi_taille.0 + depart.0 as f32) * pixels_par_point;
+        let ay = (demi_taille.1 + depart.1 as f32) * pixels_par_point;
+        let bx = (demi_taille.0 + arrivee.0 as f32) * pixels_par_point;
+        let by = (demi_taille.1 + arrivee.1 as f32) * pixels_par_point;
         let dx = bx - ax;
         let dy = by - ay;
         let longueur = dx.hypot(dy);
@@ -263,10 +263,11 @@ mod tests {
         assert!(sommets.is_empty(), "aucun triangle pour un point");
     }
 
-    /// Le centre du viewport décale tous les sommets : la caméra
-    /// vise le milieu du rect, pas son coin.
+    /// La demi-taille du viewport positionne les sommets depuis son
+    /// coin : le point visé par la caméra atterrit au centre du rect
+    /// — indépendamment de la fenêtre entière.
     #[test]
-    fn le_centre_du_viewport_decale_les_sommets() {
+    fn la_demi_taille_du_viewport_positionne_depuis_son_coin() {
         let mut scene = Scene2D::vide();
         scene.ajouter(Segment2D {
             depart: (0.0, 0.0),

@@ -4,8 +4,9 @@
 //! Le cœur de `forge-render` ne dépend pas d'egui ; ce module vit
 //! derrière la feature `egui`. Le callback prépare ses sommets dans
 //! `prepare` (qui reçoit la file GPU) puis les dessine dans `paint`
-//! (qui reçoit la passe de rendu d'egui — le scissors du clip est
-//! déjà posé par egui-wgpu).
+//! (qui reçoit la passe de rendu d'egui — egui-wgpu y pose déjà le
+//! scissors du clip ET le viewport, borné au rect du callback : les
+//! sommets sont relatifs au rect, jamais à la fenêtre).
 
 use crate::camera::Camera2D;
 use crate::renderer::{Renderer2D, preparer_sommets, triangles};
@@ -27,8 +28,8 @@ pub struct Callback2D {
     scene: Scene2D,
     /// Caméra de la frame.
     camera: Camera2D,
-    /// Centre du viewport à l'écran, en points logiques.
-    centre: egui::Pos2,
+    /// Rect du viewport à l'écran, en points logiques.
+    rect: egui::Rect,
     /// Frame préparée par `prepare`, consommée par `paint`.
     preparee: Mutex<Option<Frame2D>>,
 }
@@ -45,16 +46,17 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         let renderer = resources
             .get::<Renderer2D>()
             .expect("Renderer2D initialisé");
-        let taille_px = [
-            screen.size_in_pixels[0] as f32,
-            screen.size_in_pixels[1] as f32,
-        ];
+        // egui-wgpu borne la passe au rect du callback (« courtesy
+        // viewport ») : l'uniform reçoit la taille du rect, pas celle
+        // de la fenêtre (bug de la validation C1, 2026-10-16).
+        let ppp = screen.pixels_per_point;
+        let taille_px = [self.rect.width() * ppp, self.rect.height() * ppp];
         renderer.ecrire_uniforme(queue, taille_px);
         let sommets = triangles(
             &self.scene,
             &self.camera,
-            (self.centre.x, self.centre.y),
-            screen.pixels_per_point,
+            (self.rect.width() / 2.0, self.rect.height() / 2.0),
+            ppp,
         );
         let nombre = sommets.len() as u32;
         let tampon = preparer_sommets(device, &sommets);
@@ -95,7 +97,7 @@ pub fn dessiner_scene(painter: &egui::Painter, rect: egui::Rect, scene: Scene2D,
         Callback2D {
             scene,
             camera,
-            centre: rect.center(),
+            rect,
             preparee: Mutex::new(None),
         },
     ));

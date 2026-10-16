@@ -1,7 +1,8 @@
 // Vertex 2D du viewport forge-render (ADR-0015).
-// Les sommets arrivent en pixels physiques ; l'uniform les convertit
-// en coordonnées clip de la cible. La couleur est portée par sommet,
-// un vec4 RGBA normalisé.
+// Les sommets arrivent en pixels physiques RELATIFS AU COIN du
+// viewport : egui-wgpu borne la passe au rect du callback, l'uniform
+// donne donc la taille du rect — jamais celle de la fenêtre. La
+// couleur est portée par sommet, un vec4 RGBA normalisé.
 
 struct Uniforms {
     taille_px: vec2<f32>,
