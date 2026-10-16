@@ -972,7 +972,8 @@ impl DemoApp {
                 boite = boite.etendre(importee.min_x, importee.min_y);
                 boite = boite.etendre(importee.max_x, importee.max_y);
             }
-            self.camera.ajuster(rect.width() as f64, rect.height() as f64, boite, 20.0);
+            self.camera
+                .ajuster(rect.width() as f64, rect.height() as f64, boite, 20.0);
             self.camera_cle = Some(cle);
         }
         // Molette : zoom sur le point du dessin sous le curseur ;
@@ -1016,8 +1017,15 @@ impl DemoApp {
         // 2D n'est pas dessinée et le viewport le dit.
         if self.viewport_wgpu {
             let mut scene = Scene2D::vide();
-            let visible = self.camera.boite_visible(rect.width() as f64, rect.height() as f64);
-            scene.ajouter_grille(visible, self.camera.echelle, GRILLE_CIBLE_PX, COULEUR_GRILLE);
+            let visible = self
+                .camera
+                .boite_visible(rect.width() as f64, rect.height() as f64);
+            scene.ajouter_grille(
+                visible,
+                self.camera.echelle,
+                GRILLE_CIBLE_PX,
+                COULEUR_GRILLE,
+            );
             let traces_scene = Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
             scene.segments.extend(traces_scene.segments);
             dessiner_scene(&painter, rect, scene, self.camera);
@@ -1268,9 +1276,17 @@ mod tests {
     #[test]
     fn projection_inverse_l_axe_y() {
         let mut camera = Camera2D::nouvelle();
-        camera.ajuster(100.0, 100.0, Boite2::du_point(0.0, 0.0).etendre(10.0, 10.0), 0.0);
+        camera.ajuster(
+            100.0,
+            100.0,
+            Boite2::du_point(0.0, 0.0).etendre(10.0, 10.0),
+            0.0,
+        );
         let bas = camera.vers_ecran((5.0, 0.0));
         let haut = camera.vers_ecran((5.0, 10.0));
-        assert!(haut.1 < bas.1, "plus haut dans la scène, plus haut à l'écran");
+        assert!(
+            haut.1 < bas.1,
+            "plus haut dans la scène, plus haut à l'écran"
+        );
     }
 }

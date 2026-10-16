@@ -105,21 +105,40 @@ mod tests {
     #[test]
     fn ajuster_englobe_et_centrer() {
         let mut camera = Camera2D::nouvelle();
-        camera.ajuster(100.0, 50.0, Boite2::du_point(0.0, 0.0).etendre(20.0, 10.0), 10.0);
+        camera.ajuster(
+            100.0,
+            50.0,
+            Boite2::du_point(0.0, 0.0).etendre(20.0, 10.0),
+            10.0,
+        );
         assert_eq!(camera.centre_mm, (10.0, 5.0), "centre de la boîte");
-        assert_eq!(camera.echelle, 3.0, "limitée par la hauteur : 30 px / 10 mm");
+        assert_eq!(
+            camera.echelle, 3.0,
+            "limitée par la hauteur : 30 px / 10 mm"
+        );
     }
 
     /// Le zoom garde le point du monde sous le curseur immobile.
     #[test]
     fn zoom_garde_le_point_sous_le_curseur() {
         let mut camera = Camera2D::nouvelle();
-        camera.ajuster(200.0, 100.0, Boite2::du_point(0.0, 0.0).etendre(100.0, 50.0), 0.0);
+        camera.ajuster(
+            200.0,
+            100.0,
+            Boite2::du_point(0.0, 0.0).etendre(100.0, 50.0),
+            0.0,
+        );
         let sous_curseur = camera.depuis_ecran((60.0, 40.0));
         camera.zoom_au_curseur((60.0, 40.0), 2.5);
         let apres = camera.depuis_ecran((60.0, 40.0));
-        assert!((apres.0 - sous_curseur.0).abs() < 1e-9, "x immobile sous le curseur");
-        assert!((apres.1 - sous_curseur.1).abs() < 1e-9, "y immobile sous le curseur");
+        assert!(
+            (apres.0 - sous_curseur.0).abs() < 1e-9,
+            "x immobile sous le curseur"
+        );
+        assert!(
+            (apres.1 - sous_curseur.1).abs() < 1e-9,
+            "y immobile sous le curseur"
+        );
     }
 
     /// Le glissement déplace la scène dans le sens du pointeur.
