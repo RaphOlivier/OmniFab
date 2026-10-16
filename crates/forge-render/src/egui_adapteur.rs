@@ -89,12 +89,7 @@ impl egui_wgpu::CallbackTrait for Callback2D {
 
 /// Soumet la scène au painter : le viewport wgpu dessine les segments
 /// dans le rectangle donné (ADR-0015).
-pub fn dessiner_scene(
-    painter: &egui::Painter,
-    rect: egui::Rect,
-    scene: Scene2D,
-    camera: Camera2D,
-) {
+pub fn dessiner_scene(painter: &egui::Painter, rect: egui::Rect, scene: Scene2D, camera: Camera2D) {
     painter.add(egui_wgpu::Callback::new_paint_callback(
         rect,
         Callback2D {

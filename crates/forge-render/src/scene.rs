@@ -173,11 +173,8 @@ mod tests {
 
     /// Point de test aux coordonnées données (mm).
     fn point(x: f64, y: f64) -> Point2 {
-        Point2::new(
-            Length::from_millimeters(x),
-            Length::from_millimeters(y),
-        )
-        .expect("coordonnées finies")
+        Point2::new(Length::from_millimeters(x), Length::from_millimeters(y))
+            .expect("coordonnées finies")
     }
 
     /// Le tracé fermé est refermé sur son premier sommet.
@@ -194,9 +191,18 @@ mod tests {
     /// Le pas de grille suit la série 1/2/5 des règles à mesurer.
     #[test]
     fn pas_de_grille_suit_la_serie_125() {
-        assert!((pas_de_grille(1.0, 80.0) - 100.0).abs() < 1e-9, "80 px à 1 px/mm");
-        assert!((pas_de_grille(2.0, 80.0) - 50.0).abs() < 1e-9, "40 px à 2 px/mm");
-        assert!((pas_de_grille(10.0, 60.0) - 10.0).abs() < 1e-9, "6 px à 10 px/mm");
+        assert!(
+            (pas_de_grille(1.0, 80.0) - 100.0).abs() < 1e-9,
+            "80 px à 1 px/mm"
+        );
+        assert!(
+            (pas_de_grille(2.0, 80.0) - 50.0).abs() < 1e-9,
+            "40 px à 2 px/mm"
+        );
+        assert!(
+            (pas_de_grille(10.0, 60.0) - 10.0).abs() < 1e-9,
+            "6 px à 10 px/mm"
+        );
     }
 
     /// La grille couvre la zone visible au pas calculé.
@@ -205,7 +211,11 @@ mod tests {
         let mut scene = Scene2D::vide();
         let visible = Boite2::du_point(0.0, 0.0).etendre(250.0, 100.0);
         scene.ajouter_grille(visible, 2.0, 100.0, [1.0, 1.0, 1.0, 0.1]);
-        assert_eq!(scene.segments.len(), 9, "six verticales et trois horizontales");
+        assert_eq!(
+            scene.segments.len(),
+            9,
+            "six verticales et trois horizontales"
+        );
         let verticales = scene
             .segments
             .iter()

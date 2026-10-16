@@ -25,8 +25,8 @@ pub mod egui_adapteur;
 mod renderer;
 mod scene;
 
+pub use camera::Camera2D;
 #[cfg(feature = "egui")]
 pub use egui_adapteur::dessiner_scene;
-pub use camera::Camera2D;
 pub use renderer::Renderer2D;
-pub use scene::{pas_de_grille, Boite2, Couleur, Scene2D, Segment2D};
+pub use scene::{Boite2, Couleur, Scene2D, Segment2D, pas_de_grille};

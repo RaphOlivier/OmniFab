@@ -11,7 +11,10 @@ bytemuck = { version = "1", features = ["derive"] }
 egui = { version = "0.29", optional = true }
 egui-wgpu = { version = "0.29", optional = true }
 forge-geom = { path = "../forge-geom" }
-wgpu = { version = "22", features = ["wgsl"] }
+# Pas de features par défaut : leur backend dx12 ajouterait d3d12 et range-alloc
+# au graphe de dépendances, que le lock (eframe tire wgpu sans défauts) ne
+# contient pas ; les backends natifs restent fournis par l'hôte (ADR-0015).
+wgpu = { version = "22", default-features = false, features = ["wgsl"] }
 
 [dev-dependencies]
 forge-units = { path = "../forge-units" }

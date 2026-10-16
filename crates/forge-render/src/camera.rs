@@ -130,7 +130,11 @@ mod tests {
             echelle: 2.0,
         };
         camera.deplacer((10.0, 6.0));
-        assert_eq!(camera.centre_mm, (-5.0, 3.0), "x recule, y monte : la scène suit");
+        assert_eq!(
+            camera.centre_mm,
+            (-5.0, 3.0),
+            "x recule, y monte : la scène suit"
+        );
     }
 
     /// L'axe Y du monde monte, l'écran descend : un point plus haut
@@ -140,6 +144,9 @@ mod tests {
         let camera = Camera2D::nouvelle();
         let bas = camera.vers_ecran((5.0, 0.0));
         let haut = camera.vers_ecran((5.0, 10.0));
-        assert!(haut.1 < bas.1, "plus haut dans le monde, plus haut à l'écran");
+        assert!(
+            haut.1 < bas.1,
+            "plus haut dans le monde, plus haut à l'écran"
+        );
     }
 }

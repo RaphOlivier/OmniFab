@@ -236,8 +236,16 @@ mod tests {
         assert_eq!(sommets.len(), 6, "deux triangles par segment");
         assert_eq!(sommets[0].position_px, [0.0, 2.0], "bord extrudé du départ");
         assert_eq!(sommets[1].position_px, [0.0, -2.0], "bord opposé du départ");
-        assert_eq!(sommets[2].position_px, [20.0, 2.0], "bord extrudé de l'arrivée");
-        assert_eq!(sommets[5].position_px, [20.0, -2.0], "dernier triangle refermé");
+        assert_eq!(
+            sommets[2].position_px,
+            [20.0, 2.0],
+            "bord extrudé de l'arrivée"
+        );
+        assert_eq!(
+            sommets[5].position_px,
+            [20.0, -2.0],
+            "dernier triangle refermé"
+        );
     }
 
     /// Le segment éteint (longueur nulle) n'émet aucun triangle.
