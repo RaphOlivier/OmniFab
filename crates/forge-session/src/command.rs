@@ -127,8 +127,6 @@ impl Command for SetExpression {
 pub struct ImportTraces {
     /// Format d'origine : `svg` ou `dxf`.
     pub format: String,
-    /// Nom du blob où déposer les octets d'origine.
-    pub blob: String,
     /// Octets d'origine du fichier importé.
     pub octets: Vec<u8>,
     /// Nombre de tracés importés.
@@ -144,23 +142,22 @@ impl Command for ImportTraces {
                 reason: format!("format de tracés non supporté : « {} »", self.format),
             });
         }
-        if self.blob.trim().is_empty() {
-            return Err(SessionError::CommandRejected {
-                reason: "le nom du blob ne peut pas être vide".to_string(),
-            });
-        }
+        // Nom de blob unique par import (ADR-0011) : deux imports ne
+        // s'écrasent jamais — un undo restaure une référence vers des
+        // octets intacts, la purge reste au GC des blobs orphelins.
+        let blob = format!("geometry/traces-{}", uuid::Uuid::now_v7());
         let mut plan = CommandPlan::new(vec![NewEvent::new(
             EVENT_TRACES_IMPORTED,
             1,
             "",
             serde_json::json!({
                 "format": self.format,
-                "blob": self.blob,
+                "blob": blob,
                 "traces": self.traces,
                 "sommets": self.sommets,
             }),
         )]);
-        plan.blobs.push((self.blob.clone(), self.octets.clone()));
+        plan.blobs.push((blob, self.octets.clone()));
         Ok(plan)
     }
 }
@@ -171,8 +168,6 @@ impl Command for ImportTraces {
 pub struct ImportMesh {
     /// Format d'origine : `stl`.
     pub format: String,
-    /// Nom du blob où déposer les octets d'origine.
-    pub blob: String,
     /// Octets d'origine du fichier importé.
     pub octets: Vec<u8>,
     /// Nombre de triangles importés.
@@ -186,22 +181,19 @@ impl Command for ImportMesh {
                 reason: format!("format de maillage non supporté : « {} »", self.format),
             });
         }
-        if self.blob.trim().is_empty() {
-            return Err(SessionError::CommandRejected {
-                reason: "le nom du blob ne peut pas être vide".to_string(),
-            });
-        }
+        // Nom de blob unique par import, même logique que les tracés.
+        let blob = format!("geometry/maillage-{}", uuid::Uuid::now_v7());
         let mut plan = CommandPlan::new(vec![NewEvent::new(
             EVENT_MESH_IMPORTED,
             1,
             "",
             serde_json::json!({
                 "format": self.format,
-                "blob": self.blob,
+                "blob": blob,
                 "triangles": self.triangles,
             }),
         )]);
-        plan.blobs.push((self.blob.clone(), self.octets.clone()));
+        plan.blobs.push((blob, self.octets.clone()));
         Ok(plan)
     }
 }

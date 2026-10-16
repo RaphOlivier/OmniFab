@@ -47,10 +47,6 @@ use forge_session::{
 use forge_units::Length;
 use std::path::{Path, PathBuf};
 
-/// Blob des octets d'origine des tracés importés (ADR-0011).
-const BLOB_TRACES: &str = "geometry/traces";
-/// Blob des octets d'origine du maillage importé (ADR-0011).
-const BLOB_MAILLAGE: &str = "geometry/maillage";
 /// Acteur des événements écrits par le démonstrateur (ADR-0011).
 const ACTEUR: &str = "desktop.demo";
 /// Expression initiale de la diagonale du rectangle.
@@ -351,7 +347,6 @@ impl DemoApp {
         let sommets: usize = traces.iter().map(|trace| trace.len()).sum();
         self.executer(&ImportTraces {
             format: format.to_string(),
-            blob: BLOB_TRACES.to_string(),
             octets,
             traces: nombre_traces,
             sommets,
@@ -393,7 +388,6 @@ impl DemoApp {
         let triangles = maillage.triangle_count();
         self.executer(&ImportMesh {
             format: "stl".to_string(),
-            blob: BLOB_MAILLAGE.to_string(),
             octets,
             triangles,
         });
@@ -1143,7 +1137,6 @@ mod tests {
         let sommets: usize = traces.iter().map(|trace| trace.len()).sum();
         app.executer(&ImportTraces {
             format: "svg".into(),
-            blob: BLOB_TRACES.into(),
             octets: SVG_TEST.to_vec(),
             traces: traces.len(),
             sommets,
@@ -1185,17 +1178,15 @@ mod tests {
     fn nouvel_import_apres_undo_ne_fuit_pas_de_blob() {
         let mut app = DemoApp::new(i18n::catalogue());
         importer_svg_de_test(&mut app);
-        assert_eq!(
-            app.session.document().blob_names(),
-            vec![BLOB_TRACES.to_string()],
-            "le blob de l'import est déposé"
-        );
+        let noms = app.session.document().blob_names();
+        assert_eq!(noms.len(), 1, "le blob de l'import est déposé");
+        assert!(noms[0].starts_with("geometry/traces"), "nom du blob");
         app.session.undo().expect("undo");
         importer_svg_de_test(&mut app);
         assert_eq!(
-            app.session.document().blob_names(),
-            vec![BLOB_TRACES.to_string()],
-            "un seul blob : l'ancien est remplacé, pas dupliqué"
+            app.session.document().blob_names().len(),
+            1,
+            "un seul blob : l'ancien est purgé, pas dupliqué"
         );
         app.session.undo().expect("undo");
         let octets = app.session.save_to_bytes().expect("sauvegarde");

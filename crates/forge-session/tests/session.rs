@@ -296,7 +296,6 @@ fn import_traces_puis_undo_vide_et_redo_restaure() {
     session
         .execute(&ImportTraces {
             format: "svg".into(),
-            blob: "geometry/traces".into(),
             octets: b"<svg/>".to_vec(),
             traces: 2,
             sommets: 8,
@@ -312,38 +311,31 @@ fn import_traces_puis_undo_vide_et_redo_restaure() {
 }
 
 /// Une nouvelle commande après un undo purge les blobs orphelins :
-/// le blob de l'import annulé disparaît (ADR-0011).
+/// seul le blob de l'état courant survit (ADR-0011).
 #[test]
 fn nouvelle_commande_apres_undo_purge_les_blobs_orphelins() {
     let mut session = Session::new("tests");
     session
         .execute(&ImportTraces {
             format: "svg".into(),
-            blob: "geometry/premieres".into(),
             octets: b"<svg/>".to_vec(),
             traces: 1,
             sommets: 3,
         })
         .expect("premier import");
+    let ancien = session.geom().traces().expect("géométrie").blob.clone();
     session.undo().expect("undo");
     session
         .execute(&ImportTraces {
             format: "svg".into(),
-            blob: "geometry/nouvelles".into(),
             octets: b"<svg/>".to_vec(),
             traces: 2,
             sommets: 6,
         })
         .expect("nouvel import");
     let blobs = session.document().blob_names();
-    assert!(
-        !blobs.contains(&"geometry/premieres".to_string()),
-        "le blob orphelin est purgé"
-    );
-    assert!(
-        blobs.contains(&"geometry/nouvelles".to_string()),
-        "le blob courant est conservé"
-    );
+    assert!(!blobs.contains(&ancien), "le blob orphelin est purgé");
+    assert_eq!(blobs.len(), 1, "seul le blob courant est conservé");
 }
 
 /// La sauvegarde abandonne les blobs orphelins : l'import annulé
@@ -354,7 +346,6 @@ fn sauvegarde_abandonne_les_blobs_orphelins() {
     session
         .execute(&ImportTraces {
             format: "svg".into(),
-            blob: "geometry/traces".into(),
             octets: b"<svg/>".to_vec(),
             traces: 1,
             sommets: 3,
@@ -376,7 +367,6 @@ fn rejeu_de_document_restaure_la_geometrie() {
     session
         .execute(&ImportTraces {
             format: "dxf".into(),
-            blob: "geometry/traces".into(),
             octets: b"0\nSECTION\n".to_vec(),
             traces: 4,
             sommets: 12,
@@ -387,7 +377,7 @@ fn rejeu_de_document_restaure_la_geometrie() {
     let session = Session::from_document("tests", document).expect("rejeu");
     let traces = session.geom().traces().expect("géométrie rejouée");
     assert_eq!(traces.format, "dxf");
-    assert_eq!(traces.blob, "geometry/traces");
+    assert!(traces.blob.starts_with("geometry/traces"), "nom généré");
     assert_eq!(traces.traces, 4);
     assert_eq!(traces.sommets, 12);
 }
@@ -424,7 +414,6 @@ fn import_au_format_inconnu_est_refuse() {
     let erreur = session
         .execute(&ImportTraces {
             format: "step".into(),
-            blob: "geometry/traces".into(),
             octets: vec![],
             traces: 1,
             sommets: 3,
@@ -433,4 +422,35 @@ fn import_au_format_inconnu_est_refuse() {
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert_eq!(session.document().events().len(), 0);
     assert!(session.document().blob_names().is_empty());
+}
+
+/// Deux imports ne s'écrasent jamais : après l'undo du second, le
+/// premier relit ses propres octets d'origine, intacts (bug réel du
+/// démonstrateur : blob à nom fixe, écrasé par le second import,
+/// corrompant l'undo du premier — signalé à la validation phase B).
+#[test]
+fn deux_imports_ne_s_ecrasent_pas() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&ImportTraces {
+            format: "svg".into(),
+            octets: b"<svg a/>".to_vec(),
+            traces: 1,
+            sommets: 3,
+        })
+        .expect("premier import");
+    let premier = session.geom().traces().expect("géométrie").blob.clone();
+    session
+        .execute(&ImportTraces {
+            format: "dxf".into(),
+            octets: b"0\nSECTION\n".to_vec(),
+            traces: 2,
+            sommets: 6,
+        })
+        .expect("second import");
+    session.undo().expect("undo du second import");
+    let reference = session.geom().traces().expect("premier restauré");
+    assert_eq!(reference.blob, premier, "référence vers son propre blob");
+    let octets = session.document().blob(&premier).expect("blob intact");
+    assert_eq!(octets, &b"<svg a/>"[..], "octets d'origine intacts");
 }
