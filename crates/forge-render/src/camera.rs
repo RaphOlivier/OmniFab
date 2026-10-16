@@ -48,7 +48,8 @@ impl Camera2D {
     }
 
     /// Zoome d'un facteur donné : le point du monde sous le curseur
-    /// reste sous le curseur.
+    /// reste sous le curseur. Le décalage du curseur est donné par
+    /// rapport au centre du viewport.
     pub fn zoom_au_curseur(&mut self, curseur_px: (f64, f64), facteur: f64) {
         let avant = self.depuis_ecran(curseur_px);
         self.echelle = (self.echelle * facteur).clamp(ECHELLE_MIN, ECHELLE_MAX);
@@ -63,8 +64,8 @@ impl Camera2D {
         self.centre_mm.1 += delta_px.1 / self.echelle;
     }
 
-    /// Point du monde affiché à une position du viewport, en pixels
-    /// logiques depuis le coin haut-gauche.
+    /// Point du monde affiché à un décalage du centre du viewport,
+    /// en pixels logiques, l'axe Y vers le bas.
     pub fn depuis_ecran(&self, position_px: (f64, f64)) -> (f64, f64) {
         let (cx, cy) = self.centre_mm;
         (
@@ -73,8 +74,8 @@ impl Camera2D {
         )
     }
 
-    /// Position dans le viewport, en pixels logiques depuis le coin
-    /// haut-gauche, d'un point du monde.
+    /// Décalage écran, par rapport au centre du viewport, d'un point
+    /// du monde : en pixels logiques, l'axe Y vers le bas.
     pub fn vers_ecran(&self, point_mm: (f64, f64)) -> (f64, f64) {
         let (cx, cy) = self.centre_mm;
         (
@@ -167,5 +168,16 @@ mod tests {
             haut.1 < bas.1,
             "plus haut dans le monde, plus haut à l'écran"
         );
+    }
+
+    /// Le centre visé s'affiche au centre du viewport : son décalage
+    /// écran est nul.
+    #[test]
+    fn le_centre_vise_est_au_centre_du_viewport() {
+        let camera = Camera2D {
+            centre_mm: (12.0, -7.0),
+            echelle: 3.0,
+        };
+        assert_eq!(camera.vers_ecran((12.0, -7.0)), (0.0, 0.0));
     }
 }

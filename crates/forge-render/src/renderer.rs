@@ -177,21 +177,22 @@ pub(crate) fn preparer_sommets(device: &wgpu::Device, sommets: &[Sommet]) -> wgp
 }
 
 /// Triangule la scène : six sommets par segment (deux triangles
-/// extrudés perpendiculairement), en pixels physiques.
+/// extrudés perpendiculairement), en pixels physiques — chaque
+/// position est un décalage par rapport au centre du viewport.
 pub(crate) fn triangles(
     scene: &Scene2D,
     camera: &Camera2D,
-    origine: (f32, f32),
+    centre: (f32, f32),
     pixels_par_point: f32,
 ) -> Vec<Sommet> {
     let mut sommets = Vec::with_capacity(scene.segments.len() * 6);
     for segment in &scene.segments {
         let depart = camera.vers_ecran(segment.depart);
         let arrivee = camera.vers_ecran(segment.arrivee);
-        let ax = (origine.0 + depart.0 as f32) * pixels_par_point;
-        let ay = (origine.1 + depart.1 as f32) * pixels_par_point;
-        let bx = (origine.0 + arrivee.0 as f32) * pixels_par_point;
-        let by = (origine.1 + arrivee.1 as f32) * pixels_par_point;
+        let ax = (centre.0 + depart.0 as f32) * pixels_par_point;
+        let ay = (centre.1 + depart.1 as f32) * pixels_par_point;
+        let bx = (centre.0 + arrivee.0 as f32) * pixels_par_point;
+        let by = (centre.1 + arrivee.1 as f32) * pixels_par_point;
         let dx = bx - ax;
         let dy = by - ay;
         let longueur = dx.hypot(dy);
@@ -260,5 +261,21 @@ mod tests {
         });
         let sommets = triangles(&scene, &Camera2D::nouvelle(), (0.0, 0.0), 1.0);
         assert!(sommets.is_empty(), "aucun triangle pour un point");
+    }
+
+    /// Le centre du viewport décale tous les sommets : la caméra
+    /// vise le milieu du rect, pas son coin.
+    #[test]
+    fn le_centre_du_viewport_decale_les_sommets() {
+        let mut scene = Scene2D::vide();
+        scene.ajouter(Segment2D {
+            depart: (0.0, 0.0),
+            arrivee: (10.0, 0.0),
+            couleur: [1.0, 0.0, 0.0, 1.0],
+            largeur_px: 2.0,
+        });
+        let sommets = triangles(&scene, &Camera2D::nouvelle(), (500.0, 300.0), 1.0);
+        assert_eq!(sommets[0].position_px[0], 500.0, "x décalé du centre");
+        assert_eq!(sommets[1].position_px[1], 299.0, "y décalé du centre");
     }
 }

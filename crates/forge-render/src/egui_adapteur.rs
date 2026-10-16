@@ -27,8 +27,8 @@ pub struct Callback2D {
     scene: Scene2D,
     /// Caméra de la frame.
     camera: Camera2D,
-    /// Origine du viewport à l'écran, en points logiques.
-    origine: egui::Pos2,
+    /// Centre du viewport à l'écran, en points logiques.
+    centre: egui::Pos2,
     /// Frame préparée par `prepare`, consommée par `paint`.
     preparee: Mutex<Option<Frame2D>>,
 }
@@ -53,7 +53,7 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         let sommets = triangles(
             &self.scene,
             &self.camera,
-            (self.origine.x, self.origine.y),
+            (self.centre.x, self.centre.y),
             screen.pixels_per_point,
         );
         let nombre = sommets.len() as u32;
@@ -95,7 +95,7 @@ pub fn dessiner_scene(painter: &egui::Painter, rect: egui::Rect, scene: Scene2D,
         Callback2D {
             scene,
             camera,
-            origine: rect.left_top(),
+            centre: rect.center(),
             preparee: Mutex::new(None),
         },
     ));

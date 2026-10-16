@@ -494,11 +494,11 @@ impl DemoApp {
     }
 
     /// Projette un point du monde à l'écran : la caméra inverse l'axe
-    /// Y (convention SVG/DXF) et le rectangle du viewport fixe
-    /// l'origine (ADR-0015).
+    /// Y (convention SVG/DXF) et donne un décalage par rapport au
+    /// centre du viewport (ADR-0015).
     fn point_ecran(camera: &Camera2D, rect: egui::Rect, x: f64, y: f64) -> egui::Pos2 {
         let (px, py) = camera.vers_ecran((x, y));
-        egui::pos2(rect.left_top().x + px as f32, rect.left_top().y + py as f32)
+        egui::pos2(rect.center().x + px as f32, rect.center().y + py as f32)
     }
 
     /// Dessine le wireframe du maillage : projection de dessus, cyan,
@@ -984,7 +984,7 @@ impl DemoApp {
                 .input(|i| i.raw_scroll_delta.y as f64)
                 .clamp(-600.0, 600.0);
             if molette.abs() > 1e-3 {
-                let position = response.hover_pos().unwrap_or(rect.center()) - rect.left_top();
+                let position = response.hover_pos().unwrap_or(rect.center()) - rect.center();
                 self.camera.zoom_au_curseur(
                     (position.x as f64, position.y as f64),
                     (molette / 600.0).exp(),
@@ -1288,5 +1288,23 @@ mod tests {
             haut.1 < bas.1,
             "plus haut dans la scène, plus haut à l'écran"
         );
+    }
+
+    /// La caméra vise le centre du rect, pas son coin : le centre de
+    /// la boîte d'ajustement atterrit au centre du viewport (bug de
+    /// recentrage signalé à la validation C1).
+    #[test]
+    fn le_centre_de_la_camera_atterrit_au_centre_du_rect() {
+        let mut camera = Camera2D::nouvelle();
+        camera.ajuster(
+            1000.0,
+            600.0,
+            Boite2::du_point(0.0, 0.0).etendre(800.0, 600.0),
+            20.0,
+        );
+        let rect = egui::Rect::from_min_size(egui::pos2(40.0, 30.0), egui::vec2(1000.0, 600.0));
+        let centre = camera.centre_mm;
+        let affiche = DemoApp::point_ecran(&camera, rect, centre.0, centre.1);
+        assert_eq!(affiche, rect.center(), "centré, pas vers le coin");
     }
 }
