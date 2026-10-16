@@ -885,6 +885,18 @@ impl DemoApp {
                         .clamp_existing_to_range(false)
                         .suffix(" mm"),
                 );
+                // Le clic ouvre le mode édition clavier, qui garde le
+                // focus indéfiniment : un champ focusé ne réagit plus
+                // au glissement (le geste sélectionne le texte du
+                // tampon). Un appui-glissement rend le focus pour que
+                // le geste déplace la valeur (piège du glissement,
+                // validation C1 round 4).
+                let presse_glisse = ui.input(|i| {
+                    i.pointer.is_decidedly_dragging() && i.pointer.primary_down()
+                });
+                if presse_glisse && reponse.contains_pointer() {
+                    ui.memory_mut(|m| m.surrender_focus(reponse.id));
+                }
                 if reponse.dragged() {
                     glisse = Some(mm);
                 }
