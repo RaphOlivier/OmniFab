@@ -20,13 +20,17 @@
 #![deny(missing_docs)]
 
 mod camera;
+mod camera3d;
 #[cfg(feature = "egui")]
 pub mod egui_adapteur;
 mod renderer;
 mod scene;
+mod scene3d;
 
 pub use camera::Camera2D;
+pub use camera3d::Camera3D;
 #[cfg(feature = "egui")]
-pub use egui_adapteur::dessiner_scene;
+pub use egui_adapteur::{dessiner_scene, dessiner_wireframe};
 pub use renderer::Renderer2D;
 pub use scene::{Boite2, Couleur, Scene2D, Segment2D, pas_de_grille};
+pub use scene3d::{Boite3D, Scene3D, Segment3D};

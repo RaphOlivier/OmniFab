@@ -1,4 +1,5 @@
-//! Pipeline wgpu des segments 2D : un quad par segment (ADR-0015).
+//! Pipeline wgpu : segments 2D triangulés et lignes du wireframe 3D
+//! (ADR-0015).
 //!
 //! wgpu ne garantit qu'une largeur de trait d'un pixel : l'épaisseur
 //! des tracés est extrudée côté CPU, perpendiculairement au segment.
@@ -6,7 +7,9 @@
 //! (dette technique de la phase C1, ADR-0015).
 
 use crate::camera::Camera2D;
+use crate::camera3d::Camera3D;
 use crate::scene::Scene2D;
+use crate::scene3d::Scene3D;
 use std::num::NonZeroU64;
 use wgpu::util::DeviceExt;
 
@@ -38,6 +41,9 @@ const WGSL: &str = include_str!("trace2d.wgsl");
 pub struct Renderer2D {
     /// Pipeline de rendu des segments.
     pipeline: wgpu::RenderPipeline,
+    /// Pipeline des lignes du wireframe 3D (topologie LineList,
+    /// phase C2).
+    pipeline_lignes: wgpu::RenderPipeline,
     /// Uniform partagé (une seule vue 2D par frame).
     uniform_buffer: wgpu::Buffer,
     /// Bind group de l'uniform.
@@ -69,60 +75,20 @@ impl Renderer2D {
             bind_group_layouts: &[&bind_group_layout],
             push_constant_ranges: &[],
         });
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("forge-render trace2d"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[wgpu::VertexBufferLayout {
-                    array_stride: 24,
-                    step_mode: wgpu::VertexStepMode::Vertex,
-                    attributes: &[
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x2,
-                            offset: 0,
-                            shader_location: 0,
-                        },
-                        wgpu::VertexAttribute {
-                            format: wgpu::VertexFormat::Float32x4,
-                            offset: 8,
-                            shader_location: 1,
-                        },
-                    ],
-                }],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                        alpha: wgpu::BlendComponent {
-                            src_factor: wgpu::BlendFactor::One,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                            operation: wgpu::BlendOperation::Add,
-                        },
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = creer_pipeline(
+            device,
+            &shader,
+            &pipeline_layout,
+            format,
+            wgpu::PrimitiveTopology::TriangleList,
+        );
+        let pipeline_lignes = creer_pipeline(
+            device,
+            &shader,
+            &pipeline_layout,
+            format,
+            wgpu::PrimitiveTopology::LineList,
+        );
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("forge-render uniforme"),
             contents: bytemuck::bytes_of(&Uniforms {
@@ -141,6 +107,7 @@ impl Renderer2D {
         });
         Self {
             pipeline,
+            pipeline_lignes,
             uniform_buffer,
             bind_group,
         }
@@ -160,10 +127,82 @@ impl Renderer2D {
         &self.pipeline
     }
 
+    /// Pipeline des lignes du wireframe 3D (pour le callback egui,
+    /// phase C2).
+    pub fn pipeline_lignes(&self) -> &wgpu::RenderPipeline {
+        &self.pipeline_lignes
+    }
+
     /// Bind group de l'uniform (pour le callback egui).
     pub fn bind_group(&self) -> &wgpu::BindGroup {
         &self.bind_group
     }
+}
+
+/// Crée un pipeline de rendu sur le shader du viewport : triangles 2D
+/// ou lignes du wireframe 3D, seule la topologie change (ADR-0015,
+/// phase C2).
+fn creer_pipeline(
+    device: &wgpu::Device,
+    shader: &wgpu::ShaderModule,
+    pipeline_layout: &wgpu::PipelineLayout,
+    format: wgpu::TextureFormat,
+    topology: wgpu::PrimitiveTopology,
+) -> wgpu::RenderPipeline {
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("forge-render trace2d"),
+        layout: Some(pipeline_layout),
+        vertex: wgpu::VertexState {
+            module: shader,
+            entry_point: "vs_main",
+            buffers: &[wgpu::VertexBufferLayout {
+                array_stride: 24,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &[
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 8,
+                        shader_location: 1,
+                    },
+                ],
+            }],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: shader,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: Some(wgpu::BlendState {
+                    color: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::SrcAlpha,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                    alpha: wgpu::BlendComponent {
+                        src_factor: wgpu::BlendFactor::One,
+                        dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                        operation: wgpu::BlendOperation::Add,
+                    },
+                }),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+        }),
+        primitive: wgpu::PrimitiveState {
+            topology,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        cache: None,
+    })
 }
 
 /// Prépare le tampon de sommets d'une frame : recréé à chaque draw
@@ -216,10 +255,47 @@ pub(crate) fn triangles(
     sommets
 }
 
+/// Projette la scène 3D en sommets de lignes : deux par segment, en
+/// pixels physiques relatifs au coin du viewport — un segment dont une
+/// extrémité passe derrière la caméra est ignoré (ADR-0015, phase C2).
+pub(crate) fn lignes(
+    scene: &Scene3D,
+    camera: &Camera3D,
+    largeur_px: f32,
+    hauteur_px: f32,
+    pixels_par_point: f32,
+) -> Vec<Sommet> {
+    let mut sommets = Vec::with_capacity(scene.segments.len() * 2);
+    let largeur = largeur_px as f64 / pixels_par_point as f64;
+    let hauteur = hauteur_px as f64 / pixels_par_point as f64;
+    for segment in &scene.segments {
+        let Some(depart) = camera.vers_ecran(segment.depart, largeur, hauteur) else {
+            continue;
+        };
+        let Some(arrivee) = camera.vers_ecran(segment.arrivee, largeur, hauteur) else {
+            continue;
+        };
+        let ax = depart.0 as f32 * pixels_par_point;
+        let ay = depart.1 as f32 * pixels_par_point;
+        let bx = arrivee.0 as f32 * pixels_par_point;
+        let by = arrivee.1 as f32 * pixels_par_point;
+        sommets.push(Sommet {
+            position_px: [ax, ay],
+            couleur: segment.couleur,
+        });
+        sommets.push(Sommet {
+            position_px: [bx, by],
+            couleur: segment.couleur,
+        });
+    }
+    sommets
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::scene::Segment2D;
+    use crate::scene3d::Segment3D;
 
     /// Un segment produit deux triangles : extrudés
     /// perpendiculairement, à la largeur demandée.
@@ -278,5 +354,34 @@ mod tests {
         let sommets = triangles(&scene, &Camera2D::nouvelle(), (500.0, 300.0), 1.0);
         assert_eq!(sommets[0].position_px[0], 500.0, "x décalé du centre");
         assert_eq!(sommets[1].position_px[1], 299.0, "y décalé du centre");
+    }
+
+    /// Le wireframe 3D projette deux sommets par segment visible ; un
+    /// segment derrière la caméra n'en émet aucun (ADR-0015, phase C2).
+    #[test]
+    fn le_wireframe_projete_deux_sommets_par_segment() {
+        let mut scene = Scene3D::vide();
+        scene.ajouter(Segment3D {
+            depart: (0.0, 0.0, 0.0),
+            arrivee: (10.0, 0.0, 0.0),
+            couleur: [1.0, 1.0, 1.0, 1.0],
+        });
+        scene.ajouter(Segment3D {
+            depart: (5000.0, 0.0, 0.0),
+            arrivee: (6000.0, 0.0, 0.0),
+            couleur: [1.0, 1.0, 1.0, 1.0],
+        });
+        let mut camera = Camera3D::nouvelle();
+        camera.cible_mm = (5.0, 0.0, 0.0);
+        camera.distance = 100.0;
+        camera.azimut = 0.0;
+        camera.elevation = 1.0;
+        let sommets = lignes(&scene, &camera, 800.0, 600.0, 1.0);
+        assert_eq!(sommets.len(), 2, "le segment visible seul est projeté");
+        assert_eq!(
+            sommets[0].couleur,
+            [1.0, 1.0, 1.0, 1.0],
+            "la couleur du segment est portée"
+        );
     }
 }

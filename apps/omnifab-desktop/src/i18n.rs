@@ -68,7 +68,8 @@ mod tests {
         "viewport-erreur",
         "geom-traces-compteur",
         "geom-maillage-compteur",
-        "viewport-wireframe-limite",
+        "viewport-vue-2d",
+        "viewport-vue-3d",
         "viewport-wgpu-indisponible",
         "info-recalcul-ok",
         "info-enregistre",
@@ -111,6 +112,8 @@ mod tests {
         "aide-journal-titre",
         "aide-viewport-titre",
         "aide-viewport-camera",
+        "aide-viewport-vue-2d",
+        "aide-viewport-vue-3d",
         "aide-geom-compteur",
     ];
 

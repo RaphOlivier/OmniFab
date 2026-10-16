@@ -18,10 +18,11 @@
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
 //!   est un état de l'app UI, jamais un événement ;
-//! - **viewport wgpu** (ADR-0015, phase C1) : grille de fond et tracés
-//!   importés dessinés par le GPU via forge-render, caméra à la molette
-//!   (zoom au curseur) et au glisser (pan) ; le wireframe STL reste au
-//!   painter egui, son rendu GPU arrive en phase C2 ;
+//! - **viewport wgpu** (ADR-0015, phases C1 et C2) : vue 2D — grille
+//!   de fond et tracés importés dessinés par le GPU via forge-render,
+//!   caméra à la molette (zoom au curseur) et au glisser (pan) ;
+//!   vue 3D — wireframe du maillage STL par le GPU, arêtes
+//!   dédupliquées, caméra orbite, plafond d'affichage supprimé ;
 //! - les dimensions manipulées restent des `Length` (forge-units, jamais
 //!   de `f64` nu dans l'UI) ;
 //! - toute l'interface passe par le catalogue Fluent embarqué
@@ -41,7 +42,10 @@ use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
-use forge_render::{Boite2, Camera2D, Couleur, Renderer2D, Scene2D, dessiner_scene};
+use forge_render::{
+    Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment3D,
+    dessiner_scene, dessiner_wireframe, pas_de_grille,
+};
 use forge_session::{
     Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
 };
@@ -57,11 +61,12 @@ type RenderState = eframe::egui_wgpu::RenderState;
 const ACTEUR: &str = "desktop.demo";
 /// Expression initiale de la diagonale du rectangle.
 const DEFAULT_DIAGONAL_EXPR: &str = "sqrt(width_mm * width_mm + height_mm * height_mm)";
-/// Plafond d'affichage du wireframe : au-delà, seule la boîte
-/// englobante du maillage est dessinée. Réglage du démonstrateur,
-/// relevable sans ADR ; supprimé par le viewport wgpu de la phase C2
-/// (ADR-0015).
-const LIMITE_WIREFRAME_TRIANGLES: usize = 20_000;
+/// Couleur du wireframe 3D du maillage, RGBA normalisé — parité avec
+/// le painter egui (40, 220, 220) (ADR-0015, phase C2).
+const COULEUR_WIREFRAME: Couleur = [40.0 / 255.0, 220.0 / 255.0, 220.0 / 255.0, 1.0];
+/// Couleur du contour du rectangle paramétrique posé sur le plan z = 0
+/// de la vue 3D, RGBA normalisé (ADR-0015, phase C2).
+const COULEUR_RECTANGLE_3D: Couleur = [1.0, 1.0, 1.0, 1.0];
 /// Couleur des tracés importés, RGBA normalisé — parité avec le painter
 /// egui (240, 180, 20) (ADR-0015).
 const COULEUR_TRACES: Couleur = [240.0 / 255.0, 180.0 / 255.0, 20.0 / 255.0, 1.0];
@@ -82,6 +87,15 @@ enum Ecran {
     Accueil,
     /// Atelier : viewport et panneaux.
     Atelier,
+}
+
+/// Vue du viewport : plan 2D ou volume 3D (ADR-0015, phase C2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Vue {
+    /// Vue 2D : grille, rectangle et tracés au sol.
+    DeuxD,
+    /// Vue 3D : wireframe du maillage en volume, caméra orbite.
+    TroisD,
 }
 
 struct DemoApp {
@@ -115,6 +129,12 @@ struct DemoApp {
     /// Clé du dernier ajustement : références des blobs tracés et
     /// maillage — la caméra se réajuste quand elles changent.
     camera_cle: Option<(Option<String>, Option<String>)>,
+    /// Caméra orbite de la vue 3D : ajustée automatiquement quand la
+    /// scène change, pilotée ensuite par l'utilisateur (ADR-0015,
+    /// phase C2).
+    camera3d: Camera3D,
+    /// Vue affichée par le viewport : 2D ou 3D (ADR-0015, phase C2).
+    vue: Vue,
     /// Pipeline wgpu du viewport créé : le dessin 2D passe par le GPU,
     /// sinon le viewport affiche le message d'indisponibilité.
     viewport_wgpu: bool,
@@ -158,6 +178,8 @@ impl DemoApp {
             cache_maillage: None,
             camera: Camera2D::nouvelle(),
             camera_cle: None,
+            camera3d: Camera3D::nouvelle(),
+            vue: Vue::DeuxD,
             viewport_wgpu,
             tampon_dimensions: BTreeMap::new(),
         };
@@ -177,6 +199,8 @@ impl DemoApp {
         self.cache_maillage = None;
         self.camera = Camera2D::nouvelle();
         self.camera_cle = None;
+        self.camera3d = Camera3D::nouvelle();
+        self.vue = Vue::DeuxD;
         self.aide = None;
         self.chemin_projet = None;
         self.executer(&SetInput {
@@ -257,6 +281,7 @@ impl DemoApp {
         self.cache_maillage = None;
         self.camera = Camera2D::nouvelle();
         self.camera_cle = None;
+        self.camera3d = Camera3D::nouvelle();
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
         self.error = None;
@@ -512,6 +537,45 @@ impl DemoApp {
         }
     }
 
+/// Boîte englobante 3D de la scène importée : union des tracés
+    /// posés sur le plan z = 0 et des sommets du maillage en volume
+    /// (ADR-0015, phase C2).
+    fn boite_scene_3d(traces: &[Path2], maillage: Option<&Mesh>) -> Option<Boite3D> {
+        let mut boite: Option<Boite3D> = None;
+        for trace in traces {
+            for point in trace.points() {
+                let x = point.x().millimeters();
+                let y = point.y().millimeters();
+                boite = Some(match boite {
+                    Some(b) => b.etendre(x, y, 0.0),
+                    None => Boite3D::du_point(x, y, 0.0),
+                });
+            }
+        }
+        if let Some(maillage) = maillage {
+            for sommet in maillage.vertices() {
+                let x = sommet.x().millimeters();
+                let y = sommet.y().millimeters();
+                let z = sommet.z().millimeters();
+                boite = Some(match boite {
+                    Some(b) => b.etendre(x, y, z),
+                    None => Boite3D::du_point(x, y, z),
+                });
+            }
+        }
+        boite
+    }
+
+    /// Boîte de cadrage automatique de la caméra 3D : celle de la
+    /// scène importée quand il y en a une, sinon le rectangle
+    /// paramétrique posé sur le plan z = 0 (ADR-0015, phase C2).
+    fn boite_cadrage_3d(width: f64, height: f64, scene: Option<Boite3D>) -> Boite3D {
+        match scene {
+            Some(scene) => scene,
+            None => Boite3D::du_point(0.0, 0.0, 0.0).etendre(width, height, 0.0),
+        }
+    }
+
     /// Engagement d'un champ de dimension pour cette frame, s'il y en a
     /// un : le DragValue écrit son tampon au relâchement du geste ou à
     /// la fin d'une édition clavier, et un engagement sans changement
@@ -547,57 +611,6 @@ impl DemoApp {
     fn point_ecran(camera: &Camera2D, rect: egui::Rect, x: f64, y: f64) -> egui::Pos2 {
         let (px, py) = camera.vers_ecran((x, y));
         egui::pos2(rect.center().x + px as f32, rect.center().y + py as f32)
-    }
-
-    /// Dessine le wireframe du maillage : projection de dessus, cyan,
-    /// plafond d'affichage au-delà duquel seule la boîte englobante
-    /// est dessinée — le maillage reste importé et compté, aucune
-    /// perte de données (ADR-0014). Painter egui, GPU en phase C2
-    /// (ADR-0015).
-    fn dessiner_maillage(
-        painter: &egui::Painter,
-        camera: &Camera2D,
-        rect: egui::Rect,
-        maillage: &Mesh,
-    ) {
-        let couleur = egui::Color32::from_rgb(40, 220, 220);
-        if maillage.triangle_count() > LIMITE_WIREFRAME_TRIANGLES {
-            let mut boite: Option<Boite2> = None;
-            for sommet in maillage.vertices() {
-                let x = sommet.x().millimeters();
-                let y = sommet.y().millimeters();
-                boite = Some(match boite {
-                    Some(b) => b.etendre(x, y),
-                    None => Boite2::du_point(x, y),
-                });
-            }
-            if let Some(boite) = boite {
-                let coin = Self::point_ecran(camera, rect, boite.min_x, boite.min_y);
-                let oppose = Self::point_ecran(camera, rect, boite.max_x, boite.max_y);
-                let contour = egui::Rect::from_two_pos(coin, oppose);
-                painter.rect_stroke(contour, 2.0, egui::Stroke::new(1.0_f32, couleur));
-            }
-            return;
-        }
-        let sommets = maillage.vertices();
-        for triangle in maillage.triangles() {
-            let points: Vec<egui::Pos2> = triangle
-                .iter()
-                .map(|index| {
-                    let sommet = sommets[*index as usize];
-                    Self::point_ecran(
-                        camera,
-                        rect,
-                        sommet.x().millimeters(),
-                        sommet.y().millimeters(),
-                    )
-                })
-                .collect();
-            painter.add(egui::Shape::line(
-                vec![points[0], points[1], points[2], points[0]],
-                egui::Stroke::new(1.0_f32, couleur),
-            ));
-        }
     }
 
     /// Re-parse les tracés courants si le blob référencé a changé :
@@ -1001,6 +1014,22 @@ impl DemoApp {
             ui.label(egui::RichText::new(info.clone()).color(egui::Color32::LIGHT_GREEN));
         }
         ui.separator();
+        // Bascule des vues du viewport : 2D (plan) ou 3D (orbite) —
+        // phase C2 (ADR-0015).
+        ui.horizontal(|ui| {
+            let reponse =
+                ui.selectable_label(self.vue == Vue::DeuxD, self.texte("viewport-vue-2d"));
+            avec_aide(&reponse, "aide-viewport-vue-2d", &mut self.aide);
+            if reponse.clicked() {
+                self.vue = Vue::DeuxD;
+            }
+            let reponse =
+                ui.selectable_label(self.vue == Vue::TroisD, self.texte("viewport-vue-3d"));
+            avec_aide(&reponse, "aide-viewport-vue-3d", &mut self.aide);
+            if reponse.clicked() {
+                self.vue = Vue::TroisD;
+            }
+        });
         self.mettre_a_jour_cache();
         self.mettre_a_jour_cache_maillage();
         let width = self
@@ -1057,74 +1086,143 @@ impl DemoApp {
             let boite = Self::boite_cadrage(width, height, scene);
             self.camera
                 .ajuster(rect.width() as f64, rect.height() as f64, boite, 20.0);
+            let scene3d = Self::boite_scene_3d(traces, maillage);
+            let boite3d = Self::boite_cadrage_3d(width, height, scene3d);
+            self.camera3d.ajuster(boite3d);
             self.camera_cle = Some(cle);
         }
-        // Molette : zoom sur le point du dessin sous le curseur ;
-        // glisser : la scène suit le pointeur (ADR-0015).
+        // Vue 2D : la molette zoome au curseur, un glissement déplace
+        // la vue. Vue 3D : la molette zoome, un glissement fait orbiter
+        // la caméra (ADR-0015, phase C2).
         if response.hovered() {
             let molette: f64 = response
                 .ctx
                 .input(|i| i.raw_scroll_delta.y as f64)
                 .clamp(-600.0, 600.0);
             if molette.abs() > 1e-3 {
-                let position = response.hover_pos().unwrap_or(rect.center()) - rect.center();
-                self.camera.zoom_au_curseur(
-                    (position.x as f64, position.y as f64),
-                    (molette / 600.0).exp(),
-                );
+                match self.vue {
+                    Vue::DeuxD => {
+                        let position =
+                            response.hover_pos().unwrap_or(rect.center()) - rect.center();
+                        self.camera.zoom_au_curseur(
+                            (position.x as f64, position.y as f64),
+                            (molette / 600.0).exp(),
+                        );
+                    }
+                    Vue::TroisD => self.camera3d.zoomer((molette / 600.0).exp()),
+                }
             }
         }
         if response.dragged() {
             let delta = response.drag_delta();
-            self.camera.deplacer((delta.x as f64, delta.y as f64));
+            match self.vue {
+                Vue::DeuxD => self.camera.deplacer((delta.x as f64, delta.y as f64)),
+                Vue::TroisD => self.camera3d.orbiter((delta.x as f64, delta.y as f64)),
+            }
         }
-        // Rectangle paramétrique dans le monde (0, 0) → (width, height),
-        // dessiné par le painter à travers la caméra (ADR-0015).
-        let coin = Self::point_ecran(&self.camera, rect, 0.0, 0.0);
-        let oppose = Self::point_ecran(&self.camera, rect, width, height);
-        let shape = egui::Rect::from_two_pos(coin, oppose);
-        painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
-        painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
-        painter.text(
-            shape.left_bottom() + egui::vec2(0.0, 16.0),
-            egui::Align2::LEFT_TOP,
-            format!(
-                "{} × {}",
-                Length::from_millimeters(width),
-                Length::from_millimeters(height)
-            ),
-            egui::FontId::default(),
-            egui::Color32::WHITE,
-        );
-        // Grille et tracés par le GPU (ADR-0015) ; sans wgpu, la scène
-        // 2D n'est pas dessinée et le viewport le dit.
-        if self.viewport_wgpu {
-            let mut scene = Scene2D::vide();
-            let visible = self
-                .camera
-                .boite_visible(rect.width() as f64, rect.height() as f64);
-            scene.ajouter_grille(
-                visible,
-                self.camera.echelle,
-                GRILLE_CIBLE_PX,
-                COULEUR_GRILLE,
-            );
-            let traces_scene = Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
-            scene.segments.extend(traces_scene.segments);
-            dessiner_scene(&painter, rect, scene, self.camera);
-        } else {
-            ui.label(
-                egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
-                    .color(egui::Color32::YELLOW),
-            );
+        // Vue 2D : rectangle paramétrique par le painter, grille et
+        // tracés par le GPU. Vue 3D : rectangle, tracés et grille au
+        // sol posés sur le plan z = 0, wireframe du maillage en
+        // volume — arêtes dédupliquées, sans plafond (ADR-0015,
+        // phase C2).
+        match self.vue {
+            Vue::DeuxD => {
+                let coin = Self::point_ecran(&self.camera, rect, 0.0, 0.0);
+                let oppose = Self::point_ecran(&self.camera, rect, width, height);
+                let shape = egui::Rect::from_two_pos(coin, oppose);
+                painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
+                painter.rect_stroke(
+                    shape,
+                    4.0,
+                    egui::Stroke::new(1.5_f32, egui::Color32::WHITE),
+                );
+                painter.text(
+                    shape.left_bottom() + egui::vec2(0.0, 16.0),
+                    egui::Align2::LEFT_TOP,
+                    format!(
+                        "{} × {}",
+                        Length::from_millimeters(width),
+                        Length::from_millimeters(height)
+                    ),
+                    egui::FontId::default(),
+                    egui::Color32::WHITE,
+                );
+                // Grille et tracés par le GPU (ADR-0015) ; sans wgpu,
+                // la scène 2D n'est pas dessinée et le viewport le dit.
+                if self.viewport_wgpu {
+                    let mut scene = Scene2D::vide();
+                    let visible = self
+                        .camera
+                        .boite_visible(rect.width() as f64, rect.height() as f64);
+                    scene.ajouter_grille(
+                        visible,
+                        self.camera.echelle,
+                        GRILLE_CIBLE_PX,
+                        COULEUR_GRILLE,
+                    );
+                    let traces_scene =
+                        Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
+                    scene.segments.extend(traces_scene.segments);
+                    dessiner_scene(&painter, rect, scene, self.camera);
+                } else {
+                    ui.label(
+                        egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
+                            .color(egui::Color32::YELLOW),
+                    );
+                }
+            }
+            Vue::TroisD => {
+                if self.viewport_wgpu {
+                    let echelle = self.camera3d.echelle_cible(rect.height() as f64);
+                    let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
+                    let mut scene = Scene3D::depuis_traces(traces, COULEUR_TRACES);
+                    // Contour du rectangle paramétrique, posé sur le
+                    // plan z = 0 (ADR-0015, phase C2).
+                    scene.ajouter(Segment3D {
+                        depart: (0.0, 0.0, 0.0),
+                        arrivee: (width, 0.0, 0.0),
+                        couleur: COULEUR_RECTANGLE_3D,
+                    });
+                    scene.ajouter(Segment3D {
+                        depart: (width, 0.0, 0.0),
+                        arrivee: (width, height, 0.0),
+                        couleur: COULEUR_RECTANGLE_3D,
+                    });
+                    scene.ajouter(Segment3D {
+                        depart: (width, height, 0.0),
+                        arrivee: (0.0, height, 0.0),
+                        couleur: COULEUR_RECTANGLE_3D,
+                    });
+                    scene.ajouter(Segment3D {
+                        depart: (0.0, height, 0.0),
+                        arrivee: (0.0, 0.0, 0.0),
+                        couleur: COULEUR_RECTANGLE_3D,
+                    });
+                    // La grille au sol couvre la boîte de cadrage,
+                    // élargie d'un pas de chaque côté.
+                    let boite = Self::boite_cadrage_3d(
+                        width,
+                        height,
+                        Self::boite_scene_3d(traces, maillage),
+                    );
+                    let boite_grille = boite
+                        .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
+                        .etendre(boite.max_x + pas, boite.max_y + pas, 0.0);
+                    scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
+                    if let Some(maillage) = maillage {
+                        let wireframe = Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME);
+                        scene.segments.extend(wireframe.segments);
+                    }
+                    dessiner_wireframe(&painter, rect, scene, self.camera3d);
+                } else {
+                    ui.label(
+                        egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
+                            .color(egui::Color32::YELLOW),
+                    );
+                }
+            }
         }
-        // Wireframe du maillage par le painter egui (GPU en phase C2).
-        if let Some(maillage) = maillage {
-            Self::dessiner_maillage(&painter, &self.camera, rect, maillage);
-        }
-        // Compteurs de géométrie importée, sous le rectangle (ADR-0011) ;
-        // le wireframe plafonne : au-delà, boîte englobante seule
-        // (ADR-0014).
+        // Compteurs de géométrie importée, sous le viewport (ADR-0011).
         if let Some(traces) = self.session.geom().traces() {
             let libelle = self.texte_avec(
                 "geom-traces-compteur",
@@ -1143,16 +1241,6 @@ impl DemoApp {
             );
             let reponse = ui.label(libelle);
             avec_aide(&reponse, "aide-geom-compteur", &mut self.aide);
-            if maillage.triangles > LIMITE_WIREFRAME_TRIANGLES {
-                let limite = self.texte_avec(
-                    "viewport-wireframe-limite",
-                    &[
-                        ("triangles", Argument::from(maillage.triangles)),
-                        ("limite", Argument::from(LIMITE_WIREFRAME_TRIANGLES)),
-                    ],
-                );
-                ui.label(egui::RichText::new(limite).color(egui::Color32::YELLOW));
-            }
         }
     }
 }
@@ -1386,6 +1474,41 @@ mod tests {
         assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
         assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
         assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
+    }
+
+    /// La boîte de scène 3D englobe tracés et maillage en volume :
+    /// les tracés posés sur le plan z = 0, les sommets du maillage
+    /// avec leur altitude (ADR-0015, phase C2).
+    #[test]
+    fn boite_scene_3d_union_traces_maillage() {
+        let un = Length::from_millimeters(1.0);
+        let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
+        let b = Point2::new(un, Length::ZERO).expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let s0 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s1 = Point3::new(un, un, un).expect("fini");
+        let s2 = Point3::new(un, un, Length::ZERO).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let boite = DemoApp::boite_scene_3d(&[trace], Some(&maillage)).expect("boîte");
+        assert_eq!(boite.min_x, 0.0, "origine x commune");
+        assert_eq!(boite.min_y, 0.0, "origine y commune");
+        assert_eq!(boite.min_z, 0.0, "tracé posé sur le plan z = 0");
+        assert_eq!(boite.max_x, 1.0, "union en x");
+        assert_eq!(boite.max_y, 1.0, "union en y");
+        assert_eq!(boite.max_z, 1.0, "altitude du maillage");
+    }
+
+    /// Sans scène importée, le cadrage 3D vise le rectangle
+    /// paramétrique posé sur le plan z = 0 (ADR-0015, phase C2).
+    #[test]
+    fn le_cadrage_3d_sans_scene_vise_le_rectangle() {
+        let boite = DemoApp::boite_cadrage_3d(800.0, 600.0, None);
+        assert_eq!(boite.min_x, 0.0, "origine x du rectangle");
+        assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
+        assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
+        assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
+        assert_eq!(boite.min_z, 0.0, "plan z = 0");
+        assert_eq!(boite.max_z, 0.0, "rectangle posé sur le plan");
     }
 
     /// La valeur glissée s'engage depuis le tampon persistant : au
