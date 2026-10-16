@@ -12,6 +12,7 @@ forge-doc = { path = "../../crates/forge-doc" }
 forge-geom = { path = "../../crates/forge-geom" }
 forge-i18n = { path = "../../crates/forge-i18n" }
 forge-io = { path = "../../crates/forge-io" }
+forge-render = { path = "../../crates/forge-render", features = ["egui"] }
 forge-session = { path = "../../crates/forge-session" }
 forge-units = { path = "../../crates/forge-units" }
 forge-values = { path = "../../crates/forge-values" }

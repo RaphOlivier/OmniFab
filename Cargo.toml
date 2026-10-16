@@ -9,6 +9,7 @@ members = [
     "crates/forge-geom",
     "crates/forge-i18n",
     "crates/forge-io",
+    "crates/forge-render",
     "crates/forge-session",
     "crates/forge-units",
     "crates/forge-values",

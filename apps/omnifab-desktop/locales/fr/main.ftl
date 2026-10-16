@@ -70,6 +70,7 @@ journal-types-ignores = Types ignorés (journal d'une version plus récente ?) :
 
 viewport-titre = Viewport — rectangle de démonstration, tracés et maillage importés
 viewport-erreur = Erreur : {$texte}
+viewport-wgpu-indisponible = Rendu wgpu indisponible : la grille et les tracés 2D ne sont pas dessinés (moteur wgpu requis, ADR-0015).
 
 # --- Compteurs de géométrie importée ---
 
@@ -222,8 +223,13 @@ aide-journal-titre =
 
 aide-viewport-titre =
     .titre = Viewport
-    .description = Zone d'affichage : le rectangle de démonstration aux dimensions saisies, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan — même mise à l'échelle pour les deux. Les messages d'erreur et de confirmation s'affichent ici.
+    .description = Zone d'affichage : le rectangle de démonstration aux dimensions saisies, la grille de fond, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan — tout sur une même caméra (ADR-0015). La molette zoome vers le curseur, un glissement déplace la vue. Les messages d'erreur et de confirmation s'affichent ici.
     .exemple = Importez un SVG puis un petit STL : le triangle jaune et le wireframe cyan se dessinent ensemble au-dessus du rectangle, avec leurs compteurs dessous.
+
+aide-viewport-camera =
+    .titre = Caméra du viewport
+    .description = La molette zoome sur le point du dessin sous le curseur ; un glissement (bouton maintenu) déplace la vue. La caméra se réajuste automatiquement quand la géométrie change : import, annulation, rétablissement ou ouverture d'un projet.
+    .exemple = Importez un SVG, éloignez la vue à la molette, puis annulez l'import : la vue se réajuste pour réafficher le rectangle de démonstration.
 
 aide-geom-compteur =
     .titre = Compteur de géométrie importée

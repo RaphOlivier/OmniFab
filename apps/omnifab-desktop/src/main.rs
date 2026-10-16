@@ -18,10 +18,10 @@
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
 //!   est un état de l'app UI, jamais un événement ;
-//! - **wireframe du maillage STL** dans le viewport, même échelle que
-//!   les tracés (ADR-0014) : projection orthographique de dessus,
-//!   plafond d'affichage au-delà duquel seule la boîte englobante est
-//!   dessinée — aucune perte de données ;
+//! - **viewport wgpu** (ADR-0015, phase C1) : grille de fond et tracés
+//!   importés dessinés par le GPU via forge-render, caméra à la molette
+//!   (zoom au curseur) et au glisser (pan) ; le wireframe STL reste au
+//!   painter egui, son rendu GPU arrive en phase C2 ;
 //! - les dimensions manipulées restent des `Length` (forge-units, jamais
 //!   de `f64` nu dans l'UI) ;
 //! - toute l'interface passe par le catalogue Fluent embarqué
@@ -41,11 +41,16 @@ use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
+use forge_render::{Boite2, Camera2D, Couleur, Renderer2D, Scene2D, dessiner_scene};
 use forge_session::{
     Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
 };
 use forge_units::Length;
 use std::path::{Path, PathBuf};
+
+/// État de rendu wgpu d'eframe : alias pour alléger la signature du
+/// constructeur (ADR-0015).
+type RenderState = eframe::egui_wgpu::RenderState;
 
 /// Acteur des événements écrits par le démonstrateur (ADR-0011).
 const ACTEUR: &str = "desktop.demo";
@@ -53,9 +58,18 @@ const ACTEUR: &str = "desktop.demo";
 const DEFAULT_DIAGONAL_EXPR: &str = "sqrt(width_mm * width_mm + height_mm * height_mm)";
 /// Plafond d'affichage du wireframe : au-delà, seule la boîte
 /// englobante du maillage est dessinée. Réglage du démonstrateur,
-/// relevable sans ADR ; supprimé par le viewport wgpu de la phase C
-/// (ADR-0014).
+/// relevable sans ADR ; supprimé par le viewport wgpu de la phase C2
+/// (ADR-0015).
 const LIMITE_WIREFRAME_TRIANGLES: usize = 20_000;
+/// Couleur des tracés importés, RGBA normalisé — parité avec le painter
+/// egui (240, 180, 20) (ADR-0015).
+const COULEUR_TRACES: Couleur = [240.0 / 255.0, 180.0 / 255.0, 20.0 / 255.0, 1.0];
+/// Largeur du trait des tracés importés, en pixels logiques (ADR-0015).
+const LARGEUR_TRACES_PX: f32 = 1.5;
+/// Couleur de la grille de fond, RGBA normalisé (ADR-0015).
+const COULEUR_GRILLE: Couleur = [0.35, 0.40, 0.47, 1.0];
+/// Espacement visé entre deux lignes de grille, en pixels (ADR-0015).
+const GRILLE_CIBLE_PX: f64 = 80.0;
 /// Nombre d'événements posés par une session vierge : au-delà, la
 /// session est considérée « en cours » sur l'écran d'accueil.
 const EVENEMENTS_VIERGES: usize = 3;
@@ -67,83 +81,6 @@ enum Ecran {
     Accueil,
     /// Atelier : viewport et panneaux.
     Atelier,
-}
-
-/// Vue commune aux tracés et au maillage : projection orthographique
-/// de dessus, ajustée sur une boîte englobante en millimètres — une
-/// seule échelle pour toute la scène importée (ADR-0014).
-struct Vue {
-    /// Échelle, en pixels par millimètre.
-    echelle: f64,
-    /// Centre de la scène, en millimètres.
-    centre_mm: (f64, f64),
-    /// Centre de la zone d'affichage, à l'écran.
-    centre_ecran: egui::Pos2,
-}
-
-impl Vue {
-    /// Ajuste la vue sur `boite` dans `rect`, avec une marge.
-    fn nouvelle(rect: egui::Rect, boite: Boite) -> Self {
-        let largeur_mm = (boite.max_x - boite.min_x).max(1e-9);
-        let hauteur_mm = (boite.max_y - boite.min_y).max(1e-9);
-        let marge = 20.0;
-        let echelle = ((rect.width() - 2.0 * marge) as f64 / largeur_mm)
-            .min((rect.height() - 2.0 * marge) as f64 / hauteur_mm)
-            .max(1e-9);
-        let centre_x = (boite.min_x + boite.max_x) / 2.0;
-        let centre_y = (boite.min_y + boite.max_y) / 2.0;
-        Self {
-            echelle,
-            centre_mm: (centre_x, centre_y),
-            centre_ecran: rect.center(),
-        }
-    }
-
-    /// Projette un point de la scène, en millimètres, à l'écran :
-    /// l'axe Y du monde monte (convention SVG/DXF), l'axe Y de
-    /// l'écran descend — le Y est inversé, sans quoi la scène
-    /// apparaît en miroir vertical.
-    fn projetter(&self, x: f64, y: f64) -> egui::Pos2 {
-        let (centre_x, centre_y) = self.centre_mm;
-        let ecran_x = self.centre_ecran.x as f64 + (x - centre_x) * self.echelle;
-        let ecran_y = self.centre_ecran.y as f64 - (y - centre_y) * self.echelle;
-        egui::pos2(ecran_x as f32, ecran_y as f32)
-    }
-}
-
-/// Boîte englobante 2D, en millimètres.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Boite {
-    /// Borne inférieure en x.
-    min_x: f64,
-    /// Borne inférieure en y.
-    min_y: f64,
-    /// Borne supérieure en x.
-    max_x: f64,
-    /// Borne supérieure en y.
-    max_y: f64,
-}
-
-impl Boite {
-    /// Première boîte d'une scène : réduite au point donné.
-    fn du_point(x: f64, y: f64) -> Self {
-        Self {
-            min_x: x,
-            min_y: y,
-            max_x: x,
-            max_y: y,
-        }
-    }
-
-    /// Étend la boîte pour englober le point donné.
-    fn etendre(self, x: f64, y: f64) -> Self {
-        Self {
-            min_x: self.min_x.min(x),
-            min_y: self.min_y.min(y),
-            max_x: self.max_x.max(x),
-            max_y: self.max_y.max(y),
-        }
-    }
 }
 
 struct DemoApp {
@@ -171,12 +108,36 @@ struct DemoApp {
     /// Cache mémoire non autoritaire du maillage re-parsé (nom du blob
     /// + maillage), invalidé quand la référence change (ADR-0014).
     cache_maillage: Option<(String, Mesh)>,
+    /// Caméra du viewport : ajustée automatiquement quand la scène
+    /// change, pilotée ensuite par l'utilisateur (ADR-0015).
+    camera: Camera2D,
+    /// Clé du dernier ajustement : références des blobs tracés et
+    /// maillage — la caméra se réajuste quand elles changent.
+    camera_cle: Option<(Option<String>, Option<String>)>,
+    /// Pipeline wgpu du viewport créé : le dessin 2D passe par le GPU,
+    /// sinon le viewport affiche le message d'indisponibilité.
+    viewport_wgpu: bool,
 }
 
 impl DemoApp {
     /// Nouveau démonstrateur, sur le catalogue français embarqué :
-    /// session vierge posée, écran d'accueil affiché (ADR-0014).
-    fn new(i18n: i18n::Catalogue) -> Self {
+    /// session vierge posée, écran d'accueil affiché (ADR-0014) ; le
+    /// pipeline wgpu du viewport est créé ici quand le rendu wgpu est
+    /// actif (ADR-0015).
+    fn new(i18n: i18n::Catalogue, render_state: Option<&RenderState>) -> Self {
+        // Pipeline wgpu du viewport : créé une fois ici, partagé avec
+        // les callbacks d'egui-wgpu via les ressources du renderer
+        // (ADR-0015).
+        let mut viewport_wgpu = false;
+        if let Some(etat) = render_state {
+            let device = etat.device.as_ref();
+            let format = etat.target_format;
+            etat.renderer
+                .write()
+                .callback_resources
+                .insert(Renderer2D::nouveau(device, format));
+            viewport_wgpu = true;
+        }
         let mut app = Self {
             session: Session::new(ACTEUR),
             expr_buf: String::new(),
@@ -188,6 +149,9 @@ impl DemoApp {
             chemin_projet: None,
             cache: None,
             cache_maillage: None,
+            camera: Camera2D::nouvelle(),
+            camera_cle: None,
+            viewport_wgpu,
         };
         app.reinitialiser();
         app
@@ -203,6 +167,8 @@ impl DemoApp {
         self.info = None;
         self.cache = None;
         self.cache_maillage = None;
+        self.camera = Camera2D::nouvelle();
+        self.camera_cle = None;
         self.aide = None;
         self.chemin_projet = None;
         self.executer(&SetInput {
@@ -281,6 +247,8 @@ impl DemoApp {
         self.session = session;
         self.cache = None;
         self.cache_maillage = None;
+        self.camera = Camera2D::nouvelle();
+        self.camera_cle = None;
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
         self.error = None;
@@ -500,15 +468,15 @@ impl DemoApp {
     /// Boîte englobante 2D de la scène importée : union des tracés et
     /// du maillage projeté de dessus — une seule échelle pour tout
     /// (ADR-0014).
-    fn boite_scene(traces: &[Path2], maillage: Option<&Mesh>) -> Option<Boite> {
-        let mut boite: Option<Boite> = None;
+    fn boite_scene(traces: &[Path2], maillage: Option<&Mesh>) -> Option<Boite2> {
+        let mut boite: Option<Boite2> = None;
         for trace in traces {
             for point in trace.points() {
                 let x = point.x().millimeters();
                 let y = point.y().millimeters();
                 boite = Some(match boite {
                     Some(b) => b.etendre(x, y),
-                    None => Boite::du_point(x, y),
+                    None => Boite2::du_point(x, y),
                 });
             }
         }
@@ -518,57 +486,48 @@ impl DemoApp {
                 let y = sommet.y().millimeters();
                 boite = Some(match boite {
                     Some(b) => b.etendre(x, y),
-                    None => Boite::du_point(x, y),
+                    None => Boite2::du_point(x, y),
                 });
             }
         }
         boite
     }
 
-    /// Dessine les tracés dans la vue commune : couleur jaune, un
-    /// tracé fermé refermé sur son premier sommet (ADR-0011).
-    fn dessiner_traces(painter: &egui::Painter, vue: &Vue, traces: &[Path2]) {
-        let couleur = egui::Color32::from_rgb(240, 180, 20);
-        for trace in traces {
-            let mut points: Vec<egui::Pos2> = trace
-                .points()
-                .iter()
-                .map(|point| vue.projetter(point.x().millimeters(), point.y().millimeters()))
-                .collect();
-            if points.len() < 2 {
-                continue;
-            }
-            if trace.is_closed() {
-                points.push(points[0]);
-            }
-            painter.add(egui::Shape::line(
-                points,
-                egui::Stroke::new(1.5_f32, couleur),
-            ));
-        }
+    /// Projette un point du monde à l'écran : la caméra inverse l'axe
+    /// Y (convention SVG/DXF) et le rectangle du viewport fixe
+    /// l'origine (ADR-0015).
+    fn point_ecran(camera: &Camera2D, rect: egui::Rect, x: f64, y: f64) -> egui::Pos2 {
+        let (px, py) = camera.vers_ecran((x, y));
+        egui::pos2(rect.left_top().x + px as f32, rect.left_top().y + py as f32)
     }
 
     /// Dessine le wireframe du maillage : projection de dessus, cyan,
     /// plafond d'affichage au-delà duquel seule la boîte englobante
     /// est dessinée — le maillage reste importé et compté, aucune
-    /// perte de données (ADR-0014).
-    fn dessiner_maillage(painter: &egui::Painter, vue: &Vue, maillage: &Mesh) {
+    /// perte de données (ADR-0014). Painter egui, GPU en phase C2
+    /// (ADR-0015).
+    fn dessiner_maillage(
+        painter: &egui::Painter,
+        camera: &Camera2D,
+        rect: egui::Rect,
+        maillage: &Mesh,
+    ) {
         let couleur = egui::Color32::from_rgb(40, 220, 220);
         if maillage.triangle_count() > LIMITE_WIREFRAME_TRIANGLES {
-            let mut boite: Option<Boite> = None;
+            let mut boite: Option<Boite2> = None;
             for sommet in maillage.vertices() {
                 let x = sommet.x().millimeters();
                 let y = sommet.y().millimeters();
                 boite = Some(match boite {
                     Some(b) => b.etendre(x, y),
-                    None => Boite::du_point(x, y),
+                    None => Boite2::du_point(x, y),
                 });
             }
             if let Some(boite) = boite {
-                let coin = vue.projetter(boite.min_x, boite.min_y);
-                let oppose = vue.projetter(boite.max_x, boite.max_y);
-                let rect = egui::Rect::from_two_pos(coin, oppose);
-                painter.rect_stroke(rect, 2.0, egui::Stroke::new(1.0_f32, couleur));
+                let coin = Self::point_ecran(camera, rect, boite.min_x, boite.min_y);
+                let oppose = Self::point_ecran(camera, rect, boite.max_x, boite.max_y);
+                let contour = egui::Rect::from_two_pos(coin, oppose);
+                painter.rect_stroke(contour, 2.0, egui::Stroke::new(1.0_f32, couleur));
             }
             return;
         }
@@ -578,7 +537,12 @@ impl DemoApp {
                 .iter()
                 .map(|index| {
                     let sommet = sommets[*index as usize];
-                    vue.projetter(sommet.x().millimeters(), sommet.y().millimeters())
+                    Self::point_ecran(
+                        camera,
+                        rect,
+                        sommet.x().millimeters(),
+                        sommet.y().millimeters(),
+                    )
                 })
                 .collect();
             painter.add(egui::Shape::line(
@@ -977,17 +941,64 @@ impl DemoApp {
         let hauteur = (ui.available_height() - lignes_reservees).max(100.0);
         let (response, painter) = ui.allocate_painter(
             egui::vec2(ui.available_width(), hauteur),
-            egui::Sense::hover(),
+            egui::Sense::click_and_drag(),
         );
+        avec_aide(&response, "aide-viewport-camera", &mut self.aide);
+        // Références des blobs tracés et maillage : la caméra se
+        // réajuste quand l'une d'elles change (import, undo/redo,
+        // ouverture — ADR-0015).
+        let cle_traces = self
+            .session
+            .geom()
+            .traces()
+            .map(|reference| reference.blob.clone());
+        let cle_maillage = self
+            .session
+            .geom()
+            .maillage()
+            .map(|reference| reference.blob.clone());
+        let cle = (cle_traces, cle_maillage);
+        let traces: &[Path2] = match &self.cache {
+            Some((_, traces)) => traces,
+            None => &[],
+        };
+        let maillage: Option<&Mesh> = self.cache_maillage.as_ref().map(|(_, m)| m);
         let rect = response.rect;
-        let margin = 30.0;
-        let scale = ((rect.width() - 2.0 * margin) as f64 / width)
-            .min((rect.height() - 2.0 * margin) as f64 / height)
-            .max(1.0);
-        let shape = egui::Rect::from_center_size(
-            rect.center(),
-            egui::vec2((width * scale) as f32, (height * scale) as f32),
-        );
+        if self.camera_cle.as_ref() != Some(&cle) {
+            // Union du rectangle paramétrique et de la scène importée :
+            // tout doit tenir dans le viewport (ADR-0015).
+            let mut boite = Boite2::du_point(0.0, 0.0).etendre(width, height);
+            if let Some(importee) = Self::boite_scene(traces, maillage) {
+                boite = boite.etendre(importee.min_x, importee.min_y);
+                boite = boite.etendre(importee.max_x, importee.max_y);
+            }
+            self.camera.ajuster(rect.width() as f64, rect.height() as f64, boite, 20.0);
+            self.camera_cle = Some(cle);
+        }
+        // Molette : zoom sur le point du dessin sous le curseur ;
+        // glisser : la scène suit le pointeur (ADR-0015).
+        if response.hovered() {
+            let molette = response
+                .ctx
+                .input(|i| i.raw_scroll_delta.y)
+                .clamp(-600.0, 600.0);
+            if molette.abs() > 1e-3 {
+                let position = response.hover_pos().unwrap_or(rect.center()) - rect.left_top();
+                self.camera.zoom_au_curseur(
+                    (position.x as f64, position.y as f64),
+                    (molette / 600.0).exp(),
+                );
+            }
+        }
+        if response.dragged() {
+            let delta = response.drag_delta();
+            self.camera.deplacer((delta.x as f64, delta.y as f64));
+        }
+        // Rectangle paramétrique dans le monde (0, 0) → (width, height),
+        // dessiné par le painter à travers la caméra (ADR-0015).
+        let coin = Self::point_ecran(&self.camera, rect, 0.0, 0.0);
+        let oppose = Self::point_ecran(&self.camera, rect, width, height);
+        let shape = egui::Rect::from_two_pos(coin, oppose);
         painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
         painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
         painter.text(
@@ -1001,22 +1012,24 @@ impl DemoApp {
             egui::FontId::default(),
             egui::Color32::WHITE,
         );
-        // Tracés et maillage importés par-dessus le rectangle, dans une
-        // vue commune : union des boîtes englobantes, une seule
-        // échelle (ADR-0014).
-        let traces: &[Path2] = match &self.cache {
-            Some((_, traces)) => traces,
-            None => &[],
-        };
-        let maillage: Option<&Mesh> = self.cache_maillage.as_ref().map(|(_, m)| m);
-        if let Some(boite) = Self::boite_scene(traces, maillage) {
-            let vue = Vue::nouvelle(rect, boite);
-            if !traces.is_empty() {
-                Self::dessiner_traces(&painter, &vue, traces);
-            }
-            if let Some(maillage) = maillage {
-                Self::dessiner_maillage(&painter, &vue, maillage);
-            }
+        // Grille et tracés par le GPU (ADR-0015) ; sans wgpu, la scène
+        // 2D n'est pas dessinée et le viewport le dit.
+        if self.viewport_wgpu {
+            let mut scene = Scene2D::vide();
+            let visible = self.camera.boite_visible(rect.width() as f64, rect.height() as f64);
+            scene.ajouter_grille(visible, self.camera.echelle, GRILLE_CIBLE_PX, COULEUR_GRILLE);
+            let traces_scene = Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
+            scene.segments.extend(traces_scene.segments);
+            dessiner_scene(&painter, rect, scene, self.camera);
+        } else {
+            ui.label(
+                egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
+                    .color(egui::Color32::YELLOW),
+            );
+        }
+        // Wireframe du maillage par le painter egui (GPU en phase C2).
+        if let Some(maillage) = maillage {
+            Self::dessiner_maillage(&painter, &self.camera, rect, maillage);
         }
         // Compteurs de géométrie importée, sous le rectangle (ADR-0011) ;
         // le wireframe plafonne : au-delà, boîte englobante seule
@@ -1112,12 +1125,16 @@ fn main() -> eframe::Result<()> {
         .expect("clé présente dans le FTL (test de la CI)");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1100.0, 720.0]),
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
         &titre,
         options,
-        Box::new(move |_cc| Ok(Box::new(DemoApp::new(catalogue)))),
+        Box::new(move |cc| {
+            let etat = cc.wgpu_render_state.as_ref();
+            Ok(Box::new(DemoApp::new(catalogue, etat)))
+        }),
     )
 }
 
@@ -1147,7 +1164,7 @@ mod tests {
     /// l'état (ADR-0011).
     #[test]
     fn undo_d_import_disparait_de_l_etat() {
-        let mut app = DemoApp::new(i18n::catalogue());
+        let mut app = DemoApp::new(i18n::catalogue(), None);
         importer_svg_de_test(&mut app);
         assert!(app.session.geom().traces().is_some(), "géométrie importée");
         app.session.undo().expect("undo");
@@ -1157,7 +1174,7 @@ mod tests {
     /// Export puis re-import forment un aller-retour : mêmes compteurs.
     #[test]
     fn export_puis_reimport_est_equivalent() {
-        let mut app = DemoApp::new(i18n::catalogue());
+        let mut app = DemoApp::new(i18n::catalogue(), None);
         importer_svg_de_test(&mut app);
         let reference = app.session.geom().traces().expect("traces importées");
         let blob = reference.blob.clone();
@@ -1176,7 +1193,7 @@ mod tests {
     /// sauvegarde après undo n'emporte aucun blob.
     #[test]
     fn nouvel_import_apres_undo_ne_fuit_pas_de_blob() {
-        let mut app = DemoApp::new(i18n::catalogue());
+        let mut app = DemoApp::new(i18n::catalogue(), None);
         importer_svg_de_test(&mut app);
         let noms = app.session.document().blob_names();
         assert_eq!(noms.len(), 1, "le blob de l'import est déposé");
@@ -1201,7 +1218,7 @@ mod tests {
     /// même état rejoué, chemin mémorisé (ADR-0014).
     #[test]
     fn enregistrer_puis_ouvrir_par_chemin() {
-        let mut app = DemoApp::new(i18n::catalogue());
+        let mut app = DemoApp::new(i18n::catalogue(), None);
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 1234.0,
@@ -1213,7 +1230,7 @@ mod tests {
         app.enregistrer_dans(&chemin);
         assert!(chemin.is_file(), "le projet est écrit");
         assert_eq!(app.chemin_projet, Some(chemin.clone()), "chemin mémorisé");
-        let mut relue = DemoApp::new(i18n::catalogue());
+        let mut relue = DemoApp::new(i18n::catalogue(), None);
         relue.ouvrir_projet(&chemin);
         assert_eq!(
             relue.chemin_projet,
@@ -1250,19 +1267,10 @@ mod tests {
     /// validation de la phase B).
     #[test]
     fn projection_inverse_l_axe_y() {
-        let rect = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(100.0, 100.0));
-        let boite = Boite {
-            min_x: 0.0,
-            min_y: 0.0,
-            max_x: 10.0,
-            max_y: 10.0,
-        };
-        let vue = Vue::nouvelle(rect, boite);
-        let bas = vue.projetter(5.0, 0.0);
-        let haut = vue.projetter(5.0, 10.0);
-        assert!(
-            haut.y < bas.y,
-            "plus haut dans la scène, plus haut à l'écran"
-        );
+        let mut camera = Camera2D::nouvelle();
+        camera.ajuster(100.0, 100.0, Boite2::du_point(0.0, 0.0).etendre(10.0, 10.0), 0.0);
+        let bas = camera.vers_ecran((5.0, 0.0));
+        let haut = camera.vers_ecran((5.0, 10.0));
+        assert!(haut.1 < bas.1, "plus haut dans la scène, plus haut à l'écran");
     }
 }

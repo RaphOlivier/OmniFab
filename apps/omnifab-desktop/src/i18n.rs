@@ -69,6 +69,7 @@ mod tests {
         "geom-traces-compteur",
         "geom-maillage-compteur",
         "viewport-wireframe-limite",
+        "viewport-wgpu-indisponible",
         "info-recalcul-ok",
         "info-enregistre",
         "info-recharge",
@@ -109,6 +110,7 @@ mod tests {
         "aide-params-expression",
         "aide-journal-titre",
         "aide-viewport-titre",
+        "aide-viewport-camera",
         "aide-geom-compteur",
     ];
 

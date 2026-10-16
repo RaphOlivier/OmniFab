@@ -2,7 +2,8 @@
 
 Schéma de dépendances du noyau : chaque crate ne voit que ses
 dépendances directes, jamais au-delà (garde-fou de la phase 0, ADR-0000 ;
-frontières mises à jour par l'ADR-0013 pour le solveur de contraintes).
+frontières mises à jour par l'ADR-0013 (solveur de contraintes) et
+par l'ADR-0015 (viewport wgpu).
 
 ```mermaid
 flowchart TD
@@ -24,6 +25,7 @@ flowchart TD
         geom["forge-geom — géométrie minimale"]
         units["forge-units — newtypes d'unités"]
         i18n["forge-i18n — catalogue Fluent + aide intégrée"]
+        render["forge-render — viewport wgpu (ADR-0015)"]
         doc["forge-doc — conteneur ZIP + journal"]
     end
 
@@ -37,10 +39,12 @@ flowchart TD
     desktop --> io
     desktop --> values
     desktop --> i18n
+    desktop --> render
     session --> values
     session --> io
     session --> geom
     io --> geom
+    render --> geom
     values --> units
     geom --> units
     i18n --> doc

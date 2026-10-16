@@ -1421,6 +1421,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "forge-render"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "egui",
+ "egui-wgpu",
+ "forge-geom",
+ "forge-units",
+ "wgpu",
+]
+
+[[package]]
 name = "forge-session"
 version = "0.1.0"
 dependencies = [
@@ -2759,6 +2771,7 @@ dependencies = [
  "forge-geom",
  "forge-i18n",
  "forge-io",
+ "forge-render",
  "forge-session",
  "forge-units",
  "forge-values",
