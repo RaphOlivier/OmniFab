@@ -46,6 +46,7 @@ use forge_session::{
     Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
 };
 use forge_units::Length;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// État de rendu wgpu d'eframe : alias pour alléger la signature du
@@ -117,6 +118,12 @@ struct DemoApp {
     /// Pipeline wgpu du viewport créé : le dessin 2D passe par le GPU,
     /// sinon le viewport affiche le message d'indisponibilité.
     viewport_wgpu: bool,
+    /// Tampons d'édition des champs de dimensions : le DragValue affiche
+    /// la valeur du début de frame, un rechargement du graphe à chaque
+    /// frame figeait le chiffre pendant le geste — chaque champ garde
+    /// donc sa valeur et son activité d'une frame à l'autre
+    /// (validation C1 round 6).
+    tampon_dimensions: BTreeMap<&'static str, (f64, bool)>,
 }
 
 impl DemoApp {
@@ -152,6 +159,7 @@ impl DemoApp {
             camera: Camera2D::nouvelle(),
             camera_cle: None,
             viewport_wgpu,
+            tampon_dimensions: BTreeMap::new(),
         };
         app.reinitialiser();
         app
@@ -505,29 +513,36 @@ impl DemoApp {
     }
 
     /// Engagement d'un champ de dimension pour cette frame, s'il y en a
-    /// un : la valeur glissée est capturée pendant le geste (au
-    /// relâchement, le champ est déjà revenu à la valeur du graphe)
-    /// et un engagement sans changement effectif n'écrit rien — un
-    /// faux événement tronquerait les groupes défaits (ADR-0008).
-    /// Les deux bugs de la validation C1 round 3 viennent de là :
-    /// dimensions figées au glissement, historique détruit au double
-    /// annuler.
+    /// un : le DragValue écrit son tampon au relâchement du geste ou à
+    /// la fin d'une édition clavier, et un engagement sans changement
+    /// effectif n'écrit rien — un faux événement tronquerait les
+    /// groupes défaits (ADR-0008). Les bugs des rounds 3 à 6 de la
+    /// validation C1 viennent de là : dimensions figées au
+    /// glissement, historique détruit au double annuler, valeur
+    /// gelée pendant le geste.
     fn engagement_params(
         avant: f64,
-        apres: f64,
-        glissee: Option<f64>,
+        tampon: f64,
         dragged: bool,
         drag_stopped: bool,
         changed: bool,
     ) -> Option<f64> {
-        if drag_stopped {
-            let valeur = glissee.unwrap_or(avant);
-            return (valeur != avant).then_some(valeur);
-        }
-        if changed && !dragged {
-            return (apres != avant).then_some(apres);
+        if drag_stopped || (changed && !dragged) {
+            return (tampon != avant).then_some(tampon);
         }
         None
+    }
+
+    /// Valeur affichée d'un champ de dimension : inactif, le tampon
+    /// suit le graphe (undo/redo, ouverture) ; actif, il persiste —
+    /// c'est lui qui garde la valeur glissée d'une frame à l'autre
+    /// pendant le geste (validation C1 round 6).
+    fn tampon_apres_inactivite(actif: bool, tampon: f64, graphe: Option<f64>) -> f64 {
+        if actif {
+            tampon
+        } else {
+            graphe.unwrap_or(0.0)
+        }
     }
 
     /// Projette un point du monde à l'écran : la caméra inverse l'axe
@@ -861,20 +876,24 @@ impl DemoApp {
             ("height_mm", "params-hauteur", "aide-params-hauteur"),
         ] {
             let libelle = self.texte(cle);
-            let mut mm = self.session.graph_mut().value(name).unwrap_or(0.0);
+            let graphe = self.session.graph_mut().value(name).ok();
             // Valeur du graphe en début de frame : un engagement sans
             // changement effectif n'écrit rien au journal — un faux
             // événement tronquerait les groupes défaits (ADR-0008).
-            let avant = mm;
-            // Dernière valeur vue pendant le glissement : au
-            // relâchement, le champ est déjà rechargé depuis le
-            // graphe, la valeur glissée n'existe plus dans `mm`.
-            let mut glisse: Option<f64> = None;
+            let avant = graphe.unwrap_or(0.0);
+            // Tampon d'édition persistant du champ : le DragValue affiche
+            // la valeur du début de frame, un rechargement du graphe à
+            // chaque frame figeait le chiffre pendant le geste
+            // (validation C1 round 6).
+            let (memoire, actif_precedent) =
+                self.tampon_dimensions.remove(name).unwrap_or((0.0, false));
+            let mut tampon = Self::tampon_apres_inactivite(actif_precedent, memoire, graphe);
+            let mut actif = false;
             let demande = &mut self.aide;
             ui.horizontal(|ui| {
                 ui.label(&libelle);
                 let reponse = ui.add(
-                    egui::DragValue::new(&mut mm)
+                    egui::DragValue::new(&mut tampon)
                         .speed(1.0)
                         .range(1.0..=5000.0)
                         // Une valeur existante hors plage (entrée absente
@@ -896,13 +915,12 @@ impl DemoApp {
                 if presse_glisse && reponse.contains_pointer() {
                     ui.memory_mut(|m| m.surrender_focus(reponse.id));
                 }
-                if reponse.dragged() {
-                    glisse = Some(mm);
+                if reponse.dragged() || reponse.has_focus() {
+                    actif = true;
                 }
                 if let Some(valeur) = Self::engagement_params(
                     avant,
-                    mm,
-                    glisse,
+                    tampon,
                     reponse.dragged(),
                     reponse.drag_stopped(),
                     reponse.changed(),
@@ -911,6 +929,7 @@ impl DemoApp {
                 }
                 avec_aide(&reponse, help_id, demande);
             });
+            self.tampon_dimensions.insert(name, (tampon, actif));
         }
         if let Some((name, value)) = edited {
             self.executer(&SetInput {
@@ -1373,37 +1392,44 @@ mod tests {
         assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
     }
 
-    /// La valeur glissée s'engage depuis la capture du geste : au
+    /// La valeur glissée s'engage depuis le tampon persistant : au
     /// relâchement, le champ est déjà revenu à la valeur du graphe —
     /// un engagement sur la seule valeur du champ écrivait l'ancienne
-    /// valeur (dimensions figées au glissement, validation C1
-    /// round 3). Sans changement effectif, rien ne va au journal.
+    /// valeur (dimensions figées au glissement, validations C1
+    /// rounds 3 à 6). Sans changement effectif, rien ne va au
+    /// journal.
     #[test]
-    fn le_glissement_s_engage_sur_la_valeur_capturee() {
-        // Relâchement après un glissement : la valeur capturée gagne.
-        assert_eq!(
-            DemoApp::engagement_params(800.0, 800.0, Some(500.0), false, true, false),
-            Some(500.0)
-        );
-        // Relâchement sans glissement capturé : rien à engager.
-        assert_eq!(
-            DemoApp::engagement_params(800.0, 800.0, None, false, true, false),
-            None
-        );
+    fn le_glissement_s_engage_sur_le_tampon_persistant() {
+        // Relâchement après un glissement : le tampon gagne.
+        assert_eq!(DemoApp::engagement_params(800.0, 500.0, false, true, false), Some(500.0));
         // Glissement en cours : aucun événement par frame.
+        assert_eq!(DemoApp::engagement_params(800.0, 500.0, true, false, true), None);
+        // Édition clavier : le tampon final s'engage.
+        assert_eq!(DemoApp::engagement_params(800.0, 500.0, false, false, true), Some(500.0));
+        // Geste revenu à la valeur de départ : rien au journal.
+        assert_eq!(DemoApp::engagement_params(800.0, 800.0, false, true, true), None);
+    }
+
+    /// Tampon d'édition d'un champ de dimension : inactif, il suit le
+    /// graphe (undo/redo, ouverture) ; actif, il persiste — c'est lui
+    /// qui garde la valeur glissée d'une frame à l'autre pendant le
+    /// geste (validation C1 round 6).
+    #[test]
+    fn le_tampon_inactif_suit_le_graphe_l_actif_persiste() {
         assert_eq!(
-            DemoApp::engagement_params(800.0, 500.0, Some(500.0), true, false, true),
-            None
+            DemoApp::tampon_apres_inactivite(false, 123.0, Some(800.0)),
+            800.0,
+            "inactif : reprise du graphe"
         );
-        // Édition clavier : la valeur finale s'engage.
         assert_eq!(
-            DemoApp::engagement_params(800.0, 500.0, None, false, false, true),
-            Some(500.0)
+            DemoApp::tampon_apres_inactivite(true, 123.0, Some(800.0)),
+            123.0,
+            "actif : le tampon persiste"
         );
-        // Glissement revenu à la valeur de départ : rien.
         assert_eq!(
-            DemoApp::engagement_params(800.0, 800.0, Some(800.0), false, true, false),
-            None
+            DemoApp::tampon_apres_inactivite(false, 123.0, None),
+            0.0,
+            "entrée absente : affichage zéro"
         );
     }
 
