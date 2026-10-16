@@ -4,16 +4,18 @@
 //! Convention d'unités : une unité = 1 mm ; le z est ignoré (tracés
 //! 2D). Les entités géométriques du jalon 1 sont lues : `LINE`,
 //! `LWPOLYLINE`, `POLYLINE` (bulges discrétisés en arcs),
-//! `CIRCLE`, `ARC` (cercles et arcs discrétisés) ; les entités
-//! non géométriques (textes, cotes, blocs…) sont ignorées par
-//! conception (ADR-0009). À l'export, chaque segment devient une
-//! entité `LINE` au z nul.
+//! `CIRCLE`, `ARC` (cercles et arcs discrétisés) et `SPLINE`
+//! (B-splines rationnelles discrétisées par l'algorithme de
+//! de Boor — l'export DXF d'Inkscape y code toute courbe, cercle
+//! et arc) ; les entités non géométriques (textes, cotes,
+//! blocs…) sont ignorées par conception (ADR-0009). À l'export,
+//! chaque segment devient une entité `LINE` au z nul.
 //!
 //! Sécurité (ADR-0009) : tout dépassement de [`DxfBudgets`] est une
 //! erreur typée, levée avant tout traitement ultérieur.
 
 use crate::IoError;
-use dxf::entities::{Arc, Circle, Entity, EntityType, Line};
+use dxf::entities::{Arc, Circle, Entity, EntityType, Line, Spline};
 use forge_geom::{Path2, Point2};
 use forge_units::Length;
 
@@ -22,6 +24,10 @@ pub const POINTS_CERCLE: usize = 64;
 
 /// Nombre de segments de la discrétisation d'un arc.
 pub const SEGMENTS_ARC: usize = 32;
+
+/// Nombre de segments de la discrétisation d'une spline par
+/// intervalle de nœuds.
+pub const SEGMENTS_SPLINE: usize = 16;
 
 /// Budgets de ressources du parseur DXF (ADR-0009).
 ///
@@ -53,8 +59,12 @@ impl Default for DxfBudgets {
 /// [`POINTS_CERCLE`] sommets, les arcs des polylignes ouvertes à
 /// [`SEGMENTS_ARC`] segments ; les bulges des polylignes (arcs
 /// codés par sommet, code 42, générés par FreeCAD à l'export)
-/// deviennent des arcs discrétisés le long de la corde. Les
-/// budgets protègent contre les documents démesurés (ADR-0009).
+/// deviennent des arcs discrétisés le long de la corde ; les
+/// splines — B-splines rationnelles, qu'Inkscape exporte pour
+/// toute courbe, cercle ou arc — deviennent des polylignes
+/// échantillonnées à [`SEGMENTS_SPLINE`] segments par intervalle
+/// de nœuds (algorithme de de Boor). Les budgets protègent contre
+/// les documents démesurés (ADR-0009).
 pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
@@ -102,6 +112,11 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
             }
             EntityType::Arc(arc) => {
                 points = arc_points(arc, &mut total, budgets)?;
+                true
+            }
+            EntityType::Spline(spline) => {
+                points = spline_points(spline, &mut total, budgets)?;
+                ferme = spline.is_closed();
                 true
             }
             _ => false,
@@ -283,6 +298,103 @@ fn arc_points(arc: &Arc, total: &mut usize, budgets: &DxfBudgets) -> Result<Vec<
     Ok(points)
 }
 
+/// Discrétise une spline en polyligne : échantillonnage à
+/// [`SEGMENTS_SPLINE`] segments par intervalle de nœuds sur le
+/// domaine valide, évalué par l'algorithme de de Boor en
+/// coordonnées homogènes (poids portés en w, divisés en sortie —
+/// splines rationnelles comprises).
+///
+/// Le contrat d'une spline DXF est vérifié avant tout calcul :
+/// degré ≥ 1, au moins deux points de contrôle et exactement
+/// points de contrôle + degré + 1 nœuds ; les splines à points
+/// d'ajustement seuls sont ignorées.
+fn spline_points(
+    spline: &Spline,
+    total: &mut usize,
+    budgets: &DxfBudgets,
+) -> Result<Vec<Point2>, IoError> {
+    let degree = usize::try_from(spline.degree_of_curve).unwrap_or(0);
+    let noeuds = &spline.knot_values;
+    let controles = &spline.control_points;
+    if degree < 1 || controles.len() < 2 || noeuds.len() != controles.len() + degree + 1 {
+        return Ok(Vec::new());
+    }
+    let premier = noeuds[degree];
+    let dernier = noeuds[controles.len()];
+    if dernier - premier <= 1e-12 {
+        return Ok(Vec::new());
+    }
+    // Intervalles de nœuds non vides dans le domaine.
+    let intervalles = noeuds[degree..=controles.len()]
+        .windows(2)
+        .filter(|paire| paire[1] - paire[0] > 1e-12)
+        .count()
+        .max(1);
+    let segments = (intervalles * SEGMENTS_SPLINE).clamp(2, 8192);
+    let poids: Vec<f64> = if spline.weight_values.len() == controles.len() {
+        spline.weight_values.clone()
+    } else {
+        vec![1.0; controles.len()]
+    };
+    let mut points = Vec::with_capacity(segments + 1);
+    for i in 0..=segments {
+        let u = premier + (dernier - premier) * i as f64 / segments as f64;
+        let (x, y) = de_boor(u, degree, noeuds, controles, &poids);
+        points.push(sommet(x, y, total, budgets)?);
+    }
+    Ok(points)
+}
+
+/// Évalue la spline en `u` : itération de de Boor en coordonnées
+/// homogènes. L'intervalle porteur `k` est le dernier dont le nœud
+/// de gauche précède `u` (borné au dernier intervalle du domaine,
+/// pour `u` tombant exactement sur le nœud final) ; un écart de
+/// nœuds nul donne un alpha nul (nœuds répétés, extrémités).
+fn de_boor(
+    u: f64,
+    degree: usize,
+    noeuds: &[f64],
+    controles: &[dxf::Point],
+    poids: &[f64],
+) -> (f64, f64) {
+    let n = controles.len();
+    let mut k = degree;
+    while k + 1 < n && noeuds[k + 1] <= u {
+        k += 1;
+    }
+    // Points homogènes de l'itération courante (x·w, y·w, w).
+    let mut d: Vec<(f64, f64, f64)> = (0..=degree)
+        .map(|i| {
+            let j = k - degree + i;
+            (controles[j].x * poids[j], controles[j].y * poids[j], poids[j])
+        })
+        .collect();
+    for r in 1..=degree {
+        for i in (r..=degree).rev() {
+            let j = k - degree + i;
+            let ecart = noeuds[j + degree + 1 - r] - noeuds[j];
+            let alpha = if ecart.abs() < 1e-12 {
+                0.0
+            } else {
+                (u - noeuds[j]) / ecart
+            };
+            let (px, py, pw) = d[i - 1];
+            let (qx, qy, qw) = d[i];
+            d[i] = (
+                px + (qx - px) * alpha,
+                py + (qy - py) * alpha,
+                pw + (qw - pw) * alpha,
+            );
+        }
+    }
+    let (x, y, w) = d[degree];
+    if w.abs() < 1e-12 {
+        (x, y)
+    } else {
+        (x / w, y / w)
+    }
+}
+
 /// Ajoute une entité `LINE` au dessin, z nul (tracés 2D).
 fn ajoute_ligne(dessin: &mut dxf::Drawing, debut: &Point2, fin: &Point2) {
     let p1 = dxf::Point {
@@ -380,5 +492,97 @@ EOF
             (p.x().millimeters() - 5.0).abs() < 1e-6 && (p.y().millimeters() - 5.0).abs() < 1e-6
         });
         assert!(passage, "l'arc doit passer par (5, 5)");
+    }
+
+    /// DXF ASCII minimal : une entité `SPLINE` (70 = 8, planaire) ;
+    /// `corps` reçoit les paires code/valeur des nœuds (40), des
+    /// poids (41) et des points de contrôle (10/20/30).
+    fn dxf_spline(degre: &str, corps: &str) -> Vec<u8> {
+        let texte = format!(
+            "0
+SECTION
+2
+ENTITIES
+0
+SPLINE
+100
+AcDbEntity
+8
+0
+100
+AcDbSpline
+70
+8
+71
+{degre}
+74
+0
+{corps}0
+ENDSEC
+0
+EOF
+"
+        );
+        texte.into_bytes()
+    }
+
+    #[test]
+    fn spline_cubique_d_inkscape_se_discretise() {
+        // Le format d'Inkscape : quatre points de contrôle, nœuds
+        // 0,0,0,0,1,1,1,1 — un Bézier cubique par entité.
+        let corps = "40\n0.0\n40\n0.0\n40\n0.0\n40\n0.0\n40\n1.0\n40\n1.0\n40\n1.0\n40\n1.0\n10\n0.0\n20\n0.0\n30\n0.0\n10\n0.0\n20\n10.0\n30\n0.0\n10\n10.0\n20\n10.0\n30\n0.0\n10\n10.0\n20\n0.0\n30\n0.0\n";
+        let traces = import(&dxf_spline("3", corps), &DxfBudgets::default())
+            .expect("dxf valide");
+        assert_eq!(traces.len(), 1, "la spline est importée");
+        let points = traces[0].points();
+        assert_eq!(points.len(), 17, "seize segments par intervalle");
+        // Extrémités = premier et dernier points de contrôle.
+        assert!(points[0].x().millimeters().abs() < 1e-9);
+        assert!((points[16].x().millimeters() - 10.0).abs() < 1e-9);
+        // Milieu du Bézier : (P0 + 3·P1 + 3·P2 + P3) / 8.
+        let milieu = points[8];
+        assert!((milieu.x().millimeters() - 5.0).abs() < 1e-9);
+        assert!((milieu.y().millimeters() - 7.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn spline_de_degre_un_relie_ses_points_de_controle() {
+        // Degré 1, nœuds 0,0,1,2,2 : la polyligne (0,0), (5,5),
+        // (10,0) en deux intervalles de nœuds.
+        let corps = "40\n0.0\n40\n0.0\n40\n1.0\n40\n2.0\n40\n2.0\n10\n0.0\n20\n0.0\n30\n0.0\n10\n5.0\n20\n5.0\n30\n0.0\n10\n10.0\n20\n0.0\n30\n0.0\n";
+        let traces = import(&dxf_spline("1", corps), &DxfBudgets::default())
+            .expect("dxf valide");
+        assert_eq!(traces.len(), 1, "la spline est importée");
+        let points = traces[0].points();
+        assert_eq!(points.len(), 33, "deux intervalles de seize");
+        // Au nœud u = 1, la spline passe par (5, 5).
+        let milieu = points[16];
+        assert!((milieu.x().millimeters() - 5.0).abs() < 1e-9);
+        assert!((milieu.y().millimeters() - 5.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn spline_rationnelle_traverse_le_quart_de_cercle() {
+        // NURBS du quart de cercle unité (degré 2, poids 1, √2/2,
+        // 1) : tous les points échantillonnés restent sur le cercle.
+        let racine = 2.0_f64.sqrt() / 2.0;
+        let poids = format!("41\n1.0\n41\n{racine}\n41\n1.0\n");
+        let corps = format!(
+            "40\n0.0\n40\n0.0\n40\n0.0\n40\n1.0\n40\n1.0\n40\n1.0\n{poids}10\n1.0\n20\n0.0\n30\n0.0\n10\n1.0\n20\n1.0\n30\n0.0\n10\n0.0\n20\n1.0\n30\n0.0\n"
+        );
+        let traces = import(&dxf_spline("2", &corps), &DxfBudgets::default())
+            .expect("dxf valide");
+        assert_eq!(traces.len(), 1, "la spline est importée");
+        let points = traces[0].points();
+        assert_eq!(points.len(), 17);
+        // Milieu de la courbe : (cos 45°, sin 45°).
+        let milieu = points[8];
+        assert!((milieu.x().millimeters() - racine).abs() < 1e-9);
+        assert!((milieu.y().millimeters() - racine).abs() < 1e-9);
+        for point in points {
+            let x = point.x().millimeters();
+            let y = point.y().millimeters();
+            assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-9);
+        }
     }
 }
