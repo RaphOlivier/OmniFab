@@ -538,11 +538,7 @@ impl DemoApp {
     /// c'est lui qui garde la valeur glissée d'une frame à l'autre
     /// pendant le geste (validation C1 round 6).
     fn tampon_apres_inactivite(actif: bool, tampon: f64, graphe: Option<f64>) -> f64 {
-        if actif {
-            tampon
-        } else {
-            graphe.unwrap_or(0.0)
-        }
+        if actif { tampon } else { graphe.unwrap_or(0.0) }
     }
 
     /// Projette un point du monde à l'écran : la caméra inverse l'axe
@@ -1401,13 +1397,25 @@ mod tests {
     #[test]
     fn le_glissement_s_engage_sur_le_tampon_persistant() {
         // Relâchement après un glissement : le tampon gagne.
-        assert_eq!(DemoApp::engagement_params(800.0, 500.0, false, true, false), Some(500.0));
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, false, true, false),
+            Some(500.0)
+        );
         // Glissement en cours : aucun événement par frame.
-        assert_eq!(DemoApp::engagement_params(800.0, 500.0, true, false, true), None);
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, true, false, true),
+            None
+        );
         // Édition clavier : le tampon final s'engage.
-        assert_eq!(DemoApp::engagement_params(800.0, 500.0, false, false, true), Some(500.0));
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, false, false, true),
+            Some(500.0)
+        );
         // Geste revenu à la valeur de départ : rien au journal.
-        assert_eq!(DemoApp::engagement_params(800.0, 800.0, false, true, true), None);
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 800.0, false, true, true),
+            None
+        );
     }
 
     /// Tampon d'édition d'un champ de dimension : inactif, il suit le
