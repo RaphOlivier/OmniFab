@@ -305,9 +305,39 @@ mod tests {
     /// DXF ASCII minimal : une LWPOLYLINE ouverte à deux sommets
     /// (0,0) et (10,0), le premier portant le bulge donné (code 42).
     fn dxf_bulge(bulge: &str) -> Vec<u8> {
-        let texte = "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n100\nAcDbEntity\n8\n0\n100\nAcDbPolyline\n90\n2\n70\n0\n10\n0.0\n20\n0.0\n42\n"
-            + bulge
-            + "\n10\n10.0\n20\n0.0\n0\nENDSEC\n0\nEOF\n";
+        let texte = format!(
+            "0
+SECTION
+2
+ENTITIES
+0
+LWPOLYLINE
+100
+AcDbEntity
+8
+0
+             100
+AcDbPolyline
+90
+2
+70
+0
+10
+0.0
+20
+0.0
+42
+{bulge}
+             10
+10.0
+20
+0.0
+0
+ENDSEC
+0
+EOF
+"
+        );
         texte.into_bytes()
     }
 
