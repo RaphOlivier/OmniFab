@@ -51,10 +51,10 @@ impl Default for DxfBudgets {
 /// Importe un DXF en tracés 2D. Convention : une unité = 1 mm ; le
 /// z est ignoré. Les cercles deviennent des polygones fermés à
 /// [`POINTS_CERCLE`] sommets, les arcs des polylignes ouvertes à
-/// [`SEGMENTS_ARC`] segments, et les bulges des polylignes (arcs
-//! codés par sommet, code 42 — écrits par FreeCAD à l'export des
-//! splines) des arcs discrétisés au fil de la corde. Les budgets
-/// protègent contre les documents démesurés (ADR-0009).
+/// [`SEGMENTS_ARC`] segments ; les bulges des polylignes (arcs
+/// codés par sommet, code 42, générés par FreeCAD à l'export)
+/// deviennent des arcs discrétisés le long de la corde. Les
+/// budgets protègent contre les documents démesurés (ADR-0009).
 pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
@@ -305,39 +305,9 @@ mod tests {
     /// DXF ASCII minimal : une LWPOLYLINE ouverte à deux sommets
     /// (0,0) et (10,0), le premier portant le bulge donné (code 42).
     fn dxf_bulge(bulge: &str) -> Vec<u8> {
-        let texte = format!(
-            "0
-SECTION
-2
-ENTITIES
-0
-LWPOLYLINE
-100
-AcDbEntity
-8
-0
-             100
-AcDbPolyline
-90
-2
-70
-0
-10
-0.0
-20
-0.0
-42
-{bulge}
-             10
-10.0
-20
-0.0
-0
-ENDSEC
-0
-EOF
-"
-        );
+        let texte = "0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n100\nAcDbEntity\n8\n0\n100\nAcDbPolyline\n90\n2\n70\n0\n10\n0.0\n20\n0.0\n42\n"
+            + bulge
+            + "\n10\n10.0\n20\n0.0\n0\nENDSEC\n0\nEOF\n";
         texte.into_bytes()
     }
 
