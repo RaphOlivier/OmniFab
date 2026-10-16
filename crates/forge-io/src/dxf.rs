@@ -3,10 +3,11 @@
 //!
 //! Convention d'unités : une unité = 1 mm ; le z est ignoré (tracés
 //! 2D). Les entités géométriques du jalon 1 sont lues : `LINE`,
-//! `LWPOLYLINE`, `POLYLINE`, `CIRCLE`, `ARC` (cercles et arcs
-//! discrétisés) ; les entités non géométriques (textes, cotes,
-//! blocs…) sont ignorées par conception (ADR-0009). À l'export,
-//! chaque segment devient une entité `LINE` au z nul.
+//! `LWPOLYLINE`, `POLYLINE` (bulges discrétisés en arcs),
+//! `CIRCLE`, `ARC` (cercles et arcs discrétisés) ; les entités
+//! non géométriques (textes, cotes, blocs…) sont ignorées par
+//! conception (ADR-0009). À l'export, chaque segment devient une
+//! entité `LINE` au z nul.
 //!
 //! Sécurité (ADR-0009) : tout dépassement de [`DxfBudgets`] est une
 //! erreur typée, levée avant tout traitement ultérieur.
@@ -50,8 +51,10 @@ impl Default for DxfBudgets {
 /// Importe un DXF en tracés 2D. Convention : une unité = 1 mm ; le
 /// z est ignoré. Les cercles deviennent des polygones fermés à
 /// [`POINTS_CERCLE`] sommets, les arcs des polylignes ouvertes à
-/// [`SEGMENTS_ARC`] segments. Les budgets protègent contre les
-/// documents démesurés (ADR-0009).
+/// [`SEGMENTS_ARC`] segments, et les bulges des polylignes (arcs
+/// codés par sommet, code 42 — écrits par FreeCAD à l'export des
+/// splines) des arcs discrétisés au fil de la corde. Les budgets
+/// protègent contre les documents démesurés (ADR-0009).
 pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
@@ -75,16 +78,21 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
                 true
             }
             EntityType::LwPolyline(polyligne) => {
-                for v in &polyligne.vertices {
-                    points.push(sommet(v.x, v.y, &mut total, budgets)?);
-                }
+                let sommets: Vec<(f64, f64, f64)> = polyligne
+                    .vertices
+                    .iter()
+                    .map(|v| (v.x, v.y, v.bulge))
+                    .collect();
                 ferme = polyligne.is_closed();
+                pousse_polyligne(&sommets, ferme, &mut points, &mut total, budgets)?;
                 true
             }
             EntityType::Polyline(polyligne) => {
-                for v in polyligne.vertices() {
-                    points.push(sommet(v.location.x, v.location.y, &mut total, budgets)?);
-                }
+                let sommets: Vec<(f64, f64, f64)> = polyligne
+                    .vertices()
+                    .map(|v| (v.location.x, v.location.y, v.bulge))
+                    .collect();
+                pousse_polyligne(&sommets, false, &mut points, &mut total, budgets)?;
                 true
             }
             EntityType::Circle(cercle) => {
@@ -157,6 +165,88 @@ fn sommet(x: f64, y: f64, total: &mut usize, budgets: &DxfBudgets) -> Result<Poi
     Ok(point)
 }
 
+/// Pousse les sommets d'une polyligne (x, y, bulge) dans `points`,
+/// en discrétisant chaque segment porteur d'un bulge (arc) ; les
+/// segments sans bulge restent des cordes droites. Sur une
+/// polyligne fermée, le bulge du dernier sommet s'applique au
+/// segment de fermeture vers le premier sommet.
+fn pousse_polyligne(
+    sommets: &[(f64, f64, f64)],
+    ferme: bool,
+    points: &mut Vec<Point2>,
+    total: &mut usize,
+    budgets: &DxfBudgets,
+) -> Result<(), IoError> {
+    for (i, (x, y, bulge)) in sommets.iter().enumerate() {
+        points.push(sommet(*x, *y, total, budgets)?);
+        if bulge.abs() <= 1e-12 {
+            continue;
+        }
+        let prochain = if i + 1 < sommets.len() {
+            Some(sommets[i + 1])
+        } else if ferme && sommets.len() > 1 {
+            Some(sommets[0])
+        } else {
+            None
+        };
+        if let Some((x2, y2, _)) = prochain {
+            points.extend(bulge_intermediaires(
+                (*x, *y),
+                (x2, y2),
+                *bulge,
+                total,
+                budgets,
+            )?);
+        }
+    }
+    Ok(())
+}
+
+/// Points intérieurs de la discrétisation d'un segment à bulge DXF
+/// (les deux extrémités sont exclues : l'appelant pousse les
+/// sommets). Mathématiques du bulge : angle inclus θ = 4·atan(b),
+/// positif = sens trigonométrique ; rayon signé r = demi-corde /
+/// sin(θ/2) ; centre = milieu de la corde décalé de r·cos(θ/2)
+/// le long de la normale à gauche de la corde.
+fn bulge_intermediaires(
+    debut: (f64, f64),
+    fin: (f64, f64),
+    bulge: f64,
+    total: &mut usize,
+    budgets: &DxfBudgets,
+) -> Result<Vec<Point2>, IoError> {
+    let theta = 4.0 * bulge.atan();
+    let dx = fin.0 - debut.0;
+    let dy = fin.1 - debut.1;
+    let corde = (dx * dx + dy * dy).sqrt();
+    if corde < 1e-12 {
+        return Ok(Vec::new());
+    }
+    let demi = corde / 2.0;
+    let demi_theta = theta / 2.0;
+    let r_signe = demi / demi_theta.sin();
+    let h = r_signe * demi_theta.cos();
+    let mx = (debut.0 + fin.0) / 2.0;
+    let my = (debut.1 + fin.1) / 2.0;
+    // Normale à gauche de la corde debut → fin.
+    let nx = -dy / corde;
+    let ny = dx / corde;
+    let cx = mx + h * nx;
+    let cy = my + h * ny;
+    let rayon = r_signe.abs();
+    let alpha = (debut.1 - cy).atan2(debut.0 - cx);
+    let segments = ((theta.abs().to_degrees() * SEGMENTS_ARC as f64 / 360.0).ceil() as usize)
+        .clamp(2, 64);
+    let mut points = Vec::with_capacity(segments - 1);
+    for k in 1..segments {
+        let phi = alpha + theta * k as f64 / segments as f64;
+        let x = cx + rayon * phi.cos();
+        let y = cy + rayon * phi.sin();
+        points.push(sommet(x, y, total, budgets)?);
+    }
+    Ok(points)
+}
+
 /// Discrétise un cercle en polygone fermé à [`POINTS_CERCLE`]
 /// sommets.
 fn cercle_points(
@@ -206,4 +296,91 @@ fn ajoute_ligne(dessin: &mut dxf::Drawing, debut: &Point2, fin: &Point2) {
         z: 0.0,
     };
     dessin.add_entity(Entity::new(EntityType::Line(Line::new(p1, p2))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DXF ASCII minimal : une LWPOLYLINE ouverte à deux sommets
+    /// (0,0) et (10,0), le premier portant le bulge donné (code 42).
+    fn dxf_bulge(bulge: &str) -> Vec<u8> {
+        let texte = format!(
+            "0
+SECTION
+2
+ENTITIES
+0
+LWPOLYLINE
+100
+AcDbEntity
+8
+0
+             100
+AcDbPolyline
+90
+2
+70
+0
+10
+0.0
+20
+0.0
+42
+{bulge}
+             10
+10.0
+20
+0.0
+0
+ENDSEC
+0
+EOF
+"
+        );
+        texte.into_bytes()
+    }
+
+    #[test]
+    fn lwpolyline_sans_bulge_reste_un_segment() {
+        let traces = import(&dxf_bulge("0.0"), &DxfBudgets::default()).expect("dxf valide");
+        assert_eq!(traces.len(), 1);
+        let points = traces[0].points();
+        assert_eq!(points.len(), 2);
+        assert!(points[0].x().millimeters().abs() < 1e-9);
+        assert!(points[0].y().millimeters().abs() < 1e-9);
+        assert!((points[1].x().millimeters() - 10.0).abs() < 1e-9);
+        assert!(points[1].y().millimeters().abs() < 1e-9);
+    }
+
+    #[test]
+    fn lwpolyline_bulge_positif_passe_sous_la_corde() {
+        // bulge 1 = demi-cercle trigonométrique de (0,0) vers
+        // (10,0) : centre (5,0), rayon 5, l'arc passe par (5, -5).
+        let traces = import(&dxf_bulge("1.0"), &DxfBudgets::default()).expect("dxf valide");
+        assert_eq!(traces.len(), 1);
+        let points = traces[0].points();
+        // 2 sommets + 15 points intérieurs (16 segments).
+        assert_eq!(points.len(), 17);
+        let passage = points.iter().any(|p| {
+            (p.x().millimeters() - 5.0).abs() < 1e-6
+                && (p.y().millimeters() + 5.0).abs() < 1e-6
+        });
+        assert!(passage, "l'arc doit passer par (5, -5)");
+    }
+
+    #[test]
+    fn lwpolyline_bulge_negatif_passe_au_dessus() {
+        // bulge -1 = demi-cercle horaire de (0,0) vers (10,0) :
+        // l'arc passe par (5, 5).
+        let traces = import(&dxf_bulge("-1.0"), &DxfBudgets::default()).expect("dxf valide");
+        assert_eq!(traces.len(), 1);
+        let points = traces[0].points();
+        assert_eq!(points.len(), 17);
+        let passage = points.iter().any(|p| {
+            (p.x().millimeters() - 5.0).abs() < 1e-6
+                && (p.y().millimeters() - 5.0).abs() < 1e-6
+        });
+        assert!(passage, "l'arc doit passer par (5, 5)");
+    }
 }
