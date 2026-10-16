@@ -504,6 +504,32 @@ impl DemoApp {
         }
     }
 
+    /// Engagement d'un champ de dimension pour cette frame, s'il y en a
+    /// un : la valeur glissée est capturée pendant le geste (au
+    /// relâchement, le champ est déjà revenu à la valeur du graphe)
+    /// et un engagement sans changement effectif n'écrit rien — un
+    /// faux événement tronquerait les groupes défaits (ADR-0008).
+    /// Les deux bugs de la validation C1 round 3 viennent de là :
+    /// dimensions figées au glissement, historique détruit au double
+    /// annuler.
+    fn engagement_params(
+        avant: f64,
+        apres: f64,
+        glissee: Option<f64>,
+        dragged: bool,
+        drag_stopped: bool,
+        changed: bool,
+    ) -> Option<f64> {
+        if drag_stopped {
+            let valeur = glissee.unwrap_or(avant);
+            return (valeur != avant).then_some(valeur);
+        }
+        if changed && !dragged {
+            return (apres != avant).then_some(apres);
+        }
+        None
+    }
+
     /// Projette un point du monde à l'écran : la caméra inverse l'axe
     /// Y (convention SVG/DXF) et donne un décalage par rapport au
     /// centre du viewport (ADR-0015).
@@ -836,6 +862,14 @@ impl DemoApp {
         ] {
             let libelle = self.texte(cle);
             let mut mm = self.session.graph_mut().value(name).unwrap_or(0.0);
+            // Valeur du graphe en début de frame : un engagement sans
+            // changement effectif n'écrit rien au journal — un faux
+            // événement tronquerait les groupes défaits (ADR-0008).
+            let avant = mm;
+            // Dernière valeur vue pendant le glissement : au
+            // relâchement, le champ est déjà rechargé depuis le
+            // graphe, la valeur glissée n'existe plus dans `mm`.
+            let mut glisse: Option<f64> = None;
             let demande = &mut self.aide;
             ui.horizontal(|ui| {
                 ui.label(&libelle);
@@ -843,12 +877,26 @@ impl DemoApp {
                     egui::DragValue::new(&mut mm)
                         .speed(1.0)
                         .range(1.0..=5000.0)
+                        // Une valeur existante hors plage (entrée absente
+                        // après un undo) n'est jamais « corrigée » : le
+                        // clamp par défaut compte comme un changement et
+                        // poussait un faux événement qui détruisait
+                        // l'historique défait (validation C1 round 3).
+                        .clamp_existing_to_range(false)
                         .suffix(" mm"),
                 );
-                // Un événement à la fin du geste (drag_stopped) ou pour une
-                // édition clavier — pas un événement par frame de glissement.
-                if reponse.drag_stopped() || (reponse.changed() && !reponse.dragged()) {
-                    edited = Some((name, mm));
+                if reponse.dragged() {
+                    glisse = Some(mm);
+                }
+                if let Some(valeur) = Self::engagement_params(
+                    avant,
+                    mm,
+                    glisse,
+                    reponse.dragged(),
+                    reponse.drag_stopped(),
+                    reponse.changed(),
+                ) {
+                    edited = Some((name, valeur));
                 }
                 avec_aide(&reponse, help_id, demande);
             });
@@ -1312,6 +1360,67 @@ mod tests {
         assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
         assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
         assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
+    }
+
+    /// La valeur glissée s'engage depuis la capture du geste : au
+    /// relâchement, le champ est déjà revenu à la valeur du graphe —
+    /// un engagement sur la seule valeur du champ écrivait l'ancienne
+    /// valeur (dimensions figées au glissement, validation C1
+    /// round 3). Sans changement effectif, rien ne va au journal.
+    #[test]
+    fn le_glissement_s_engage_sur_la_valeur_capturee() {
+        // Relâchement après un glissement : la valeur capturée gagne.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 800.0, Some(500.0), false, true, false),
+            Some(500.0)
+        );
+        // Relâchement sans glissement capturé : rien à engager.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 800.0, None, false, true, false),
+            None
+        );
+        // Glissement en cours : aucun événement par frame.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, Some(500.0), true, false, true),
+            None
+        );
+        // Édition clavier : la valeur finale s'engage.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, None, false, false, true),
+            Some(500.0)
+        );
+        // Glissement revenu à la valeur de départ : rien.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 800.0, Some(800.0), false, true, false),
+            None
+        );
+    }
+
+    /// Les trois événements vierges (largeur, hauteur, diagonale)
+    /// forment trois groupes d'undo : annuler puis rétablir les
+    /// parcourt sans perdre le journal — après un undo des
+    /// dimensions, le clamp d'affichage d'un champ comptait comme
+    /// un changement et détruisait les groupes défaits (validation
+    /// C1 round 3).
+    #[test]
+    fn annuler_puis_retablir_les_groupes_vierges() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        assert!(app.session.can_undo(), "session vierge annulable");
+        app.session.undo().expect("premier undo");
+        assert!(app.session.can_redo(), "rétablissable après un undo");
+        app.session.undo().expect("second undo");
+        assert!(app.session.can_redo(), "rétablissable après deux undos");
+        app.session.redo().expect("premier rétablissement");
+        app.session.redo().expect("second rétablissement");
+        assert_eq!(
+            app.session.document().events().len(),
+            3,
+            "journal intact : trois événements"
+        );
+        let largeur = app.session.graph_mut().value("width_mm").expect("valeur");
+        let hauteur = app.session.graph_mut().value("height_mm").expect("valeur");
+        assert_eq!(largeur, 800.0, "largeur rétablie");
+        assert_eq!(hauteur, 600.0, "hauteur rétablie");
     }
 
     /// L'axe Y monte dans la scène et descend à l'écran : un point
