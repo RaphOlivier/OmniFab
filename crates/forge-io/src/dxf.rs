@@ -366,7 +366,11 @@ fn de_boor(
     let mut d: Vec<(f64, f64, f64)> = (0..=degree)
         .map(|i| {
             let j = k - degree + i;
-            (controles[j].x * poids[j], controles[j].y * poids[j], poids[j])
+            (
+                controles[j].x * poids[j],
+                controles[j].y * poids[j],
+                poids[j],
+            )
         })
         .collect();
     for r in 1..=degree {
@@ -531,8 +535,7 @@ EOF
         // Le format d'Inkscape : quatre points de contrôle, nœuds
         // 0,0,0,0,1,1,1,1 — un Bézier cubique par entité.
         let corps = "40\n0.0\n40\n0.0\n40\n0.0\n40\n0.0\n40\n1.0\n40\n1.0\n40\n1.0\n40\n1.0\n10\n0.0\n20\n0.0\n30\n0.0\n10\n0.0\n20\n10.0\n30\n0.0\n10\n10.0\n20\n10.0\n30\n0.0\n10\n10.0\n20\n0.0\n30\n0.0\n";
-        let traces = import(&dxf_spline("3", corps), &DxfBudgets::default())
-            .expect("dxf valide");
+        let traces = import(&dxf_spline("3", corps), &DxfBudgets::default()).expect("dxf valide");
         assert_eq!(traces.len(), 1, "la spline est importée");
         let points = traces[0].points();
         assert_eq!(points.len(), 17, "seize segments par intervalle");
@@ -550,8 +553,7 @@ EOF
         // Degré 1, nœuds 0,0,1,2,2 : la polyligne (0,0), (5,5),
         // (10,0) en deux intervalles de nœuds.
         let corps = "40\n0.0\n40\n0.0\n40\n1.0\n40\n2.0\n40\n2.0\n10\n0.0\n20\n0.0\n30\n0.0\n10\n5.0\n20\n5.0\n30\n0.0\n10\n10.0\n20\n0.0\n30\n0.0\n";
-        let traces = import(&dxf_spline("1", corps), &DxfBudgets::default())
-            .expect("dxf valide");
+        let traces = import(&dxf_spline("1", corps), &DxfBudgets::default()).expect("dxf valide");
         assert_eq!(traces.len(), 1, "la spline est importée");
         let points = traces[0].points();
         assert_eq!(points.len(), 33, "deux intervalles de seize");
@@ -570,8 +572,7 @@ EOF
         let corps = format!(
             "40\n0.0\n40\n0.0\n40\n0.0\n40\n1.0\n40\n1.0\n40\n1.0\n{poids}10\n1.0\n20\n0.0\n30\n0.0\n10\n1.0\n20\n1.0\n30\n0.0\n10\n0.0\n20\n1.0\n30\n0.0\n"
         );
-        let traces = import(&dxf_spline("2", &corps), &DxfBudgets::default())
-            .expect("dxf valide");
+        let traces = import(&dxf_spline("2", &corps), &DxfBudgets::default()).expect("dxf valide");
         assert_eq!(traces.len(), 1, "la spline est importée");
         let points = traces[0].points();
         assert_eq!(points.len(), 17);
