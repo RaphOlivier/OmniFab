@@ -72,8 +72,11 @@ const COULEUR_RECTANGLE_3D: Couleur = [1.0, 1.0, 1.0, 1.0];
 const COULEUR_TRACES: Couleur = [240.0 / 255.0, 180.0 / 255.0, 20.0 / 255.0, 1.0];
 /// Largeur du trait des tracés importés, en pixels logiques (ADR-0015).
 const LARGEUR_TRACES_PX: f32 = 1.5;
-/// Couleur de la grille de fond, RGBA normalisé (ADR-0015).
+/// Couleur de la grille de fond 3D, RGBA normalisé (ADR-0015).
 const COULEUR_GRILLE: Couleur = [0.35, 0.40, 0.47, 1.0];
+/// Couleur de la grille 2D, plus claire que la feuille bleue du
+/// rectangle paramétrique pour éviter la confusion (ADR-0015, phase C2).
+const COULEUR_GRILLE_2D: Couleur = [0.55, 0.62, 0.75, 1.0];
 /// Espacement visé entre deux lignes de grille, en pixels (ADR-0015).
 const GRILLE_CIBLE_PX: f64 = 80.0;
 /// Nombre d'événements posés par une session vierge : au-delà, la
@@ -1154,7 +1157,7 @@ impl DemoApp {
                         visible,
                         self.camera.echelle,
                         GRILLE_CIBLE_PX,
-                        COULEUR_GRILLE,
+                        COULEUR_GRILLE_2D,
                     );
                     let traces_scene =
                         Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
