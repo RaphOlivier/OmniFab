@@ -493,6 +493,17 @@ impl DemoApp {
         boite
     }
 
+    /// Boîte de cadrage automatique de la caméra : celle de la scène
+    /// importée quand il y en a une — l'import recentre sur les objets,
+    /// même éloignés du rectangle paramétrique — sinon celle du
+    /// rectangle paramétrique (ADR-0015).
+    fn boite_cadrage(width: f64, height: f64, scene: Option<Boite2>) -> Boite2 {
+        match scene {
+            Some(scene) => scene,
+            None => Boite2::du_point(0.0, 0.0).etendre(width, height),
+        }
+    }
+
     /// Projette un point du monde à l'écran : la caméra inverse l'axe
     /// Y (convention SVG/DXF) et donne un décalage par rapport au
     /// centre du viewport (ADR-0015).
@@ -965,13 +976,11 @@ impl DemoApp {
         let maillage: Option<&Mesh> = self.cache_maillage.as_ref().map(|(_, m)| m);
         let rect = response.rect;
         if self.camera_cle.as_ref() != Some(&cle) {
-            // Union du rectangle paramétrique et de la scène importée :
-            // tout doit tenir dans le viewport (ADR-0015).
-            let mut boite = Boite2::du_point(0.0, 0.0).etendre(width, height);
-            if let Some(importee) = Self::boite_scene(traces, maillage) {
-                boite = boite.etendre(importee.min_x, importee.min_y);
-                boite = boite.etendre(importee.max_x, importee.max_y);
-            }
+            // Le cadrage vise la scène importée quand il y en a une,
+            // le rectangle paramétrique sinon : un import éloigné de
+            // l'origine reste centré sur ses objets (ADR-0015).
+            let scene = Self::boite_scene(traces, maillage);
+            let boite = Self::boite_cadrage(width, height, scene);
             self.camera
                 .ajuster(rect.width() as f64, rect.height() as f64, boite, 20.0);
             self.camera_cle = Some(cle);
@@ -1267,6 +1276,42 @@ mod tests {
         assert_eq!(boite.min_y, 0.0, "origine y commune");
         assert_eq!(boite.max_x, 1.0, "union en x");
         assert_eq!(boite.max_y, 1.0, "union en y");
+    }
+
+    /// Le cadrage automatique vise la scène importée, même éloignée de
+    /// l'origine : un import positionné loin du rectangle paramétrique
+    /// reste centré sur ses objets (bug de recentrage DXF signalé à la
+    /// validation C1 — l'union avec le rectangle déplaçait le centre).
+    #[test]
+    fn le_cadrage_vise_la_scene_meme_eloignee_du_rectangle() {
+        let a = Point2::new(
+            Length::from_millimeters(100.0),
+            Length::from_millimeters(200.0),
+        )
+        .expect("fini");
+        let b = Point2::new(
+            Length::from_millimeters(120.0),
+            Length::from_millimeters(220.0),
+        )
+        .expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let scene = DemoApp::boite_scene(&[trace], None).expect("boîte de scène");
+        let boite = DemoApp::boite_cadrage(50.0, 50.0, Some(scene));
+        assert_eq!(boite.min_x, 100.0, "origine x de la scène");
+        assert_eq!(boite.min_y, 200.0, "origine y de la scène");
+        assert_eq!(boite.max_x, 120.0, "portée x de la scène");
+        assert_eq!(boite.max_y, 220.0, "portée y de la scène");
+    }
+
+    /// Sans scène importée, le cadrage vise le rectangle paramétrique
+    /// seul (ADR-0015).
+    #[test]
+    fn le_cadrage_sans_scene_vise_le_rectangle() {
+        let boite = DemoApp::boite_cadrage(800.0, 600.0, None);
+        assert_eq!(boite.min_x, 0.0, "origine x du rectangle");
+        assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
+        assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
+        assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
     }
 
     /// L'axe Y monte dans la scène et descend à l'écran : un point
