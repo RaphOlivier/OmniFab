@@ -2,9 +2,10 @@
 //!
 //! Convention d'axes : le SVG descend (Y vers le bas), le monde
 //! monte (Y vers le haut) — l'axe Y est inversé à l'import et à
-//! l'export. Convention d'unités : une unité SVG = 1 mm. Le
-//! parseur `usvg`
-//! n'exécute aucun script, ne charge aucune ressource externe et
+//! l'export. Convention d'unités : une unité SVG = 1 mm ; les
+//! tailles physiques (`width`/`height` en mm, in…) sont
+//! résolues à 25,4 dpi — un « pixel » usvg vaut exactement 1 mm.
+//! Le parseur `usvg` n'exécute aucun script, ne charge aucune ressource externe et
 //! n'accepte ni DTD ni XXE ; les formes de base (`rect`,
 //! `circle`, …) sont normalisées en tracés par `usvg`. Les courbes
 //! de Bézier (quadratiques et cubiques) sont aplaties en polylignes
@@ -47,6 +48,8 @@ impl Default for SvgBudgets {
 }
 
 /// Importe un SVG en tracés 2D. Convention : une unité SVG = 1 mm ;
+/// les tailles physiques (`width`/`height` en mm, in…) sont
+/// résolues à 25,4 dpi — un « pixel » usvg vaut exactement 1 mm ;
 /// chaque tracé est collecté avec sa transformation absolue
 /// (usvg compose les transformations des ancêtres et du tracé), les
 /// courbes sont aplaties en polylignes, les nœuds non géométriques
@@ -60,7 +63,13 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
             max: budgets.max_bytes,
         });
     }
-    let options = usvg::Options::default();
+    // Résolution des unités physiques à 25,4 dpi : un « pixel »
+    // usvg vaut exactement 1 mm (au défaut 96 dpi, `width="50mm"`
+    // devenait 189 px et l'import grossissait de ×3,78).
+    let options = usvg::Options {
+        dpi: 25.4,
+        ..usvg::Options::default()
+    };
     let arbre = usvg::Tree::from_data(bytes, &options).map_err(|erreur| IoError::InvalidSvg {
         raison: erreur.to_string(),
     })?;

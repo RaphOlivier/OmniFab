@@ -114,6 +114,51 @@ fn importe_les_groupes_imbriques() {
 }
 
 #[test]
+fn importe_les_tailles_physiques_en_mm() {
+    // Fichiers Inkscape/FreeCAD : `width`/`height` en mm + viewBox
+    // — un dessin de 10 mm importe en 10 mm. Régression du bug
+    // « beaucoup plus grande que prévue » : usvg convertissait les
+    // tailles physiques en pixels à 96 dpi (10 mm → 38 px).
+    let source = br#"<svg width="10mm" height="10mm" viewBox="0 0 10 10">
+<path d="M 0 0 L 10 0 L 10 10 L 0 10 Z"/>
+</svg>"#;
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 1);
+    assert!(traces[0].is_closed());
+    let points = traces[0].points();
+    let trouve = |x: f64, y: f64| {
+        points.iter().any(|p| {
+            (p.x().millimeters() - x).abs() < 1e-3 && (p.y().millimeters() - y).abs() < 1e-3
+        })
+    };
+    assert!(trouve(0.0, 0.0), "sommet origine absent");
+    assert!(trouve(10.0, 0.0), "sommet (10, 0) absent");
+    assert!(trouve(10.0, -10.0), "sommet (10, -10) absent");
+    assert!(trouve(0.0, -10.0), "sommet (0, -10) absent");
+}
+
+#[test]
+fn respecte_la_taille_physique_du_document() {
+    // Le viewBox est cadré sur la taille physique déclarée : un
+    // document de 20 mm dont le viewBox fait 10 unités importe
+    // en 20 mm (l'échelle viewBox→taille vit dans usvg).
+    let source = br#"<svg width="20mm" height="20mm" viewBox="0 0 10 10">
+<path d="M 0 0 L 10 0 L 10 10 L 0 10 Z"/>
+</svg>"#;
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 1);
+    let points = traces[0].points();
+    let trouve = |x: f64, y: f64| {
+        points.iter().any(|p| {
+            (p.x().millimeters() - x).abs() < 1e-3 && (p.y().millimeters() - y).abs() < 1e-3
+        })
+    };
+    assert!(trouve(0.0, 0.0), "sommet origine absent");
+    assert!(trouve(20.0, 0.0), "sommet (20, 0) absent");
+    assert!(trouve(20.0, -20.0), "sommet (20, -20) absent");
+}
+
+#[test]
 fn budget_de_traces_depasse() {
     let budgets = SvgBudgets {
         max_paths: 2,
