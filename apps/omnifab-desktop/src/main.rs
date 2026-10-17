@@ -1213,7 +1213,7 @@ impl DemoApp {
                             .color(egui::Color32::YELLOW),
                     );
                 }
-                // Contour et cote du rectangle par le painter, aprés
+                // Contour et cote du rectangle par le painter, après
                 // le callback GPU : la grille ne les recouvre plus quand
                 // elle coïncide avec eux (priorité d'affichage,
                 // validation C2, round 3).
