@@ -455,7 +455,6 @@ fn deux_imports_ne_s_ecrasent_pas() {
     assert_eq!(octets, &b"<svg a/>"[..], "octets d'origine intacts");
 }
 
-
 /// Une commande refusée par une projection après un undo préserve la
 /// pile redo : ni le journal ni les blobs ne sont touchés (ADR-0016 A1).
 #[test]
@@ -494,7 +493,8 @@ fn refus_d_un_blob_retire_les_blobs_deposes() {
         fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
             let evenement = NewEvent::new("bidon.deux_blobs", 1, "", serde_json::json!({"x": 1}));
             let mut plan = CommandPlan::new(vec![evenement]);
-            plan.blobs.push(("geometry/premier".into(), b"premier".to_vec()));
+            plan.blobs
+                .push(("geometry/premier".into(), b"premier".to_vec()));
             plan.blobs.push(("../invalide".into(), b"second".to_vec()));
             Ok(plan)
         }

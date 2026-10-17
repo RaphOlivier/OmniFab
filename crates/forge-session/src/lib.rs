@@ -123,6 +123,9 @@ impl Session {
         if plan.events.is_empty() && plan.blobs.is_empty() {
             return Ok(());
         }
+        // Références de l'état courant, capturées avant application :
+        // un undo peut revenir à cet état — leurs blobs doivent survivre.
+        let mut references = self.referenced_blobs();
         for event in &plan.events {
             if let Err(error) = self.apply_all(event) {
                 // Rien n'est écrit au journal et la pile redo est encore
@@ -150,8 +153,9 @@ impl Session {
         }
         // Validation complète : seule une commande réussie abandonne la
         // pile redo (ADR-0008) et purge les blobs orphelins (ADR-0011).
+        references.extend(deposes.iter().cloned());
         self.truncate_pending();
-        self.gc_blobs(&deposes);
+        self.gc_blobs(&references);
         let txn = uuid::Uuid::now_v7().to_string();
         for mut event in plan.events {
             event.actor = self.actor.clone();
@@ -242,7 +246,8 @@ impl Session {
     /// (ADR-0011).
     pub fn save_to_bytes(&mut self) -> Result<Vec<u8>, DocError> {
         self.truncate_pending();
-        self.gc_blobs(&[]);
+        let references = self.referenced_blobs();
+        self.gc_blobs(&references);
         self.doc.to_bytes()
     }
 
@@ -252,7 +257,8 @@ impl Session {
     #[cfg(feature = "native")]
     pub fn save_to_path(&mut self, path: &std::path::Path) -> Result<(), DocError> {
         self.truncate_pending();
-        self.gc_blobs(&[]);
+        let references = self.referenced_blobs();
+        self.gc_blobs(&references);
         self.doc.save_to_path(path)
     }
 
@@ -265,15 +271,21 @@ impl Session {
         }
     }
 
-    /// Purge les blobs orphelins (ADR-0011) : ne survit qu'un blob
-    /// référencé par l'état courant d'une projection, ou explicitement
-    /// protégé (les blobs fraîchement déposés d'une commande validée).
-    fn gc_blobs(&mut self, proteges: &[String]) {
+    /// Références de blobs portées par l'état courant de toutes les
+    /// projections (géométrie importée, domaines enregistrés).
+    fn referenced_blobs(&self) -> Vec<String> {
         let mut references = self.geom.referenced_blobs();
         for projection in &self.projections {
             references.extend(projection.referenced_blobs());
         }
-        references.extend(proteges.iter().cloned());
+        references
+    }
+
+    /// Purge les blobs orphelins (ADR-0011) : ne survit qu'un blob
+    /// présent dans `references` — l'état courant des projections au
+    /// moment de la planification, augmenté des blobs fraîchement
+    /// déposés par une commande validée.
+    fn gc_blobs(&mut self, references: &[String]) {
         for nom in self.doc.blob_names() {
             if !references.contains(&nom) {
                 self.doc.remove_blob(&nom);
