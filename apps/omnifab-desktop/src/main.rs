@@ -19,8 +19,10 @@
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
 //!   est un état de l'app UI, jamais un événement ;
 //! - **viewport wgpu** (ADR-0015, phases C1 et C2) : vue 2D — grille
-//!   de fond et tracés importés dessinés par le GPU via forge-render,
-//!   caméra à la molette (zoom au curseur) et au glisser (pan) ;
+//!   de fond, tracés importés et wireframe du maillage STL en
+//!   projection de dessus dessinés par le GPU via forge-render, le
+//!   rectangle paramétrique par le painter, caméra à la molette
+//!   (zoom au curseur) et au glisser (pan) ;
 //!   vue 3D — wireframe du maillage STL par le GPU, arêtes
 //!   dédupliquées, caméra orbite, plafond d'affichage supprimé ;
 //! - les dimensions manipulées restent des `Length` (forge-units, jamais
@@ -43,8 +45,8 @@ use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
-    Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment3D,
-    dessiner_scene, dessiner_wireframe, pas_de_grille,
+    Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
+    Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
 };
 use forge_session::{
     Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
@@ -576,6 +578,31 @@ impl DemoApp {
         match scene {
             Some(scene) => scene,
             None => Boite3D::du_point(0.0, 0.0, 0.0).etendre(width, height, 0.0),
+        }
+    }
+
+    /// Ajoute à une scêne 2D le wireframe du maillage en projection
+    /// de dessus : trois arêtes par triangle, cyan, un pixel —
+    /// dessiné par le GPU (ADR-0015, phase C2), sans plafond. Le
+    /// STL reste visible en vue 2D sans repasser par le painter
+    /// (validation C2, round 5).
+    fn ajouter_maillage_2d(scene: &mut Scene2D, maillage: &Mesh) {
+        let sommets = maillage.vertices();
+        for triangle in maillage.triangles() {
+            let mut points: Vec<(f64, f64)> = Vec::new();
+            for index in triangle.iter() {
+                let sommet = sommets[*index as usize];
+                points.push((sommet.x().millimeters(), sommet.y().millimeters()));
+            }
+            let (a, b, c) = (points[0], points[1], points[2]);
+            for (depart, arrivee) in [(a, b), (b, c), (c, a)] {
+                scene.ajouter(Segment2D {
+                    depart,
+                    arrivee,
+                    couleur: COULEUR_WIREFRAME,
+                    largeur_px: 1.0,
+                });
+            }
         }
     }
 
@@ -1179,24 +1206,29 @@ impl DemoApp {
                 Vue::TroisD => self.camera3d.orbiter((delta.x as f64, delta.y as f64)),
             }
         }
-        // Vue 2D : rectangle paramétrique par le painter, grille et
-        // tracés par le GPU. Vue 3D : rectangle, tracés et grille au
-        // sol posés sur le plan z = 0, wireframe du maillage en
-        // volume — arêtes dédupliquées, sans plafond (ADR-0015,
-        // phase C2).
+        // Vue 2D : rectangle paramétrique par le painter (remplissage
+        // et contour, une seule entité), grille, tracés et wireframe
+        // du maillage en projection de dessus par le GPU. Vue 3D :
+        // rectangle, tracés et grille au sol posés sur le plan z = 0,
+        // wireframe du maillage en volume — arêtes dédupliquées, sans
+        // plafond (ADR-0015, phase C2).
         match self.vue {
             Vue::DeuxD => {
                 let coin = Self::point_ecran(&self.camera, rect, 0.0, 0.0);
                 let oppose = Self::point_ecran(&self.camera, rect, width, height);
                 let shape = egui::Rect::from_two_pos(coin, oppose);
                 // Priorité d'affichage = ordre de dessin (leçon du
-                // round 2 de la validation C2) : la grille GPU au fond,
-                // la feuille bleue du painter, les tracés GPU, puis le
-                // contour et la cote du rectangle par-dessus (round 4 :
-                // la feuille recouvre la grille, les tracés posés sur
-                // elle restent visibles). Sans wgpu, la scêne 2D n'est
-                // pas dessinée et le viewport le dit (ADR-0015).
+                // round 2 de la validation C2) : la grille GPU au
+                // fond, puis le carré bleu — une seule entité dont
+                // le contour est rendu juste sur son remplissage
+                // (round 5 : les tracés importés ne s'intercalent
+                // pas entre les deux) — puis les tracés et le
+                // wireframe du maillage par-dessus, la cote en
+                // dernier pour rester lisible. Sans wgpu, la
+                // scêne 2D n'est pas dessinée et le viewport le
+                // dit (ADR-0015).
                 let feuille = egui::Color32::from_rgb(38, 96, 152);
+                let contour = egui::Stroke::new(1.5_f32, egui::Color32::WHITE);
                 if self.viewport_wgpu {
                     let mut scene_grille = Scene2D::vide();
                     let visible = self
@@ -1210,21 +1242,24 @@ impl DemoApp {
                     );
                     dessiner_scene(&painter, rect, scene_grille, self.camera);
                     painter.rect_filled(shape, 4.0, feuille);
-                    let scene_traces =
+                    painter.rect_stroke(shape, 4.0, contour);
+                    let mut scene_haut =
                         Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
-                    dessiner_scene(&painter, rect, scene_traces, self.camera);
+                    if let Some(maillage) = maillage {
+                        Self::ajouter_maillage_2d(&mut scene_haut, maillage);
+                    }
+                    dessiner_scene(&painter, rect, scene_haut, self.camera);
                 } else {
                     painter.rect_filled(shape, 4.0, feuille);
+                    painter.rect_stroke(shape, 4.0, contour);
                     ui.label(
                         egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
                             .color(egui::Color32::YELLOW),
                     );
                 }
-                // Contour et cote du rectangle par le painter, après
-                // les callbacks GPU : ni la grille ni les tracés ne
-                // les recouvrent quand ils coïncident avec eux
-                // (priorité d'affichage, validation C2, rounds 3-4).
-                painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+                // Cote du rectangle par le painter, après les
+                // callbacks GPU : elle reste lisible par-dessus les
+                // tracés (validation C2, round 5).
                 painter.text(
                     shape.left_bottom() + egui::vec2(0.0, 16.0),
                     egui::Align2::LEFT_TOP,
@@ -1687,5 +1722,29 @@ mod tests {
         let centre = camera.centre_mm;
         let affiche = DemoApp::point_ecran(&camera, rect, centre.0, centre.1);
         assert_eq!(affiche, rect.center(), "centré, pas vers le coin");
+    }
+
+    /// Le wireframe 2D du maillage : trois arêtes par triangle en
+    /// projection de dessus, cyan, un pixel — le STL revient en vue
+    /// 2D, dessiné par le même pipeline GPU que les tracés, sans
+    /// plafond (validation C2, round 5).
+    #[test]
+    fn le_wireframe_2d_pose_trois_aretes_par_triangle() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let mut scene = Scene2D::vide();
+        DemoApp::ajouter_maillage_2d(&mut scene, &maillage);
+        assert_eq!(scene.segments.len(), 3, "trois arêtes par triangle");
+        assert_eq!(scene.segments[0].depart, (0.0, 0.0), "vue de dessus");
+        assert!(
+            scene
+                .segments
+                .iter()
+                .all(|segment| segment.couleur == COULEUR_WIREFRAME),
+            "arêtes cyan"
+        );
     }
 }
