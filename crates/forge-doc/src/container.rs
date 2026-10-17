@@ -222,20 +222,22 @@ pub(crate) fn read(
     }
 
     // Objets binaires (blobs) : les entrées en doublon sont refusées au
-    // lieu d'être lues avec écrasement silencieux (OF-DOC-0015), chaque
-    // nom relu passe par la validation de `set_blob` (une archive
-    // forgée ne contourne plus l'invariant, ADR-0016 A4) et le cumul
-    // des blobs est borné par un plafond global réglable (OF-DOC-0014)
-    // — le dépassement est détecté après lecture de l'entrée
-    // fautive, au plus `MAX_BLOB_BYTES` au-delà du plafond.
-    let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+    // lieu d'être lues avec écrasement silencieux (OF-DOC-0015) — la
+    // détection passe par `by_index`, car `file_names()` renvoie des
+    // noms déjà dédupliqués par la crate zip. Chaque nom relu passe par
+    // la validation de `set_blob` (une archive forgée ne contourne plus
+    // l'invariant, ADR-0016 A4) et le cumul des blobs est borné par un
+    // plafond global réglable (OF-DOC-0014) — le dépassement est
+    // détecté après lecture de l'entrée fautive, au plus
+    // `MAX_BLOB_BYTES` au-delà du plafond.
+    let mut names: Vec<String> = Vec::new();
     let mut entrees_vues = BTreeSet::new();
-    for name in &names {
-        if !entrees_vues.insert(name.as_str()) {
-            return Err(DocError::DuplicateEntry {
-                entry: name.clone(),
-            });
+    for index in 0..archive.len() {
+        let nom = archive.by_index(index)?.name().to_string();
+        if !entrees_vues.insert(nom.clone()) {
+            return Err(DocError::DuplicateEntry { entry: nom });
         }
+        names.push(nom);
     }
     let mut blobs = BTreeMap::new();
     let mut total_blob_bytes: u64 = 0;
