@@ -579,13 +579,13 @@ impl DemoApp {
         }
     }
 
-    /// Scéne 3D du viewport : grille au sol, tracés posés sur le
+    /// Scîne 3D du viewport : grille au sol, tracés posés sur le
     /// plan z = 0, contour du rectangle paramétrique, wireframe du
     /// maillage. L'ordre d'ajout est la priorité d'affichage : le
     /// pipeline de lignes ne teste pas la profondeur, le dernier
     /// segment dessiné recouvre les précédents — la grille passe
     /// sous les tracés et le rectangle, qui ne disparaissent plus
-    /// quand ils coîncident avec elle (validation C2, round 2).
+    /// quand ils coïncident avec elle (validation C2, round 2).
     fn scene_vue_3d(
         traces: &[Path2],
         maillage: Option<&Mesh>,
@@ -596,7 +596,7 @@ impl DemoApp {
         let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
         let mut scene = Scene3D::vide();
         // La grille au sol couvre la boîte de cadrage, élargie d'un
-        // pas de chaque cèté.
+        // pas de chaque côté.
         let boite = Self::boite_cadrage_3d(width, height, Self::boite_scene_3d(traces, maillage));
         let boite_grille = boite
             .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
@@ -1533,7 +1533,7 @@ mod tests {
     /// Priorité d'affichage de la vue 3D : le pipeline de lignes ne
     /// teste pas la profondeur, le dernier segment ajouté recouvre
     /// les précédents. La grille est donc posée sous les tracés et
-    /// le rectangle, qui ne scintillent plus quand ils coîncident
+    /// le rectangle, qui ne scintillent plus quand ils coïncident
     /// avec elle (validation C2, round 2).
     #[test]
     fn la_grille_3d_passe_sous_les_traces_et_le_rectangle() {
