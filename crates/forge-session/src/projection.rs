@@ -287,8 +287,7 @@ fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
             event_type: event.event_type.clone(),
             reason: format!(
                 "version de schéma {} non supportée (attendue : {})",
-                event.schema_version,
-                version
+                event.schema_version, version
             ),
         });
     }
