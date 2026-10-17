@@ -1189,38 +1189,41 @@ impl DemoApp {
                 let coin = Self::point_ecran(&self.camera, rect, 0.0, 0.0);
                 let oppose = Self::point_ecran(&self.camera, rect, width, height);
                 let shape = egui::Rect::from_two_pos(coin, oppose);
-                painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
                 // Priorité d'affichage = ordre de dessin (leçon du
-                // round 2 de la validation C2) : le fond bleu par le
-                // painter, puis la grille et les tracés par le GPU,
-                // puis le contour et la cote du rectangle par-dessus.
-                // Grille et tracés par le GPU (ADR-0015) ; sans wgpu,
-                // la scène 2D n'est pas dessinée et le viewport le dit.
-                if self.viewport_wgpu {
-                    let mut scene = Scene2D::vide();
+// round 2 de la validation C2) : la grille GPU au fond,
+// la feuille bleue du painter, les tracés GPU, puis le
+// contour et la cote du rectangle par-dessus (round 4 :
+// la feuille recouvre la grille, les tracés posés sur
+// elle restent visibles). Sans wgpu, la scéne 2D n'est
+// pas dessinée et le viewport le dit (ADR-0015).
+let feuille = egui::Color32::from_rgb(38, 96, 152);
+if self.viewport_wgpu {
+                    let mut scene_grille = Scene2D::vide();
                     let visible = self
                         .camera
                         .boite_visible(rect.width() as f64, rect.height() as f64);
-                    scene.ajouter_grille(
+                    scene_grille.ajouter_grille(
                         visible,
                         self.camera.echelle,
                         GRILLE_CIBLE_PX,
                         COULEUR_GRILLE_2D,
                     );
-                    let traces_scene =
+                    dessiner_scene(&painter, rect, scene_grille, self.camera);
+                    painter.rect_filled(shape, 4.0, feuille);
+                    let scene_traces =
                         Scene2D::depuis_traces(traces, COULEUR_TRACES, LARGEUR_TRACES_PX);
-                    scene.segments.extend(traces_scene.segments);
-                    dessiner_scene(&painter, rect, scene, self.camera);
+                    dessiner_scene(&painter, rect, scene_traces, self.camera);
                 } else {
+                    painter.rect_filled(shape, 4.0, feuille);
                     ui.label(
                         egui::RichText::new(self.texte("viewport-wgpu-indisponible"))
                             .color(egui::Color32::YELLOW),
                     );
                 }
                 // Contour et cote du rectangle par le painter, après
-                // le callback GPU : la grille ne les recouvre plus quand
-                // elle coïncide avec eux (priorité d'affichage,
-                // validation C2, round 3).
+                // les callbacks GPU : ni la grille ni les tracés ne
+                // les recouvrent quand ils coïncident avec eux
+                // (priorité d'affichage, validation C2, rounds 3-4).
                 painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
                 painter.text(
                     shape.left_bottom() + egui::vec2(0.0, 16.0),
