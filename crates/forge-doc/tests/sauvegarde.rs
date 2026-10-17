@@ -32,12 +32,19 @@ fn sauvegardes_repetees_rotent_le_backup() {
     let projet = dossier.join("projet.omnifab");
     let backup = dossier.join("projet.omnifab.bak");
 
-    document(1).save_to_path(&projet).expect("première sauvegarde");
-    assert!(projet.exists(), "le projet existe après la première sauvegarde");
+    document(1)
+        .save_to_path(&projet)
+        .expect("première sauvegarde");
+    assert!(
+        projet.exists(),
+        "le projet existe après la première sauvegarde"
+    );
     assert!(!backup.exists(), "aucun `.bak` sans projet précédent");
     assert_eq!(Document::open_from_path(&projet).unwrap().events().len(), 1);
 
-    document(2).save_to_path(&projet).expect("deuxième sauvegarde");
+    document(2)
+        .save_to_path(&projet)
+        .expect("deuxième sauvegarde");
     assert_eq!(Document::open_from_path(&projet).unwrap().events().len(), 2);
     assert_eq!(
         Document::open_from_path(&backup).unwrap().events().len(),
@@ -45,7 +52,9 @@ fn sauvegardes_repetees_rotent_le_backup() {
         "le `.bak` contient la version précédente"
     );
 
-    document(3).save_to_path(&projet).expect("troisième sauvegarde");
+    document(3)
+        .save_to_path(&projet)
+        .expect("troisième sauvegarde");
     assert_eq!(Document::open_from_path(&projet).unwrap().events().len(), 3);
     assert_eq!(
         Document::open_from_path(&backup).unwrap().events().len(),
@@ -65,7 +74,9 @@ fn echec_ecriture_preserve_le_projet() {
     let dossier = dossier_temporaire();
     let projet = dossier.join("projet.omnifab");
 
-    document(1).save_to_path(&projet).expect("sauvegarde initiale");
+    document(1)
+        .save_to_path(&projet)
+        .expect("sauvegarde initiale");
     let original = std::fs::read(&projet).expect("projet initial lisible");
 
     // Bloqueur : `File::create` échoue sur un dossier.
@@ -74,8 +85,15 @@ fn echec_ecriture_preserve_le_projet() {
 
     let resultat = document(2).save_to_path(&projet);
     assert!(resultat.is_err(), "l'écriture doit échouer");
-    assert!(projet.exists(), "le projet reste à son chemin après l'échec");
-    assert_eq!(std::fs::read(&projet).unwrap(), original, "le projet est inchangé");
+    assert!(
+        projet.exists(),
+        "le projet reste à son chemin après l'échec"
+    );
+    assert_eq!(
+        std::fs::read(&projet).unwrap(),
+        original,
+        "le projet est inchangé"
+    );
     assert!(
         !dossier.join("projet.omnifab.bak").exists(),
         "aucun `.bak` créé sur un échec"
@@ -83,7 +101,9 @@ fn echec_ecriture_preserve_le_projet() {
 
     // Bloqueur levé : la sauvegarde repart.
     std::fs::remove_dir(&bloqueur).expect("bloqueur retiré");
-    document(2).save_to_path(&projet).expect("sauvegarde après retrait du bloqueur");
+    document(2)
+        .save_to_path(&projet)
+        .expect("sauvegarde après retrait du bloqueur");
     assert_eq!(Document::open_from_path(&projet).unwrap().events().len(), 2);
 
     let _ = std::fs::remove_dir_all(&dossier);
