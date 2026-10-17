@@ -286,7 +286,7 @@ fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
         return Err(SessionError::InvalidEventData {
             event_type: event.event_type.clone(),
             reason: format!(
-                "version de schème {} non supportée (attendue : {})",
+                "version de schéma {} non supportée (attendue : {})",
                 event.schema_version,
                 version
             ),
