@@ -579,7 +579,7 @@ impl DemoApp {
         }
     }
 
-    /// Scîne 3D du viewport : grille au sol, tracés posés sur le
+    /// Scène 3D du viewport : grille au sol, tracés posés sur le
     /// plan z = 0, contour du rectangle paramétrique, wireframe du
     /// maillage. L'ordre d'ajout est la priorité d'affichage : le
     /// pipeline de lignes ne teste pas la profondeur, le dernier
