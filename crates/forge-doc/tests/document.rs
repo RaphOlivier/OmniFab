@@ -405,12 +405,7 @@ fn snapshot_au_dela_du_journal_refuse() {
     // ignoré, le journal fait foi.
     let mut doc = Document::new();
     for i in 0..3 {
-        doc.append(NewEvent::new(
-            "demo.test",
-            1,
-            "test",
-            json!({"i": i}),
-        ));
+        doc.append(NewEvent::new("demo.test", 1, "test", json!({"i": i})));
     }
     doc.set_snapshot(json!({"values": []})).unwrap();
     let bytes = doc.to_bytes().unwrap();
