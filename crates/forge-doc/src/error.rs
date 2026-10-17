@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 0a7dc8ce91cd3674cfbaa0b28f6362a7547f7517)//! Erreurs typées de forge-doc (ADR-0003 : codes stables `OF-DOC-NNNN`,
+//! Erreurs typées de forge-doc (ADR-0003 : codes stables `OF-DOC-NNNN`,
 //! registre central `docs/error-codes.md`).
 
 use thiserror::Error;

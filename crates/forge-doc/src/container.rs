@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 35dc8448a571820bc42ac8171a50ac39d746cca8)//! Lecture/écriture du conteneur ZIP (ADR-0000 verrou nº1, ADR-0001).
+//! Lecture/écriture du conteneur ZIP (ADR-0000 verrou nº1, ADR-0001).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};

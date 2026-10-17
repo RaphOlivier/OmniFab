@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 94258bf9ed50baafce91fe793badece7759d5d6e)# Registre central des codes d'erreur (ADR-0003)
+# Registre central des codes d'erreur (ADR-0003)
 
 > **Source unique de vérité** pour tous les codes `OF-<DOMAINE>-<NNNN>`.
 >

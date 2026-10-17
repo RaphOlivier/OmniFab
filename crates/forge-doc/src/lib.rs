@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 21a7b3221c92b9e2f67677e4a8aac6add1f7dfec)#![deny(missing_docs)]
+#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! # forge-doc — conteneur de projet et journal d'événements

@@ -1,4 +1,4 @@
-successfully downloaded text file (SHA: 40e7cf65a0f2411be0d2fc29a2cc46549d5758bf)//! ADR-0003 : chaque code de `DocError` est stable, unique, et cohérent
+//! ADR-0003 : chaque code de `DocError` est stable, unique, et cohérent
 //! avec le registre central `docs/error-codes.md` — dans les deux sens.
 
 use forge_doc::DocError;
