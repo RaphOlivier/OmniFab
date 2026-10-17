@@ -1190,14 +1190,14 @@ impl DemoApp {
                 let oppose = Self::point_ecran(&self.camera, rect, width, height);
                 let shape = egui::Rect::from_two_pos(coin, oppose);
                 // Priorité d'affichage = ordre de dessin (leçon du
-// round 2 de la validation C2) : la grille GPU au fond,
-// la feuille bleue du painter, les tracés GPU, puis le
-// contour et la cote du rectangle par-dessus (round 4 :
-// la feuille recouvre la grille, les tracés posés sur
-// elle restent visibles). Sans wgpu, la scéne 2D n'est
-// pas dessinée et le viewport le dit (ADR-0015).
-let feuille = egui::Color32::from_rgb(38, 96, 152);
-if self.viewport_wgpu {
+                // round 2 de la validation C2) : la grille GPU au fond,
+                // la feuille bleue du painter, les tracés GPU, puis le
+                // contour et la cote du rectangle par-dessus (round 4 :
+                // la feuille recouvre la grille, les tracés posés sur
+                // elle restent visibles). Sans wgpu, la scêne 2D n'est
+                // pas dessinée et le viewport le dit (ADR-0015).
+                let feuille = egui::Color32::from_rgb(38, 96, 152);
+                if self.viewport_wgpu {
                     let mut scene_grille = Scene2D::vide();
                     let visible = self
                         .camera
