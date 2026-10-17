@@ -1186,18 +1186,10 @@ impl DemoApp {
                 let oppose = Self::point_ecran(&self.camera, rect, width, height);
                 let shape = egui::Rect::from_two_pos(coin, oppose);
                 painter.rect_filled(shape, 4.0, egui::Color32::from_rgb(38, 96, 152));
-                painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
-                painter.text(
-                    shape.left_bottom() + egui::vec2(0.0, 16.0),
-                    egui::Align2::LEFT_TOP,
-                    format!(
-                        "{} × {}",
-                        Length::from_millimeters(width),
-                        Length::from_millimeters(height)
-                    ),
-                    egui::FontId::default(),
-                    egui::Color32::WHITE,
-                );
+                // Priorité d'affichage = ordre de dessin (leçon du
+                // round 2 de la validation C2) : le fond bleu par le
+                // painter, puis la grille et les tracés par le GPU,
+                // puis le contour et la cote du rectangle par-dessus.
                 // Grille et tracés par le GPU (ADR-0015) ; sans wgpu,
                 // la scène 2D n'est pas dessinée et le viewport le dit.
                 if self.viewport_wgpu {
@@ -1221,6 +1213,22 @@ impl DemoApp {
                             .color(egui::Color32::YELLOW),
                     );
                 }
+                // Contour et cote du rectangle par le painter, aprés
+                // le callback GPU : la grille ne les recouvre plus quand
+                // elle coïncide avec eux (priorité d'affichage,
+                // validation C2, round 3).
+                painter.rect_stroke(shape, 4.0, egui::Stroke::new(1.5_f32, egui::Color32::WHITE));
+                painter.text(
+                    shape.left_bottom() + egui::vec2(0.0, 16.0),
+                    egui::Align2::LEFT_TOP,
+                    format!(
+                        "{} × {}",
+                        Length::from_millimeters(width),
+                        Length::from_millimeters(height)
+                    ),
+                    egui::FontId::default(),
+                    egui::Color32::WHITE,
+                );
             }
             Vue::TroisD => {
                 if self.viewport_wgpu {
