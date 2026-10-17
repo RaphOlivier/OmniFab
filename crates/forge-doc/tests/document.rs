@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+successfully downloaded text file (SHA: 200357db82639ec3e9d54016d538fbe77196661b)use std::io::{Read, Write};
 
 use forge_doc::{DocError, Document, FixedClock, MigrationRegistry, NewEvent, iso8601_from_unix};
 use serde_json::json;
@@ -419,4 +419,72 @@ fn derniere_ligne_tronquee_toleree() {
         Err(DocError::CorruptJournal { line: 1, .. }) => {}
         other => panic!("journal corrompu attendu, obtenu {other:?}"),
     }
+}
+
+#[test]
+fn blob_invalide_au_chargement_rejete() {
+    // ADR-0016 A4 : une archive forgée ne contourne pas la validation
+    // des noms de blobs (OF-DOC-0013) — le nom relu passe par la même
+    // validation que `set_blob` (vide, traversée, séparateur Windows).
+    for nom in ["objects/", "objects/../x", "objects/a\\b"] {
+        let bytes = archive(&[
+            ("manifest.json", MANIFEST_V1.to_string()),
+            ("events.jl", String::new()),
+            (nom, "x".to_string()),
+        ]);
+        let attendu = nom.strip_prefix("objects/").unwrap_or(nom);
+        match Document::from_bytes(&bytes) {
+            Err(DocError::InvalidBlobName { name }) => assert_eq!(name, attendu),
+            other => panic!("blob « {nom} » devait être rejeté, obtenu {other:?}"),
+        }
+    }
+}
+
+#[test]
+fn doublon_d_entree_rejete_au_chargement() {
+    // ADR-0016 A4 : deux entrées de même nom seraient lues avec
+    // écrasement silencieux — elles sont refusées (OF-DOC-0015).
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", String::new()),
+        ("objects/apercu", "a".to_string()),
+        ("objects/apercu", "b".to_string()),
+    ]);
+    match Document::from_bytes(&bytes) {
+        Err(DocError::DuplicateEntry { entry }) => assert_eq!(entry, "objects/apercu"),
+        other => panic!("doublon attendu, obtenu {other:?}"),
+    }
+}
+
+#[test]
+fn budget_cumule_de_blobs_borne_au_chargement() {
+    // ADR-0016 A4 : le plafond par blob ne suffit pas (bombe ZIP
+    // cumulative) — le cumul des blobs est borné par un plafond global,
+    // par défaut 2 Gio (OF-DOC-0014), réglable par l'appelant.
+    let blob = "x".repeat(10);
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", String::new()),
+        ("objects/a", blob.clone()),
+        ("objects/b", blob.clone()),
+        ("objects/c", blob.clone()),
+    ]);
+
+    // Trois blobs de 10 octets : le plafond réglable à 20 octets est
+    // dépassé au troisième (cumul 30).
+    match Document::from_bytes_with_budget(
+        &bytes,
+        MigrationRegistry::new(),
+        20,
+    ) {
+        Err(DocError::TotalBlobsTooLarge { found, max }) => {
+            assert_eq!(found, 30);
+            assert_eq!(max, 20);
+        }
+        other => panic!("budget cumulé dépassé attendu, obtenu {other:?}"),
+    }
+
+    // Le plafond par défaut accepte le même conteneur.
+    let doc = Document::from_bytes(&bytes).unwrap();
+    assert_eq!(doc.blob_names().len(), 3);
 }

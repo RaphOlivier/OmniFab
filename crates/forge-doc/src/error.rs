@@ -1,4 +1,4 @@
-//! Erreurs typées de forge-doc (ADR-0003 : codes stables `OF-DOC-NNNN`,
+successfully downloaded text file (SHA: 0a7dc8ce91cd3674cfbaa0b28f6362a7547f7517)//! Erreurs typées de forge-doc (ADR-0003 : codes stables `OF-DOC-NNNN`,
 //! registre central `docs/error-codes.md`).
 
 use thiserror::Error;
@@ -99,6 +99,22 @@ pub enum DocError {
         /// Nom rejeté.
         name: String,
     },
+    /// Taille cumulée des blobs dépassant le plafond global du
+    /// chargement (OF-DOC-0014, garde-fou « bombe ZIP » cumulative).
+    #[error("OF-DOC-0014 : blobs cumulés trop volumineux : {found} octets (maximum {max})")]
+    TotalBlobsTooLarge {
+        /// Taille cumulée rencontrée, en octets.
+        found: u64,
+        /// Plafond global accepté, en octets.
+        max: u64,
+    },
+    /// Entrée d'archive en doublon (OF-DOC-0015) : une archive forgée
+    /// ne peut plus écraser une entrée existante silencieusement.
+    #[error("OF-DOC-0015 : entrée en doublon dans le conteneur : {entry}")]
+    DuplicateEntry {
+        /// Nom de l'entrée dupliquée.
+        entry: String,
+    },
 }
 
 impl DocError {
@@ -120,6 +136,8 @@ impl DocError {
             Self::EntryTooLarge { .. } => "OF-DOC-0011",
             Self::TooManyEntries { .. } => "OF-DOC-0012",
             Self::InvalidBlobName { .. } => "OF-DOC-0013",
+            Self::TotalBlobsTooLarge { .. } => "OF-DOC-0014",
+            Self::DuplicateEntry { .. } => "OF-DOC-0015",
         }
     }
 }

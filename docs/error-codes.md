@@ -1,4 +1,4 @@
-# Registre central des codes d'erreur (ADR-0003)
+successfully downloaded text file (SHA: 94258bf9ed50baafce91fe793badece7759d5d6e)# Registre central des codes d'erreur (ADR-0003)
 
 > **Source unique de vérité** pour tous les codes `OF-<DOMAINE>-<NNNN>`.
 >
@@ -42,6 +42,8 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-DOC-0011 | Entrée trop volumineuse | Une entrée (manifeste, journal, snapshot, blob) dépasse la taille maximale acceptée | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0012 | Trop d'entrées dans le conteneur | L'archive dépasse le nombre maximal d'entrées (garde-fou « bombe ZIP ») | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0013 | Nom de blob invalide | Nom vide, traversée de répertoire (`..`), chemin absolu, séparateur Windows ou octet nul | Corriger le nom du blob |
+| OF-DOC-0014 | Blobs cumulés trop volumineux | La somme des objets binaires dépasse le plafond global du chargement (garde-fou « bombe ZIP » cumulative) | Fichier projet anormal — restaurer une copie saine |
+| OF-DOC-0015 | Entrée en doublon dans le conteneur | L'archive contient deux entrées de même nom (archive forgée) | Fichier projet anormal — restaurer une copie saine |
 
 ## forge-session (SES) — session, commandes et undo/redo
 

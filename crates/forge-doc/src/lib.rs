@@ -1,4 +1,4 @@
-#![deny(missing_docs)]
+successfully downloaded text file (SHA: 21a7b3221c92b9e2f67677e4a8aac6add1f7dfec)#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
 //! # forge-doc — conteneur de projet et journal d'événements
@@ -58,6 +58,10 @@ pub const SNAPSHOT_PATH: &str = "snapshot.json";
 
 /// Préfixe des objets binaires dans l'archive.
 pub const BLOBS_PREFIX: &str = "objects/";
+/// Taille cumulée maximale des objets binaires acceptée au chargement
+/// d'un conteneur (défaut de [`Document::from_bytes_with_budget`],
+/// ADR-0016 A4 — garde-fou « bombe ZIP » cumulative).
+pub const MAX_TOTAL_BLOB_BYTES: u64 = container::MAX_TOTAL_BLOB_BYTES;
 
 /// Document OmniFab : conteneur ZIP versionné + journal d'événements.
 #[derive(Debug)]
@@ -243,9 +247,23 @@ impl Document {
         Self::from_bytes_with(bytes, MigrationRegistry::new())
     }
 
-    /// Charge un document en appliquant les migrations du registre donné.
+    /// Charge un document en appliquant les migrations du registre donné,
+    /// avec le plafond global par défaut pour la taille cumulée des objets
+    /// binaires ([`MAX_TOTAL_BLOB_BYTES`]).
     pub fn from_bytes_with(bytes: &[u8], migrations: MigrationRegistry) -> Result<Self, DocError> {
-        container::read(bytes, migrations)
+        Self::from_bytes_with_budget(bytes, migrations, MAX_TOTAL_BLOB_BYTES)
+    }
+
+    /// Charge un document en appliquant les migrations du registre donné,
+    /// avec un plafond global réglable pour la taille cumulée des objets
+    /// binaires (ADR-0016 A4) : au-delà, le conteneur est refusé par
+    /// `OF-DOC-0014` au lieu d'épuiser la mémoire (bombe ZIP cumulative).
+    pub fn from_bytes_with_budget(
+        bytes: &[u8],
+        migrations: MigrationRegistry,
+        max_total_blob_bytes: u64,
+    ) -> Result<Self, DocError> {
+        container::read(bytes, migrations, max_total_blob_bytes)
     }
 
     /// Enregistre le document dans un fichier, de manière atomique

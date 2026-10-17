@@ -1,6 +1,6 @@
-//! Lecture/écriture du conteneur ZIP (ADR-0000 verrou nº1, ADR-0001).
+successfully downloaded text file (SHA: 35dc8448a571820bc42ac8171a50ac39d746cca8)//! Lecture/écriture du conteneur ZIP (ADR-0000 verrou nº1, ADR-0001).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Cursor, Read, Write};
 
 use serde::{Deserialize, Serialize};
@@ -31,6 +31,10 @@ pub(crate) const MAX_JOURNAL_BYTES: u64 = 64 * 1024 * 1024;
 pub(crate) const MAX_SNAPSHOT_BYTES: u64 = 64 * 1024 * 1024;
 /// Taille maximale d'un objet binaire, en octets.
 pub(crate) const MAX_BLOB_BYTES: u64 = 1024 * 1024 * 1024;
+/// Taille cumulée maximale des objets binaires au chargement, en
+/// octets (défaut réglable via `Document::from_bytes_with_budget`,
+/// ADR-0016 A4 — garde-fou « bombe ZIP » cumulative).
+pub(crate) const MAX_TOTAL_BLOB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 /// Valide un nom de blob : ni vide, ni traversée de répertoire (`..`),
 /// ni chemin absolu, ni séparateur Windows, ni octet nul (OF-DOC-0013).
@@ -135,8 +139,12 @@ pub(crate) fn write(doc: &Document) -> Result<Vec<u8>, DocError> {
     Ok(cursor.into_inner())
 }
 
-pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Document, DocError> {
-    let mut archive = zip::ZipArchive::new(Cursor::new(bytes.to_vec()))?;
+pub(crate) fn read(
+    bytes: &[u8],
+    migrations: MigrationRegistry,
+    max_total_blob_bytes: u64,
+) -> Result<Document, DocError> {
+    let mut archive = zip::ZipArchive::new(Cursor::new(bytes))?;
     if archive.len() > MAX_ARCHIVE_ENTRIES {
         return Err(DocError::TooManyEntries {
             found: archive.len(),
@@ -213,13 +221,36 @@ pub(crate) fn read(bytes: &[u8], migrations: MigrationRegistry) -> Result<Docume
         events.push(event);
     }
 
-    // Objets binaires (blobs).
+    // Objets binaires (blobs) : les entrées en doublon sont refusées au
+    // lieu d'être lues avec écrasement silencieux (OF-DOC-0015), chaque
+    // nom relu passe par la validation de `set_blob` (une archive
+    // forgée ne contourne plus l'invariant, ADR-0016 A4) et le cumul
+    // des blobs est borné par un plafond global réglable (OF-DOC-0014)
+    // — le dépassement est détecté après lecture de l'entrée
+    // fautive, au plus `MAX_BLOB_BYTES` au-delà du plafond.
     let names: Vec<String> = archive.file_names().map(str::to_string).collect();
+    let mut entrees_vues = BTreeSet::new();
+    for name in &names {
+        if !entrees_vues.insert(name.as_str()) {
+            return Err(DocError::DuplicateEntry {
+                entry: name.clone(),
+            });
+        }
+    }
     let mut blobs = BTreeMap::new();
+    let mut total_blob_bytes: u64 = 0;
     for name in &names {
         if let Some(blob_name) = name.strip_prefix(BLOBS_PREFIX) {
+            validate_blob_name(blob_name)?;
             let mut file = archive.by_name(name)?;
             let data = read_bounded(&mut file, name, MAX_BLOB_BYTES)?;
+            total_blob_bytes = total_blob_bytes.saturating_add(data.len() as u64);
+            if total_blob_bytes > max_total_blob_bytes {
+                return Err(DocError::TotalBlobsTooLarge {
+                    found: total_blob_bytes,
+                    max: max_total_blob_bytes,
+                });
+            }
             blobs.insert(blob_name.to_string(), data);
         }
     }

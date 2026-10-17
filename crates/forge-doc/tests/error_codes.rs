@@ -1,4 +1,4 @@
-//! ADR-0003 : chaque code de `DocError` est stable, unique, et cohérent
+successfully downloaded text file (SHA: 40e7cf65a0f2411be0d2fc29a2cc46549d5758bf)//! ADR-0003 : chaque code de `DocError` est stable, unique, et cohérent
 //! avec le registre central `docs/error-codes.md` — dans les deux sens.
 
 use forge_doc::DocError;
@@ -49,6 +49,10 @@ fn toutes_les_variantes() -> Vec<DocError> {
         DocError::TooManyEntries { found: 2, max: 1 },
         DocError::InvalidBlobName {
             name: "..".to_string(),
+        },
+        DocError::TotalBlobsTooLarge { found: 1, max: 0 },
+        DocError::DuplicateEntry {
+            entry: "objects/x".to_string(),
         },
     ]
 }
