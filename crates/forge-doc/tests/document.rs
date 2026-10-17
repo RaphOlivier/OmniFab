@@ -398,6 +398,50 @@ fn snapshot_invalide_si_journal_diverge() {
 }
 
 #[test]
+fn snapshot_au_dela_du_journal_refuse() {
+    // ADR-0016 A5 : un curseur au-delà de la dernière séquence réelle
+    // du journal rend le snapshot incohérent — son condensat couvre
+    // tout le journal chargé et peut correspondre par hasard. Il est
+    // ignoré, le journal fait foi.
+    let mut doc = Document::new();
+    for i in 0..3 {
+        doc.append(NewEvent::new(
+            "demo.test",
+            1,
+            "test",
+            json!({"i": i}),
+        ));
+    }
+    doc.set_snapshot(json!({"values": []})).unwrap();
+    let bytes = doc.to_bytes().unwrap();
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(bytes)).unwrap();
+    let mut snapshot_json = String::new();
+    zip.by_name("snapshot.json")
+        .unwrap()
+        .read_to_string(&mut snapshot_json)
+        .unwrap();
+    let mut journal = String::new();
+    zip.by_name("events.jl")
+        .unwrap()
+        .read_to_string(&mut journal)
+        .unwrap();
+    // Curseur forgé au-delà du journal réel (3 événements).
+    let mut snapshot: serde_json::Value = serde_json::from_str(&snapshot_json).unwrap();
+    snapshot["at_seq"] = json!(999);
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", journal),
+        ("snapshot.json", serde_json::to_string(&snapshot).unwrap()),
+    ]);
+    let reloaded = Document::from_bytes(&bytes).unwrap();
+    assert!(
+        reloaded.snapshot().is_none(),
+        "un snapshot au curseur au-delà du journal doit être ignoré"
+    );
+    assert_eq!(reloaded.events().len(), 3);
+}
+
+#[test]
 fn derniere_ligne_tronquee_toleree() {
     // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
     // est tolérée (et signalée) ; les événements précédents sont conservés.

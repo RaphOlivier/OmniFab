@@ -263,8 +263,18 @@ pub(crate) fn read(
             // Schéma B : le snapshot n'est accepté que si son condensat
             // correspond au journal chargé — sinon ignoré, journal fait foi.
             Ok(snapshot) if snapshot.format_version == SNAPSHOT_VERSION => {
-                let digest = journal_digest(&events, snapshot.at_seq);
-                (digest == snapshot.journal_digest).then_some(snapshot)
+                // ADR-0016 A5 : un curseur au-delà de la dernière
+                // séquence réelle du journal rend le snapshot incohérent
+                // (le condensat couvrirait tout le journal chargé et
+                // pourrait correspondre par hasard) — il est ignoré, le
+                // journal fait foi.
+                let derniere_seq = events.last().map_or(0, |event| event.seq);
+                if snapshot.at_seq > derniere_seq {
+                    None
+                } else {
+                    let digest = journal_digest(&events, snapshot.at_seq);
+                    (digest == snapshot.journal_digest).then_some(snapshot)
+                }
             }
             _ => None,
         }
