@@ -579,6 +579,58 @@ impl DemoApp {
         }
     }
 
+    /// Scéne 3D du viewport : grille au sol, tracés posés sur le
+    /// plan z = 0, contour du rectangle paramétrique, wireframe du
+    /// maillage. L'ordre d'ajout est la priorité d'affichage : le
+    /// pipeline de lignes ne teste pas la profondeur, le dernier
+    /// segment dessiné recouvre les précédents — la grille passe
+    /// sous les tracés et le rectangle, qui ne disparaissent plus
+    /// quand ils coîncident avec elle (validation C2, round 2).
+    fn scene_vue_3d(
+        traces: &[Path2],
+        maillage: Option<&Mesh>,
+        width: f64,
+        height: f64,
+        echelle: f64,
+    ) -> Scene3D {
+        let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
+        let mut scene = Scene3D::vide();
+        // La grille au sol couvre la boîte de cadrage, élargie d'un
+        // pas de chaque cèté.
+        let boite = Self::boite_cadrage_3d(width, height, Self::boite_scene_3d(traces, maillage));
+        let boite_grille = boite
+            .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
+            .etendre(boite.max_x + pas, boite.max_y + pas, 0.0);
+        scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
+        scene.segments.extend(Scene3D::depuis_traces(traces, COULEUR_TRACES).segments);
+        // Contour du rectangle paramétrique, posé sur le plan z = 0
+        // (ADR-0015, phase C2).
+        scene.ajouter(Segment3D {
+            depart: (0.0, 0.0, 0.0),
+            arrivee: (width, 0.0, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (width, 0.0, 0.0),
+            arrivee: (width, height, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (width, height, 0.0),
+            arrivee: (0.0, height, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (0.0, height, 0.0),
+            arrivee: (0.0, 0.0, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        if let Some(maillage) = maillage {
+            scene.segments.extend(Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME).segments);
+        }
+        scene
+    }
+
     /// Engagement d'un champ de dimension pour cette frame, s'il y en a
     /// un : le DragValue écrit son tampon au relâchement du geste ou à
     /// la fin d'une édition clavier, et un engagement sans changement
@@ -1173,45 +1225,7 @@ impl DemoApp {
             Vue::TroisD => {
                 if self.viewport_wgpu {
                     let echelle = self.camera3d.echelle_cible(rect.height() as f64);
-                    let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
-                    let mut scene = Scene3D::depuis_traces(traces, COULEUR_TRACES);
-                    // Contour du rectangle paramétrique, posé sur le
-                    // plan z = 0 (ADR-0015, phase C2).
-                    scene.ajouter(Segment3D {
-                        depart: (0.0, 0.0, 0.0),
-                        arrivee: (width, 0.0, 0.0),
-                        couleur: COULEUR_RECTANGLE_3D,
-                    });
-                    scene.ajouter(Segment3D {
-                        depart: (width, 0.0, 0.0),
-                        arrivee: (width, height, 0.0),
-                        couleur: COULEUR_RECTANGLE_3D,
-                    });
-                    scene.ajouter(Segment3D {
-                        depart: (width, height, 0.0),
-                        arrivee: (0.0, height, 0.0),
-                        couleur: COULEUR_RECTANGLE_3D,
-                    });
-                    scene.ajouter(Segment3D {
-                        depart: (0.0, height, 0.0),
-                        arrivee: (0.0, 0.0, 0.0),
-                        couleur: COULEUR_RECTANGLE_3D,
-                    });
-                    // La grille au sol couvre la boîte de cadrage,
-                    // élargie d'un pas de chaque côté.
-                    let boite = Self::boite_cadrage_3d(
-                        width,
-                        height,
-                        Self::boite_scene_3d(traces, maillage),
-                    );
-                    let boite_grille = boite
-                        .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
-                        .etendre(boite.max_x + pas, boite.max_y + pas, 0.0);
-                    scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
-                    if let Some(maillage) = maillage {
-                        let wireframe = Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME);
-                        scene.segments.extend(wireframe.segments);
-                    }
+                    let scene = Self::scene_vue_3d(traces, maillage, width, height, echelle);
                     dessiner_wireframe(&painter, rect, scene, self.camera3d);
                 } else {
                     ui.label(
@@ -1508,6 +1522,33 @@ mod tests {
         assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
         assert_eq!(boite.min_z, 0.0, "plan z = 0");
         assert_eq!(boite.max_z, 0.0, "rectangle posé sur le plan");
+    }
+
+    /// Position du premier segment portant la couleur donnée :
+    /// sert à vérifier la priorité d'affichage de la vue 3D.
+    fn premiere_couleur(scene: &Scene3D, couleur: Couleur) -> usize {
+        scene.segments.iter().position(|s| s.couleur == couleur).expect("couleur présente")
+    }
+
+    /// Priorité d'affichage de la vue 3D : le pipeline de lignes ne
+    /// teste pas la profondeur, le dernier segment ajouté recouvre
+    /// les précédents. La grille est donc posée sous les tracés et
+    /// le rectangle, qui ne scintillent plus quand ils coîncident
+    /// avec elle (validation C2, round 2).
+    #[test]
+    fn la_grille_3d_passe_sous_les_traces_et_le_rectangle() {
+        let un = Length::from_millimeters(1.0);
+        let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
+        let b = Point2::new(un, Length::ZERO).expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let scene = DemoApp::scene_vue_3d(&[trace], None, 800.0, 600.0, 1.0);
+        let grille = premiere_couleur(&scene, COULEUR_GRILLE);
+        let trace_pos = premiere_couleur(&scene, COULEUR_TRACES);
+        let rectangle = premiere_couleur(&scene, COULEUR_RECTANGLE_3D);
+        assert!(
+            grille < trace_pos && trace_pos < rectangle,
+            "grille sous les tracés sous le rectangle"
+        );
     }
 
     /// La valeur glissée s'engage depuis le tampon persistant : au
