@@ -249,28 +249,29 @@ impl Document {
     }
 
     /// Enregistre le document dans un fichier, de manière atomique
-    /// (feature `native`) : le fichier existant est d'abord conservé en
-    /// `{projet}.bak`, l'archive est écrite dans un fichier temporaire
-    /// synchronisé sur disque, puis renommé — une coupure de courant ne peut
-    /// pas laisser un fichier à moitié écrit à la place du projet.
+    /// (feature `native`) : l'archive est d'abord écrite et synchronisée
+    /// dans un fichier temporaire, puis le projet existant est copié
+    /// en `{projet}.bak` sans quitter son chemin, et enfin le
+    /// temporaire est renommé à sa place. Le fichier courant reste
+    /// donc en place tant que le nouveau n'est pas entièrement
+    /// écrit : un échec d'écriture (disque plein, erreur E/S) ne peut
+    /// ni retirer le projet de son chemin, ni laisser un fichier à
+    /// moitié écrit (ADR-0016 A2).
     #[cfg(feature = "native")]
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), DocError> {
         let bytes = self.to_bytes()?;
-        if path.exists() {
-            let mut backup = std::ffi::OsString::from(path.as_os_str());
-            backup.push(".bak");
-            std::fs::rename(path, std::path::PathBuf::from(backup))?;
-        }
         let mut tmp = std::ffi::OsString::from(path.as_os_str());
         tmp.push(".tmp");
         let tmp = std::path::PathBuf::from(tmp);
-        {
-            use std::io::Write;
-            let mut file = std::fs::File::create(&tmp)?;
-            file.write_all(&bytes)?;
-            file.sync_all()?;
+        let mut backup = std::ffi::OsString::from(path.as_os_str());
+        backup.push(".bak");
+        let backup = std::path::PathBuf::from(backup);
+        if let Err(erreur) = remplacer_sur_disque(path, &tmp, &backup, &bytes) {
+            // Aucune étape n'a déplacé le fichier courant : seul le
+            // temporaire incomplet peut rester, il est nettoyé.
+            let _ = std::fs::remove_file(&tmp);
+            return Err(erreur.into());
         }
-        std::fs::rename(&tmp, path)?;
         Ok(())
     }
 
@@ -279,6 +280,29 @@ impl Document {
     pub fn open_from_path(path: &std::path::Path) -> Result<Self, DocError> {
         Self::from_bytes(&std::fs::read(path)?)
     }
+}
+
+/// Écrit le conteneur dans le fichier temporaire, copie le projet
+/// courant en sauvegarde, puis remplace le projet par le temporaire
+/// (ADR-0016 A2 : l'original n'est jamais déplacé avant que le
+/// remplaçant ne soit entièrement sur le disque).
+#[cfg(feature = "native")]
+fn remplacer_sur_disque(
+    path: &std::path::Path,
+    tmp: &std::path::Path,
+    backup: &std::path::Path,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    {
+        use std::io::Write;
+        let mut file = std::fs::File::create(tmp)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+    }
+    if path.exists() {
+        std::fs::copy(path, backup)?;
+    }
+    std::fs::rename(tmp, path)
 }
 
 /// Convertit un horodatage Unix (secondes) en chaîne ISO 8601 UTC.
