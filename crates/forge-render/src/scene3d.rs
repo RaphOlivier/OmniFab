@@ -1,4 +1,4 @@
-//! Scène 3D du viewport : segments en millimètres, alimentés par
+//! Scêne 3D du viewport : segments en millimètres, alimentés par
 //! l'application (ADR-0015, phase C2).
 
 use crate::scene::Couleur;
@@ -23,7 +23,7 @@ pub struct Boite3D {
 }
 
 impl Boite3D {
-    /// Première boîte d'une scène : réduite au point donné.
+    /// Première boîte d'une scêne : réduite au point donné.
     pub fn du_point(x: f64, y: f64, z: f64) -> Self {
         Self {
             min_x: x,
@@ -76,17 +76,17 @@ pub struct Segment3D {
     pub couleur: Couleur,
 }
 
-/// Scène 3D du viewport : une liste de segments en millimètres
+/// Scêne 3D du viewport : une liste de segments en millimètres
 /// (ADR-0015, phase C2). Alimentée par l'application, jamais par la
 /// crate.
 #[derive(Debug, Default)]
 pub struct Scene3D {
-    /// Segments de la scène.
+    /// Segments de la scêne.
     pub segments: Vec<Segment3D>,
 }
 
 impl Scene3D {
-    /// Scène vide.
+    /// Scêne vide.
     pub fn vide() -> Self {
         Self::default()
     }

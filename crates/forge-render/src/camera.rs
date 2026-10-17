@@ -16,7 +16,7 @@ const ECHELLE_MAX: f64 = 1e6;
 /// Caméra orthographique 2D : centre visé et échelle (ADR-0015).
 ///
 /// La caméra est persistante dans l'application : ajustée
-/// automatiquement quand la scène change, puis pilotée par
+/// automatiquement quand la scêne change, puis pilotée par
 /// l'utilisateur — molette (zoom au curseur) et glisser (pan).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera2D {
@@ -58,7 +58,7 @@ impl Camera2D {
         self.centre_mm.1 += avant.1 - apres.1;
     }
 
-    /// Déplace la caméra d'un glissement : la scène suit le pointeur.
+    /// Déplace la caméra d'un glissement : la scêne suit le pointeur.
     pub fn deplacer(&mut self, delta_px: (f64, f64)) {
         self.centre_mm.0 -= delta_px.0 / self.echelle;
         self.centre_mm.1 += delta_px.1 / self.echelle;
@@ -142,7 +142,7 @@ mod tests {
         );
     }
 
-    /// Le glissement déplace la scène dans le sens du pointeur.
+    /// Le glissement déplace la scêne dans le sens du pointeur.
     #[test]
     fn deplacer_suit_le_pointeur() {
         let mut camera = Camera2D {
@@ -153,12 +153,12 @@ mod tests {
         assert_eq!(
             camera.centre_mm,
             (-5.0, 3.0),
-            "x recule, y monte : la scène suit"
+            "x recule, y monte : la scêne suit"
         );
     }
 
     /// L'axe Y du monde monte, l'écran descend : un point plus haut
-    /// dans la scène s'affiche plus haut à l'écran.
+    /// dans la scêne s'affiche plus haut à l'écran.
     #[test]
     fn l_axe_y_s_inverse_a_l_ecran() {
         let camera = Camera2D::nouvelle();

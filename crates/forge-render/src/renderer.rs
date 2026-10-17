@@ -215,7 +215,7 @@ pub(crate) fn preparer_sommets(device: &wgpu::Device, sommets: &[Sommet]) -> wgp
     })
 }
 
-/// Triangule la scène : six sommets par segment (deux triangles
+/// Triangule la scêne : six sommets par segment (deux triangles
 /// extrudés perpendiculairement), en pixels physiques relatifs au
 /// coin du viewport — `demi_taille` donne sa demi-taille en points.
 pub(crate) fn triangles(
@@ -255,7 +255,7 @@ pub(crate) fn triangles(
     sommets
 }
 
-/// Projette la scène 3D en sommets de lignes : deux par segment, en
+/// Projette la scêne 3D en sommets de lignes : deux par segment, en
 /// pixels physiques relatifs au coin du viewport — un segment dont une
 /// extrémité passe derrière la caméra est ignoré (ADR-0015, phase C2).
 pub(crate) fn lignes(

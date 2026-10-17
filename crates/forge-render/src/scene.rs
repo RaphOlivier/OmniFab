@@ -1,4 +1,4 @@
-//! Scène 2D du viewport : segments en millimètres, alimentés par
+//! Scêne 2D du viewport : segments en millimètres, alimentés par
 //! l'application (ADR-0015).
 
 use forge_geom::Path2;
@@ -20,7 +20,7 @@ pub struct Boite2 {
 }
 
 impl Boite2 {
-    /// Première boîte d'une scène : réduite au point donné.
+    /// Première boîte d'une scêne : réduite au point donné.
     pub fn du_point(x: f64, y: f64) -> Self {
         Self {
             min_x: x,
@@ -62,16 +62,16 @@ pub struct Segment2D {
     pub largeur_px: f32,
 }
 
-/// Scène 2D du viewport : une liste de segments en millimètres
+/// Scêne 2D du viewport : une liste de segments en millimètres
 /// (ADR-0015). Alimentée par l'application, jamais par la crate.
 #[derive(Debug, Default)]
 pub struct Scene2D {
-    /// Segments de la scène.
+    /// Segments de la scêne.
     pub segments: Vec<Segment2D>,
 }
 
 impl Scene2D {
-    /// Scène vide.
+    /// Scêne vide.
     pub fn vide() -> Self {
         Self::default()
     }
@@ -81,7 +81,7 @@ impl Scene2D {
         self.segments.push(segment);
     }
 
-    /// Scène des tracés importés : un segment par arête, les tracés
+    /// Scêne des tracés importés : un segment par arête, les tracés
     /// fermés refermés sur leur premier sommet.
     pub fn depuis_traces(traces: &[Path2], couleur: Couleur, largeur_px: f32) -> Self {
         let mut scene = Self::vide();

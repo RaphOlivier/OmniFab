@@ -1,13 +1,13 @@
 //! # forge-render — viewport wgpu (ADR-0015)
 //!
 //! Rendu du viewport du démonstrateur et, à terme, de l'atelier : une
-//! crate **cœur sans egui** (scène, caméra, pipeline wgpu, shader
+//! crate **cœur sans egui** (scêne, caméra, pipeline wgpu, shader
 //! WGSL) dont l'adaptateur egui vit derrière la feature `egui` (pas
 //! de crate séparée tant que la duplication n'existe pas).
 //!
 //! Frontières (ADR-0015) : dépendances limitées à `wgpu`, `bytemuck`
 //! et `forge-geom` ; `forge-doc` et `forge-session` sont interdites —
-//! la scène est alimentée par l'application, qui seule connaît la
+//! la scêne est alimentée par l'application, qui seule connaît la
 //! session. Une seule version de wgpu dans le graphe : celle dictée
 //! par egui-wgpu, jamais une version choisie librement.
 //!

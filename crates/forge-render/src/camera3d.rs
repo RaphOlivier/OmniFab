@@ -1,7 +1,7 @@
 //! Caméra orbite 3D du viewport (ADR-0015, phase C2).
 //!
 //! Convention CAO du projet : l'axe Z monte, la cible est le centre
-//! de la scène. Les grandeurs de la caméra sont en millimètres et en
+//! de la scêne. Les grandeurs de la caméra sont en millimètres et en
 //! pixels logiques ; le GPU reçoit des f32 (leçon egui du jalon 1).
 //! L'élévation est bornée juste sous la verticale : la base caméra
 //! (droite, haut, avant) ne dégénère jamais.
@@ -45,7 +45,7 @@ fn scalaire(a: (f64, f64, f64), b: (f64, f64, f64)) -> f64 {
 /// élévation (ADR-0015, phase C2).
 ///
 /// La caméra est persistante dans l'application : ajustée
-/// automatiquement quand la scène change, puis pilotée par
+/// automatiquement quand la scêne change, puis pilotée par
 /// l'utilisateur — molette (zoom) et glisser (orbite).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Camera3D {

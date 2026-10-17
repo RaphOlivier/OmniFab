@@ -1,4 +1,4 @@
-//! Adaptateur egui du viewport : soumet la scène 2D et le wireframe
+//! Adaptateur egui du viewport : soumet la scêne 2D et le wireframe
 //! 3D au painter via `egui_wgpu::Callback` (ADR-0015).
 //!
 //! Le cœur de `forge-render` ne dépend pas d'egui ; ce module vit
@@ -23,10 +23,10 @@ struct Frame2D {
     nombre: u32,
 }
 
-/// Callback de rendu d'une scène 2D : porte la scène et la caméra
+/// Callback de rendu d'une scêne 2D : porte la scêne et la caméra
 /// d'une frame, de `prepare` à `paint`.
 pub struct Callback2D {
-    /// Scène dessinée pendant la frame.
+    /// Scêne dessinée pendant la frame.
     scene: Scene2D,
     /// Caméra de la frame.
     camera: Camera2D,
@@ -91,11 +91,11 @@ impl egui_wgpu::CallbackTrait for Callback2D {
     }
 }
 
-/// Callback de rendu d'un wireframe 3D : porte la scène et la caméra
+/// Callback de rendu d'un wireframe 3D : porte la scêne et la caméra
 /// orbite d'une frame, de `prepare` à `paint` — pipeline de lignes
 /// (ADR-0015, phase C2).
 pub struct Callback3D {
-    /// Scène dessinée pendant la frame.
+    /// Scêne dessinée pendant la frame.
     scene: Scene3D,
     /// Caméra orbite de la frame.
     camera: Camera3D,
@@ -156,7 +156,7 @@ impl egui_wgpu::CallbackTrait for Callback3D {
 }
 
 /// Soumet le wireframe 3D au painter : le viewport wgpu dessine les
-/// segments de la scène en lignes, arêtes dédupliquées et sans
+/// segments de la scêne en lignes, arêtes dédupliquées et sans
 /// plafond (ADR-0015, phase C2).
 pub fn dessiner_wireframe(
     painter: &egui::Painter,
@@ -175,7 +175,7 @@ pub fn dessiner_wireframe(
     ));
 }
 
-/// Soumet la scène au painter : le viewport wgpu dessine les segments
+/// Soumet la scêne au painter : le viewport wgpu dessine les segments
 /// dans le rectangle donné (ADR-0015).
 pub fn dessiner_scene(painter: &egui::Painter, rect: egui::Rect, scene: Scene2D, camera: Camera2D) {
     painter.add(egui_wgpu::Callback::new_paint_callback(

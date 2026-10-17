@@ -70,7 +70,7 @@ journal-types-ignores = Types ignorés (journal d'une version plus récente ?) :
 
 viewport-titre = Viewport — rectangle de démonstration, tracés et maillage importés
 viewport-erreur = Erreur : {$texte}
-viewport-wgpu-indisponible = Rendu wgpu indisponible : la grille, les tracés 2D et le wireframe 3D ne sont pas dessinés (moteur wgpu requis, ADR-0015).
+viewport-wgpu-indisponible = Rendu wgpu indisponible : la grille, les tracés et le wireframe ne sont pas dessinés (moteur wgpu requis, ADR-0015).
 viewport-vue-2d = Vue 2D
 viewport-vue-3d = Vue 3D
 
@@ -119,7 +119,7 @@ aide-top-importer-dxf =
 
 aide-top-importer-stl =
     .titre = Importer STL
-    .description = Ouvre le sélecteur de fichiers natif et convertit le STL choisi (binaire ou ASCII, lu en millimètres) en maillage courant : octets d'origine dans un blob, compteurs au journal. Le maillage se dessine en wireframe cyan dans la vue 3D du viewport.
+    .description = Ouvre le sélecteur de fichiers natif et convertit le STL choisi (binaire ou ASCII, lu en millimètres) en maillage courant : octets d'origine dans un blob, compteurs au journal. Le maillage se dessine en wireframe cyan dans les deux vues du viewport, en projection de dessus en vue 2D.
     .exemple = Importez un petit STL puis basculez en vue 3D : le wireframe cyan apparaît en volume, et le compteur « Maillage importé » affiche le nombre de triangles.
 
 aide-top-exporter-svg =
@@ -224,8 +224,8 @@ aide-journal-titre =
 
 aide-viewport-titre =
     .titre = Viewport
-    .description = Zone d'affichage à deux vues (ADR-0015, phase C2). Vue 2D : le rectangle de démonstration aux dimensions saisies, la grille de fond et les tracés importés (SVG/DXF) en jaune ; la molette zoome vers le curseur, un glissement déplace la vue. Vue 3D : rectangle et tracés posés sur le plan z = 0, maillage STL en wireframe cyan ; la molette zoome, un glissement fait orbiter la caméra. Les messages d'erreur et de confirmation s'affichent ici.
-    .exemple = Importez un SVG puis un petit STL : le triangle jaune se dessine en vue 2D, le wireframe cyan en volume en vue 3D, avec leurs compteurs dessous.
+    .description = Zone d'affichage à deux vues (ADR-0015, phase C2). Vue 2D : le rectangle de démonstration aux dimensions saisies, la grille de fond, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan ; la molette zoome vers le curseur, un glissement déplace la vue. Vue 3D : rectangle et tracés posés sur le plan z = 0, maillage STL en wireframe cyan ; la molette zoome, un glissement fait orbiter la caméra. Les messages d'erreur et de confirmation s'affichent ici.
+    .exemple = Importez un SVG puis un petit STL : le triangle jaune et le wireframe cyan se dessinent en vue 2D, le wireframe en volume en vue 3D, avec les compteurs dessous.
 
 aide-viewport-camera =
     .titre = Caméra du viewport
@@ -234,15 +234,15 @@ aide-viewport-camera =
 
 aide-viewport-vue-2d =
     .titre = Vue 2D
-    .description = Vue de dessus du plan de travail : grille de fond, rectangle de démonstration et tracés importés (SVG/DXF) en jaune. La molette zoome sur le point du dessin sous le curseur, un glissement déplace la vue (ADR-0015).
+    .description = Vue de dessus du plan de travail : grille de fond, rectangle de démonstration, tracés importés (SVG/DXF) en jaune et maillage STL en wireframe cyan. La molette zoome sur le point du dessin sous le curseur, un glissement déplace la vue (ADR-0015).
     .exemple = Importez un SVG : le triangle jaune se dessine sur la grille ; zoomez à la molette, déplacez la vue en glissant.
 
 aide-viewport-vue-3d =
     .titre = Vue 3D
-    .description = Vue en volume de la scène : rectangle et tracés posés sur le plan z = 0, grille au sol, maillage STL en wireframe cyan — arêtes dédupliquées, sans plafond d'affichage. La molette zoome, un glissement fait orbiter la caméra (ADR-0015, phase C2).
-    .exemple = Importez un STL puis cliquez Vue 3D : le wireframe apparaît en volume ; glissez pour orbiter autour de la scène, zoomez à la molette.
+    .description = Vue en volume de la scêne : rectangle et tracés posés sur le plan z = 0, grille au sol, maillage STL en wireframe cyan — arêtes dédupliquées, sans plafond d'affichage. La molette zoome, un glissement fait orbiter la caméra (ADR-0015, phase C2).
+    .exemple = Importez un STL puis cliquez Vue 3D : le wireframe apparaît en volume ; glissez pour orbiter autour de la scêne, zoomez à la molette.
 
 aide-geom-compteur =
     .titre = Compteur de géométrie importée
-    .description = Compteurs de la géométrie courante : tracés et sommets pour le vectoriel (SVG/DXF), triangles pour le maillage STL — dessiné en wireframe en vue 3D, sans plafond d'affichage (phase C2).
+    .description = Compteurs de la géométrie courante : tracés et sommets pour le vectoriel (SVG/DXF), triangles pour le maillage STL — dessiné en wireframe dans les deux vues (projection de dessus en 2D), sans plafond d'affichage (phase C2).
     .exemple = Importez un SVG de deux rectangles : la ligne indique 2 tracés · 8 sommets importés.
