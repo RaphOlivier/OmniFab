@@ -152,6 +152,12 @@ pub(crate) fn read(
         });
     }
 
+    // La crate zip indexe les entrées du répertoire central par nom :
+    // deux enregistrements de même nom sont fusionnés en silence avant
+    // toute lecture. Le répertoire central est parcouru à la main pour
+    // refuser l'archive dupliquée (OF-DOC-0015).
+    verifie_doublons_centrale(bytes)?;
+
     // Manifeste : format et version du conteneur.
     let manifest: Manifest = {
         let mut file = archive
@@ -221,23 +227,15 @@ pub(crate) fn read(
         events.push(event);
     }
 
-    // Objets binaires (blobs) : les entrées en doublon sont refusées au
-    // lieu d'être lues avec écrasement silencieux (OF-DOC-0015) — la
-    // détection passe par `by_index`, car `file_names()` renvoie des
-    // noms déjà dédupliqués par la crate zip. Chaque nom relu passe par
-    // la validation de `set_blob` (une archive forgée ne contourne plus
-    // l'invariant, ADR-0016 A4) et le cumul des blobs est borné par un
-    // plafond global réglable (OF-DOC-0014) — le dépassement est
-    // détecté après lecture de l'entrée fautive, au plus
-    // `MAX_BLOB_BYTES` au-delà du plafond.
+    // Objets binaires (blobs) : chaque nom relu passe par la validation
+    // de `set_blob` (une archive forgée ne contourne plus l'invariant,
+    // ADR-0016 A4) et le cumul des blobs est borné par un plafond
+    // global réglable (OF-DOC-0014) — le dépassement est détecté après
+    // lecture de l'entrée fautive, au plus `MAX_BLOB_BYTES` au-delà du
+    // plafond.
     let mut names: Vec<String> = Vec::new();
-    let mut entrees_vues = BTreeSet::new();
     for index in 0..archive.len() {
-        let nom = archive.by_index(index)?.name().to_string();
-        if !entrees_vues.insert(nom.clone()) {
-            return Err(DocError::DuplicateEntry { entry: nom });
-        }
-        names.push(nom);
+        names.push(archive.by_index(index)?.name().to_string());
     }
     let mut blobs = BTreeMap::new();
     let mut total_blob_bytes: u64 = 0;
@@ -281,4 +279,131 @@ pub(crate) fn read(
         migrations,
         clock: Box::new(crate::SystemClock),
     })
+}
+/// Cherche la fin du répertoire central (`PK\x05\x06`) en partant de la
+/// fin de l'archive : la longueur de commentaire annoncée doit joindre
+/// exactement le bout du fichier.
+fn cherche_eocd(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 22 {
+        return None;
+    }
+    let borne = bytes.len().saturating_sub(22 + 65_535);
+    for position in (borne..=bytes.len() - 22).rev() {
+        if &bytes[position..position + 4] == b"PK\x05\x06"
+            && usize::from(u16_at(bytes, position + 20)) == bytes.len() - position - 22
+        {
+            return Some(position);
+        }
+    }
+    None
+}
+
+/// Lit un `u16` petit-boutiste à `position` (validité garantie par
+/// l'appelant).
+fn u16_at(bytes: &[u8], position: usize) -> u16 {
+    u16::from_le_bytes([bytes[position], bytes[position + 1]])
+}
+
+/// Lit un `u32` petit-boutiste à `position` (validité garantie par
+/// l'appelant).
+fn u32_at(bytes: &[u8], position: usize) -> u32 {
+    u32::from_le_bytes([
+        bytes[position],
+        bytes[position + 1],
+        bytes[position + 2],
+        bytes[position + 3],
+    ])
+}
+
+/// Lit un `u64` petit-boutiste à `position` (validité garantie par
+/// l'appelant).
+fn u64_at(bytes: &[u8], position: usize) -> u64 {
+    u64::from_le_bytes([
+        bytes[position],
+        bytes[position + 1],
+        bytes[position + 2],
+        bytes[position + 3],
+        bytes[position + 4],
+        bytes[position + 5],
+        bytes[position + 6],
+        bytes[position + 7],
+    ])
+}
+
+/// Lit le nombre d'entrées et la position du répertoire central dans
+/// l'EOCD ZIP64, via le localisateur placé immédiatement avant l'EOCD
+/// ordinaire. `None` si la structure est absente ou incohérente : le
+/// contrôle des doublons est alors ignoré.
+fn lis_zip64(bytes: &[u8], eocd: usize) -> Option<(u64, u64)> {
+    let localisateur = eocd.checked_sub(20)?;
+    if &bytes[localisateur..localisateur + 4] != b"PK\x06\x07" {
+        return None;
+    }
+    let position = usize::try_from(u64_at(bytes, localisateur + 8)).ok()?;
+    if position.checked_add(56)? > bytes.len() || &bytes[position..position + 4] != b"PK\x06\x06" {
+        return None;
+    }
+    Some((u64_at(bytes, position + 32), u64_at(bytes, position + 48)))
+}
+
+/// Refuse les entrées en doublon (OF-DOC-0015) : la crate zip indexe
+/// les fichiers par nom — deux enregistrements de même nom seraient
+/// fusionnés en silence avant toute lecture. Le répertoire central est
+/// donc parcouru à la main, de façon bornée. Parcours défensif : une
+/// structure non reconnue (archive préfixée, EOCD ZIP64 absente,
+/// longueurs incohérentes) n'invalide pas l'archive, la lecture reste
+/// gouvernée par la crate zip.
+fn verifie_doublons_centrale(bytes: &[u8]) -> Result<(), DocError> {
+    let Some(eocd) = cherche_eocd(bytes) else {
+        return Ok(());
+    };
+    let entrees_eocd = u16_at(bytes, eocd + 10);
+    let debut_eocd = u32_at(bytes, eocd + 16);
+    let (entrees, debut_centrale) = if entrees_eocd == 0xFFFF || debut_eocd == 0xFFFF_FFFF {
+        let Some(valeurs) = lis_zip64(bytes, eocd) else {
+            return Ok(());
+        };
+        valeurs
+    } else {
+        (u64::from(entrees_eocd), u64::from(debut_eocd))
+    };
+    let Ok(mut position) = usize::try_from(debut_centrale) else {
+        return Ok(());
+    };
+    let mut vus = BTreeSet::new();
+    for _ in 0..entrees {
+        // Enregistrement du répertoire central : signature, 42 octets
+        // d'en-tête fixe, nom, puis champs « extra » et commentaire de
+        // longueurs annoncées.
+        let Some(fin_entete) = position.checked_add(46) else {
+            return Ok(());
+        };
+        if fin_entete > bytes.len() || &bytes[position..position + 4] != b"PK\x01\x02" {
+            return Ok(());
+        }
+        let longueur_nom = usize::from(u16_at(bytes, position + 28));
+        let longueur_extra = usize::from(u16_at(bytes, position + 30));
+        let longueur_commentaire = usize::from(u16_at(bytes, position + 32));
+        let Some(fin_nom) = fin_entete.checked_add(longueur_nom) else {
+            return Ok(());
+        };
+        if fin_nom > bytes.len() {
+            return Ok(());
+        }
+        let nom = bytes[fin_entete..fin_nom].to_vec();
+        if vus.contains(&nom) {
+            return Err(DocError::DuplicateEntry {
+                entry: String::from_utf8_lossy(&nom).into_owned(),
+            });
+        }
+        vus.insert(nom);
+        let Some(apres_extra) = fin_nom.checked_add(longueur_extra) else {
+            return Ok(());
+        };
+        let Some(prochaine) = apres_extra.checked_add(longueur_commentaire) else {
+            return Ok(());
+        };
+        position = prochaine;
+    }
+    Ok(())
 }
