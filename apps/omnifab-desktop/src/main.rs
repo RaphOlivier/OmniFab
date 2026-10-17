@@ -602,7 +602,9 @@ impl DemoApp {
             .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
             .etendre(boite.max_x + pas, boite.max_y + pas, 0.0);
         scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
-        scene.segments.extend(Scene3D::depuis_traces(traces, COULEUR_TRACES).segments);
+        scene
+            .segments
+            .extend(Scene3D::depuis_traces(traces, COULEUR_TRACES).segments);
         // Contour du rectangle paramétrique, posé sur le plan z = 0
         // (ADR-0015, phase C2).
         scene.ajouter(Segment3D {
@@ -626,7 +628,9 @@ impl DemoApp {
             couleur: COULEUR_RECTANGLE_3D,
         });
         if let Some(maillage) = maillage {
-            scene.segments.extend(Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME).segments);
+            scene
+                .segments
+                .extend(Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME).segments);
         }
         scene
     }
@@ -1535,7 +1539,11 @@ mod tests {
     /// Position du premier segment portant la couleur donnée :
     /// sert à vérifier la priorité d'affichage de la vue 3D.
     fn premiere_couleur(scene: &Scene3D, couleur: Couleur) -> usize {
-        scene.segments.iter().position(|s| s.couleur == couleur).expect("couleur présente")
+        scene
+            .segments
+            .iter()
+            .position(|s| s.couleur == couleur)
+            .expect("couleur présente")
     }
 
     /// Priorité d'affichage de la vue 3D : le pipeline de lignes ne
