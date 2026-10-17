@@ -13,9 +13,10 @@
 //!   courant et produit 1..n événements et d'éventuels blobs
 //!   ([`CommandPlan`]) ; la session attribue à chaque événement l'acteur
 //!   et un identifiant de transaction (une commande = un groupe d'undo) ;
-//! - **validation avant écriture, tout-ou-rien** (ADR-0011) : les
-//!   événements sont d'abord appliqués aux projections, les blobs ensuite
-//!   déposés ; si l'une refuse, **rien n'est écrit au journal** — un
+//! - **validation avant écriture, tout-ou-rien** (ADR-0011, ADR-0016 A1) :
+//!   les événements sont d'abord appliqués aux projections, les blobs
+//!   ensuite déposés ; si l'une refuse, **rien n'est écrit ni tronqué** —
+//!   la pile redo et les blobs déjà déposés restent intacts, et un
 //!   journal écrit par la session se rejoue toujours ;
 //! - **undo/redo par curseur** : le curseur `applied` sépare le journal
 //!   appliqué des événements défaits, qui restent en mémoire pour le
@@ -114,34 +115,43 @@ impl Session {
     /// application aux projections, dépôt des blobs, puis écriture au
     /// journal. L'exécution est tout-ou-rien (ADR-0011) : un refus au
     /// plan, dans une projection ou au dépôt d'un blob laisse le journal
-    /// intact. Comme toute nouvelle action, une commande exécutée après
-    /// un undo abandonne les événements défaits (ADR-0008) et purge les
-    /// blobs orphelins (ADR-0011).
+    /// **et la pile redo** intacts (ADR-0016 A1). L'abandon des
+    /// événements défaisables (ADR-0008) et la purge des blobs orphelins
+    /// (ADR-0011) n'ont lieu qu'après une validation complète.
     pub fn execute(&mut self, command: &dyn Command) -> Result<(), SessionError> {
         let plan = command.plan(self)?;
         if plan.events.is_empty() && plan.blobs.is_empty() {
             return Ok(());
         }
-        self.truncate_pending();
-        self.gc_blobs(&plan);
         for event in &plan.events {
             if let Err(error) = self.apply_all(event) {
-                // Rien n'a été écrit au journal : le rejeu du journal
-                // appliqué rétablit exactement l'état d'avant commande.
+                // Rien n'est écrit au journal et la pile redo est encore
+                // en place : le rejeu du journal appliqué rétablit
+                // exactement l'état d'avant commande (ADR-0016 A1).
                 self.replay_applied()?;
                 return Err(error);
             }
         }
+        let mut deposes: Vec<String> = Vec::new();
         for (nom, donnees) in plan.blobs {
             if let Err(erreur) = self.doc.set_blob(&nom, donnees) {
-                // Toujours rien au journal : le rejeu rétablit l'état
-                // d'avant commande, aucun blob ne survit isolément.
+                // Toujours rien au journal : les blobs déjà déposés par
+                // le plan sont retirés — aucun ne survit isolément — et
+                // le rejeu rétablit l'état d'avant commande.
+                for nom in &deposes {
+                    self.doc.remove_blob(nom);
+                }
                 self.replay_applied()?;
                 return Err(SessionError::BlobRejected {
                     reason: erreur.to_string(),
                 });
             }
+            deposes.push(nom);
         }
+        // Validation complète : seule une commande réussie abandonne la
+        // pile redo (ADR-0008) et purge les blobs orphelins (ADR-0011).
+        self.truncate_pending();
+        self.gc_blobs(&deposes);
         let txn = uuid::Uuid::now_v7().to_string();
         for mut event in plan.events {
             event.actor = self.actor.clone();
@@ -232,7 +242,7 @@ impl Session {
     /// (ADR-0011).
     pub fn save_to_bytes(&mut self) -> Result<Vec<u8>, DocError> {
         self.truncate_pending();
-        self.gc_blobs(&CommandPlan::default());
+        self.gc_blobs(&[]);
         self.doc.to_bytes()
     }
 
@@ -242,7 +252,7 @@ impl Session {
     #[cfg(feature = "native")]
     pub fn save_to_path(&mut self, path: &std::path::Path) -> Result<(), DocError> {
         self.truncate_pending();
-        self.gc_blobs(&CommandPlan::default());
+        self.gc_blobs(&[]);
         self.doc.save_to_path(path)
     }
 
@@ -256,14 +266,14 @@ impl Session {
     }
 
     /// Purge les blobs orphelins (ADR-0011) : ne survit qu'un blob
-    /// référencé par l'état courant d'une projection, ou déposé par le
-    /// plan en cours.
-    fn gc_blobs(&mut self, plan: &CommandPlan) {
+    /// référencé par l'état courant d'une projection, ou explicitement
+    /// protégé (les blobs fraîchement déposés d'une commande validée).
+    fn gc_blobs(&mut self, proteges: &[String]) {
         let mut references = self.geom.referenced_blobs();
         for projection in &self.projections {
             references.extend(projection.referenced_blobs());
         }
-        references.extend(plan.blobs.iter().map(|(nom, _)| nom.clone()));
+        references.extend(proteges.iter().cloned());
         for nom in self.doc.blob_names() {
             if !references.contains(&nom) {
                 self.doc.remove_blob(&nom);

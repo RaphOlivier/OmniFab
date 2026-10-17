@@ -4,8 +4,8 @@
 
 use forge_doc::{Document, NewEvent};
 use forge_session::{
-    EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection, Session, SessionError,
-    SetExpression, SetInput,
+    Command, CommandPlan, EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection,
+    Session, SessionError, SetExpression, SetInput,
 };
 
 /// Session de référence : deux entrées + une expression (diagonale 1000).
@@ -453,4 +453,74 @@ fn deux_imports_ne_s_ecrasent_pas() {
     assert_eq!(reference.blob, premier, "référence vers son propre blob");
     let octets = session.document().blob(&premier).expect("blob intact");
     assert_eq!(octets, &b"<svg a/>"[..], "octets d'origine intacts");
+}
+
+
+/// Une commande refusée par une projection après un undo préserve la
+/// pile redo : ni le journal ni les blobs ne sont touchés (ADR-0016 A1).
+#[test]
+fn commande_refusee_apres_undo_preserve_le_redo() {
+    let mut session = rectangle();
+    session.undo().expect("undo");
+    assert!(session.can_redo());
+    let erreur = session
+        .execute(&SetExpression {
+            name: "diagonal".into(),
+            expression: "inconnu + 1".into(),
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0002");
+    assert!(session.can_redo(), "le refus préserve le redo");
+    assert_eq!(
+        session.document().events().len(),
+        3,
+        "l'événement défait est toujours dans le journal"
+    );
+    session.redo().expect("redo");
+    let diagonale = session
+        .graph_mut()
+        .value("diagonal")
+        .expect("diagonale rétablie");
+    assert!((diagonale - 1000.0).abs() < 1e-9);
+}
+
+/// Un plan dont un blob est refusé ne laisse aucun blob du plan en
+/// place : ceux déjà déposés sont retirés, journal et pile redo
+/// intacts (ADR-0016 A1).
+#[test]
+fn refus_d_un_blob_retire_les_blobs_deposes() {
+    struct DeuxBlobs;
+    impl Command for DeuxBlobs {
+        fn plan(&self, _session: &Session) -> Result<CommandPlan, SessionError> {
+            let evenement = NewEvent::new("bidon.deux_blobs", 1, "", serde_json::json!({"x": 1}));
+            let mut plan = CommandPlan::new(vec![evenement]);
+            plan.blobs.push(("geometry/premier".into(), b"premier".to_vec()));
+            plan.blobs.push(("../invalide".into(), b"second".to_vec()));
+            Ok(plan)
+        }
+    }
+    let mut session = rectangle();
+    session.undo().expect("undo");
+    assert!(session.can_redo());
+    let erreur = session.execute(&DeuxBlobs).unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0006");
+    assert!(
+        session.document().blob("geometry/premier").is_none(),
+        "le blob déposé avant le refus est retiré"
+    );
+    assert!(
+        session.document().blob_names().is_empty(),
+        "aucun blob du plan ne survit"
+    );
+    assert!(session.can_redo(), "le refus préserve le redo");
+    assert_eq!(
+        session.document().events().len(),
+        3,
+        "le journal est intact"
+    );
+    session.redo().expect("redo");
+    assert!(
+        session.document().blob_names().is_empty(),
+        "le rejeu ne ressuscite aucun blob"
+    );
 }
