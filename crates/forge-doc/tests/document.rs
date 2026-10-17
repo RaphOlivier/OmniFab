@@ -444,16 +444,96 @@ fn blob_invalide_au_chargement_rejete() {
 fn doublon_d_entree_rejete_au_chargement() {
     // ADR-0016 A4 : deux entrées de même nom seraient lues avec
     // écrasement silencieux — elles sont refusées (OF-DOC-0015).
-    let bytes = archive(&[
-        ("manifest.json", MANIFEST_V1.to_string()),
-        ("events.jl", String::new()),
-        ("objects/apercu", "a".to_string()),
-        ("objects/apercu", "b".to_string()),
-    ]);
+    // `ZipWriter` refuse les doublons à l'écriture : l'archive
+    // forgée est assemblée octet par octet (entrées stockées).
+    let entrees: [(&str, &[u8]); 4] = [
+        ("manifest.json", MANIFEST_V1.as_bytes()),
+        ("events.jl", b""),
+        ("objects/apercu", b"x"),
+        ("objects/apercu", b"x"),
+    ];
+    let bytes = archive_forgee(&entrees);
     match Document::from_bytes(&bytes) {
         Err(DocError::DuplicateEntry { entry }) => assert_eq!(entry, "objects/apercu"),
         other => panic!("doublon attendu, obtenu {other:?}"),
     }
+}
+
+/// CRC-32 IEEE 802.3 (polygone réfléchi 0xEDB88320), la somme
+/// de contrôle attendue par le lecteur ZIP pour chaque entrée.
+fn crc32(donnees: &[u8]) -> u32 {
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for octet in donnees {
+        crc ^= u32::from(*octet);
+        for _ in 0..8 {
+            let masque = (crc & 1).wrapping_mul(0xEDB8_8320);
+            crc = (crc >> 1) ^ masque;
+        }
+    }
+    !crc
+}
+
+/// Assemble une archive ZIP « stockée » (sans compression) à
+/// partir d'entrées nommées, y compris en doublon — ce que le
+/// `ZipWriter` de la fonction `archive` refuse de produire.
+fn archive_forgee(entrees: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut locales = Vec::new();
+    let mut centrales = Vec::new();
+    for (nom, contenu) in entrees {
+        let debut = locales.len() as u32;
+        let somme = crc32(contenu);
+        let taille = contenu.len() as u32;
+        // En-tête local : signature, version, drapeaux, méthode
+        // « stockée », date 1980-01-01, somme de contrôle, tailles,
+        // longueur du nom, puis les données.
+        locales.extend_from_slice(b"PK\x03\x04");
+        locales.extend_from_slice(&20u16.to_le_bytes());
+        locales.extend_from_slice(&0u16.to_le_bytes());
+        locales.extend_from_slice(&0u16.to_le_bytes());
+        locales.extend_from_slice(&0u16.to_le_bytes());
+        locales.extend_from_slice(&0x21u16.to_le_bytes());
+        locales.extend_from_slice(&somme.to_le_bytes());
+        locales.extend_from_slice(&taille.to_le_bytes());
+        locales.extend_from_slice(&taille.to_le_bytes());
+        locales.extend_from_slice(&(nom.len() as u16).to_le_bytes());
+        locales.extend_from_slice(&0u16.to_le_bytes());
+        locales.extend_from_slice(nom.as_bytes());
+        locales.extend_from_slice(contenu);
+        // Enregistrement du répertoire central : mêmes champs que
+        // l'en-tête local, plus l'offset de l'entrée.
+        centrales.extend_from_slice(b"PK\x01\x02");
+        centrales.extend_from_slice(&20u16.to_le_bytes());
+        centrales.extend_from_slice(&20u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0x21u16.to_le_bytes());
+        centrales.extend_from_slice(&somme.to_le_bytes());
+        centrales.extend_from_slice(&taille.to_le_bytes());
+        centrales.extend_from_slice(&taille.to_le_bytes());
+        centrales.extend_from_slice(&(nom.len() as u16).to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u16.to_le_bytes());
+        centrales.extend_from_slice(&0u32.to_le_bytes());
+        centrales.extend_from_slice(&debut.to_le_bytes());
+        centrales.extend_from_slice(nom.as_bytes());
+    }
+    let mut sortie = locales;
+    let debut_centrales = sortie.len() as u32;
+    sortie.extend_from_slice(&centrales);
+    // Fin du répertoire central : nombres d'entrées, taille et
+    // position du répertoire central, longueur du commentaire.
+    sortie.extend_from_slice(b"PK\x05\x06");
+    sortie.extend_from_slice(&0u16.to_le_bytes());
+    sortie.extend_from_slice(&0u16.to_le_bytes());
+    sortie.extend_from_slice(&(entrees.len() as u16).to_le_bytes());
+    sortie.extend_from_slice(&(entrees.len() as u16).to_le_bytes());
+    sortie.extend_from_slice(&(centrales.len() as u32).to_le_bytes());
+    sortie.extend_from_slice(&debut_centrales.to_le_bytes());
+    sortie.extend_from_slice(&0u16.to_le_bytes());
+    sortie
 }
 
 #[test]
@@ -472,11 +552,7 @@ fn budget_cumule_de_blobs_borne_au_chargement() {
 
     // Trois blobs de 10 octets : le plafond réglable à 20 octets est
     // dépassé au troisième (cumul 30).
-    match Document::from_bytes_with_budget(
-        &bytes,
-        MigrationRegistry::new(),
-        20,
-    ) {
+    match Document::from_bytes_with_budget(&bytes, MigrationRegistry::new(), 20) {
         Err(DocError::TotalBlobsTooLarge { found, max }) => {
             assert_eq!(found, 30);
             assert_eq!(max, 20);
