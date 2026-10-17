@@ -8,6 +8,11 @@ use crate::command::{
 use forge_doc::NewEvent;
 use forge_values::ValueGraph;
 
+/// Version de schéma courante des types d'événement connus de la
+/// session (ADR-0016 A3) : toute autre version d'un type connu est
+/// refusée, jamais lue comme du v1.
+const VERSION_SCHEMA_CONNUE: u32 = 1;
+
 /// Projection d'un domaine métier : l'état du domaine reconstruit par
 /// rejeu du journal. Les domaines futurs (esquisse, CAO, CAM…)
 /// enregistrent leurs projections auprès de la session sans modifier
@@ -81,12 +86,14 @@ impl Projection for ValuesProjection {
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         match event.event_type.as_str() {
             EVENT_INPUT_SET => {
+                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
                 let name = champ_str(event, "name")?;
                 let value = champ_nombre(event, "value")?;
                 self.graph.set_input(name, value);
                 Ok(())
             }
             EVENT_EXPRESSION_SET => {
+                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
                 let name = champ_str(event, "name")?;
                 let expression = champ_str(event, "expression")?;
                 self.graph
@@ -184,6 +191,7 @@ impl Projection for GeomProjection {
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         match event.event_type.as_str() {
             EVENT_TRACES_IMPORTED => {
+                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
                 let format = champ_str(event, "format")?;
                 if format != "svg" && format != "dxf" {
                     return Err(SessionError::InvalidEventData {
@@ -192,8 +200,8 @@ impl Projection for GeomProjection {
                     });
                 }
                 let blob = champ_str(event, "blob")?;
-                let traces = champ_nombre(event, "traces")? as usize;
-                let sommets = champ_nombre(event, "sommets")? as usize;
+                let traces = champ_entier(event, "traces")?;
+                let sommets = champ_entier(event, "sommets")?;
                 self.traces_courantes = Some(TracesImportees {
                     format: format.to_string(),
                     blob: blob.to_string(),
@@ -203,6 +211,7 @@ impl Projection for GeomProjection {
                 Ok(())
             }
             EVENT_MESH_IMPORTED => {
+                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
                 let format = champ_str(event, "format")?;
                 if format != "stl" {
                     return Err(SessionError::InvalidEventData {
@@ -211,7 +220,7 @@ impl Projection for GeomProjection {
                     });
                 }
                 let blob = champ_str(event, "blob")?;
-                let triangles = champ_nombre(event, "triangles")? as usize;
+                let triangles = champ_entier(event, "triangles")?;
                 self.maillage_courant = Some(MaillageImporte {
                     format: format.to_string(),
                     blob: blob.to_string(),
@@ -266,4 +275,41 @@ fn champ_nombre(event: &NewEvent, champ: &str) -> Result<f64, SessionError> {
             event_type: event.event_type.clone(),
             reason: format!("champ « {champ} » (nombre) absent"),
         })
+}
+
+/// Vérifie la version de schéma d'un événement de type connu
+/// (ADR-0016 A3) : le registre de migrations le refuse déjà à
+/// l'ouverture, la projection est la dernière ligne de défense —
+/// un journal plus récent n'est jamais lu comme du v1.
+fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
+    if event.schema_version != version {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!(
+                "version de schème {} non supportée (attendue : {})",
+                event.schema_version,
+                version
+            ),
+        });
+    }
+    Ok(())
+}
+
+/// Lit un champ entier non négatif du schéma v1 : les nombres
+/// négatifs, fractionnaires ou hors `usize` sont refusés — jamais
+/// de conversion `as` silencieuse depuis un `f64` de fichier
+/// (ADR-0016 A3).
+fn champ_entier(event: &NewEvent, champ: &str) -> Result<usize, SessionError> {
+    let valeur = event
+        .data
+        .get(champ)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("champ « {champ} » (entier non négatif) absent ou invalide"),
+        })?;
+    usize::try_from(valeur).map_err(|_| SessionError::InvalidEventData {
+        event_type: event.event_type.clone(),
+        reason: format!("champ « {champ} » hors des bornes de la plateforme"),
+    })
 }

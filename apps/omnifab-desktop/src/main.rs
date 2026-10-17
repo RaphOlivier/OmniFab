@@ -266,7 +266,10 @@ impl DemoApp {
     /// bibliothèque) : rejeu du journal, mémorisation du chemin —
     /// état d'app UI, pas un événement (ADR-0014).
     fn ouvrir_projet(&mut self, chemin: &Path) {
-        let document = match Document::open_from_path(chemin) {
+        // Registre des types connus (ADR-0016 A3) : un journal écrit
+        // par une version plus récente est refusé à l'ouverture.
+        let registre = forge_session::registre_migrations_courant();
+        let document = match Document::open_from_path_with(chemin, registre) {
             Ok(document) => document,
             Err(error) => {
                 self.error = Some(error.to_string());

@@ -42,8 +42,23 @@ pub use projection::{
     GeomProjection, MaillageImporte, Projection, TracesImportees, ValuesProjection,
 };
 
-use forge_doc::{DocError, Document, Event, NewEvent};
+use forge_doc::{DocError, Document, Event, MigrationRegistry, NewEvent};
 use forge_values::ValueGraph;
+
+/// Registre de migrations courant de la session (ADR-0016 A3) : les
+/// quatre types d'événement connus, déclarés à leur version
+/// courante. À passer à l'ouverture d'un projet (Document::from_bytes_with,
+/// Document::open_from_path_with, feature native) : un journal écrit
+/// par une version plus récente est refusé par SchemaTooNew (ADR-0001)
+/// au lieu d'être lu comme du v1.
+pub fn registre_migrations_courant() -> MigrationRegistry {
+    let mut registre = MigrationRegistry::new();
+    registre.declare(EVENT_INPUT_SET, 1);
+    registre.declare(EVENT_EXPRESSION_SET, 1);
+    registre.declare(EVENT_TRACES_IMPORTED, 1);
+    registre.declare(EVENT_MESH_IMPORTED, 1);
+    registre
+}
 
 /// Session de travail (ADR-0008) : possède le document forge-doc et les
 /// projections par domaine ; les applications construisent des

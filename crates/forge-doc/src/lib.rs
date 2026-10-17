@@ -280,6 +280,19 @@ impl Document {
     pub fn open_from_path(path: &std::path::Path) -> Result<Self, DocError> {
         Self::from_bytes(&std::fs::read(path)?)
     }
+
+    /// Charge un document depuis un fichier en appliquant les
+    /// migrations du registre donné (feature `native`) : l'appelant
+    /// déclare les types d'événement qu'il connaît — un journal
+    /// écrit par une version plus récente est refusé par `SchemaTooNew`
+    /// (ADR-0001/0016 A3) au lieu d'être lu comme du v1.
+    #[cfg(feature = "native")]
+    pub fn open_from_path_with(
+        path: &std::path::Path,
+        migrations: MigrationRegistry,
+    ) -> Result<Self, DocError> {
+        Self::from_bytes_with(&std::fs::read(path)?, migrations)
+    }
 }
 
 /// Écrit le conteneur dans le fichier temporaire, copie le projet
