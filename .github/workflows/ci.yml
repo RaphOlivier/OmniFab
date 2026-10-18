@@ -158,12 +158,14 @@ jobs:
       - name: Verification croisee
         id: cross
         run: |
-          # forge-gcs et forge-gcs-sys sont exclus de la vérification
-          # croisée : planegcs est du C++ natif, le cross-build CMake
-          # (Eigen3/fmt/MSVC-g++) est hors du périmètre du spike
-          # (ADR-0013). Les crates Rust concernées restent vérifiées
+          # forge-gcs, forge-gcs-sys et omnifab-desktop sont exclus
+          # de la vérification croisée : planegcs est du C++ natif, le
+          # cross-build CMake (Eigen3/fmt/g++ cross) est hors du
+          # périmètre du spike (ADR-0013) ; l'app desktop dépend du
+          # solveur natif (ADR-0018 lot 3b), elle est donc exclue
+          # avec lui. Les crates Rust concernées restent vérifiées
           # sur les trois OS du job build.
-          if cargo check --workspace --locked --exclude forge-gcs --exclude forge-gcs-sys --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
+          if cargo check --workspace --locked --exclude forge-gcs --exclude forge-gcs-sys --exclude omnifab-desktop --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
             echo "fail=0" >> "$GITHUB_OUTPUT"
           else
             echo "fail=1" >> "$GITHUB_OUTPUT"
