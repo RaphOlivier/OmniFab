@@ -54,8 +54,11 @@ impl Default for SvgBudgets {
 /// (usvg compose les transformations des ancêtres et du tracé), les
 /// courbes sont aplaties en polylignes, les nœuds non géométriques
 /// (images, textes) sont ignorés ; l'axe Y du SVG (vers le bas)
-/// est inversé pour entrer dans le monde (Y vers le haut). Les
-/// budgets protègent contre les documents démesurés (ADR-0009).
+/// est inversé pour entrer dans le monde (Y vers le haut) ; une
+/// `viewBox` décalée est compensée — les coordonnées du contenu
+/// sont restituées à l'origine de leurs unités, à l'échelle
+/// physique déclarée (ADR-0016 B3). Les budgets protègent contre
+/// les documents démesurés (ADR-0009).
 pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
@@ -73,14 +76,63 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
     let arbre = usvg::Tree::from_data(bytes, &options).map_err(|erreur| IoError::InvalidSvg {
         raison: erreur.to_string(),
     })?;
+    // Compensation de la translation de la viewBox (ADR-0016
+    // B3) : `usvg` normalise le contenu dans la viewBox, les
+    // coordonnées importées sont décalées — l'origine des
+    // unités du document est restituée, à l'échelle physique
+    // déclarée.
+    let decalage = decalage_viewbox(bytes, arbre.size());
     let mut traces: Vec<Path2> = Vec::new();
     let mut etat = Etat {
         chemins: 0,
         sommets: 0,
         budgets,
+        decalage,
     };
     parcourir(arbre.root(), &mut traces, &mut etat)?;
     Ok(traces)
+}
+
+/// Translation de la `viewBox` compensée à l'import : `usvg`
+/// normalise le contenu dans la boîte déclarée, l'origine des
+/// unités du document est restituée (ADR-0016 B3).
+fn decalage_viewbox(bytes: &[u8], taille: usvg::Size) -> (f64, f64) {
+    let Some((x, y, largeur, hauteur)) = lis_viewbox(bytes) else {
+        return (0.0, 0.0);
+    };
+    if largeur <= 0.0 || hauteur <= 0.0 {
+        return (0.0, 0.0);
+    }
+    // Le viewport (taille résolue du document) met la viewBox
+    // à l'échelle : la translation compensée suit la même
+    // échelle, l'origine est restituée dans les unités du monde.
+    let echelle_x = f64::from(taille.width()) / largeur;
+    let echelle_y = f64::from(taille.height()) / hauteur;
+    (x * echelle_x, y * echelle_y)
+}
+
+/// Extrait la `viewBox` déclarée dans l'en-tête du document —
+/// `min_x min_y largeur hauteur` — ou `None` si absente ou mal
+/// formée : le contrôle échoue silencieusement, l'import
+/// continue sans compensation.
+fn lis_viewbox(bytes: &[u8]) -> Option<(f64, f64, f64, f64)> {
+    let texte = std::str::from_utf8(bytes).ok()?;
+    let debut = texte.find("viewBox")?;
+    let suite = texte[debut + "viewBox".len()..].trim_start().strip_prefix('=')?.trim_start();
+    let separateur = suite.chars().next()?;
+    if separateur != '"' && separateur != '\'' {
+        return None;
+    }
+    let fin = suite[1..].find(separateur)? + 1;
+    let nombres: Vec<f64> = suite[1..fin]
+        .split_whitespace()
+        .map(|nombre| nombre.parse::<f64>().ok())
+        .collect::<Option<Vec<f64>>>()?;
+    if nombres.len() == 4 {
+        Some((nombres[0], nombres[1], nombres[2], nombres[3]))
+    } else {
+        None
+    }
 }
 
 /// Exporte les tracés en SVG : chaque tracé devient un élément
@@ -159,6 +211,10 @@ struct Etat<'a> {
     sommets: usize,
     /// Budgets de l'import.
     budgets: &'a SvgBudgets,
+    /// Translation de la viewBox compensée, mise à l'échelle du
+    /// viewport : restitue l'origine des coordonnées du contenu
+    /// (ADR-0016 B3).
+    decalage: (f64, f64),
 }
 
 /// Parcourt un groupe : descend dans les sous-groupes et collecte
@@ -270,8 +326,8 @@ fn ajoute(
         });
     }
     let (gx, gy) = applique(transformation, x, y);
-    let gx_mm = Length::from_millimeters(gx);
-    let gy_mm = Length::from_millimeters(-gy);
+    let gx_mm = Length::from_millimeters(gx + etat.decalage.0);
+    let gy_mm = Length::from_millimeters(-(gy + etat.decalage.1));
     let point = Point2::new(gx_mm, gy_mm).map_err(IoError::InvalidGeometry)?;
     points.push(point);
     etat.sommets += 1;
