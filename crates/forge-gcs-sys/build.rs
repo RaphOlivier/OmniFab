@@ -52,6 +52,15 @@ fn main() {
     // les objets /MDd sont refusés par link.exe face au fmt vcpkg en
     // /MD (LNK2038). profile pilote --config sur tous les générateurs.
     config.profile("Release");
+    // La crate cmake définit CMAKE_CXX_FLAGS elle-même (à partir de
+    // cxxflag, vide par défaut) et écrase ainsi les drapeaux par défaut
+    // de CMake, dont /EHsc sous MSVC. Sans _CPPUNWIND, Boost active
+    // BOOST_NO_EXCEPTIONS : le shared_ptr de planegcs appelle alors un
+    // boost::throw_exception « défini par l'utilisateur », non résolu au
+    // lien de l'application (LNK2019). On rétablit /EHsc.
+    if env::var("TARGET").unwrap_or_default().contains("msvc") {
+        config.cxxflag("/EHsc");
+    }
     // Windows + vcpkg : toolchain et triplet depuis l'environnement CI.
     if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
         let triplet =
