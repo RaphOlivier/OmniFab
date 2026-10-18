@@ -390,7 +390,7 @@ fn plus_grande_dimension(maillage: &Mesh) -> f64 {
             max[axe] = max[axe].max(coordonnees[axe]);
         }
     }
-    let mut dimension = 0.0;
+    let mut dimension: f64 = 0.0;
     for axe in 0..3 {
         dimension = dimension.max(max[axe] - min[axe]);
     }
