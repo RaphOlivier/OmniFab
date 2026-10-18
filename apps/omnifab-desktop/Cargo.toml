@@ -9,6 +9,10 @@ edition.workspace = true
 [dependencies]
 eframe = { version = "0.29", features = ["wgpu"] }
 forge-doc = { path = "../../crates/forge-doc" }
+# Solveur de contraintes natif (planegcs) : instancié dans le fil de
+# travail du démonstrateur, jamais dans forge-session (ADR-0018 D3,
+# frontière LGPL de l’ADR-0013).
+forge-gcs = { path = "../../crates/forge-gcs" }
 forge-geom = { path = "../../crates/forge-geom" }
 forge-i18n = { path = "../../crates/forge-i18n" }
 forge-io = { path = "../../crates/forge-io" }

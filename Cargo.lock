@@ -2770,6 +2770,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "forge-doc",
+ "forge-gcs",
  "forge-geom",
  "forge-i18n",
  "forge-io",

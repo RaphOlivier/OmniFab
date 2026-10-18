@@ -17,6 +17,12 @@
 //! - **fil de travail** (ADR-0016 C1) : lectures, parses et exports
 //!   détachés du fil d'interface, échecs de parse mémorisés — un
 //!   fichier invalide n'est plus re-parsé à chaque frame ;
+//! - **résolution du croquis contraint** (ADR-0018 D3) : la demande
+//!   part au fil de travail, qui instancie le solveur natif —
+//!   jamais sur le fil d’interface (ADR-0016 C1), jamais dans
+//!   forge-session (frontière LGPL de l’ADR-0013) ; les positions
+//!   résolues restent un état dérivé en mémoire, jamais
+//!   sérialisées ;
 //! - **protection du travail** (ADR-0016 C3) : indicateur « non
 //!   enregistré » posé par toute commande effective et levé par la
 //!   sauvegarde — le titre de la fenêtre porte `*`, « Nouveau »,
@@ -50,6 +56,7 @@
 
 mod aide;
 mod bibliotheque;
+mod esquisse;
 mod fichiers;
 mod i18n;
 
@@ -65,7 +72,8 @@ use forge_render::{
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
 };
 use forge_session::{
-    Command, EVENT_EXPRESSION_SET, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
+    Command, CroquisResolu, EVENT_EXPRESSION_SET, EsquisseProjection, ImportMesh, ImportTraces,
+    Session, SetExpression, SetInput,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -201,6 +209,20 @@ enum Travail {
         /// Fichier de destination.
         chemin: PathBuf,
     },
+    /// Résolution du croquis contraint (ADR-0018 D3) : la projection
+    /// du croquis est clonée vers le fil de travail, le solveur natif
+    /// y est instancié — jamais sur le fil d’interface (ADR-0016 C1),
+    /// jamais dans forge-session (frontière LGPL de l’ADR-0013).
+    ResoudreEsquisse {
+        /// Génération de l’état au moment de l’envoi.
+        generation: u64,
+        /// Numéro d’édition du croquis au moment de l’envoi : clé du
+        /// cache des positions résolues.
+        edition: u64,
+        /// Clone de la projection du croquis : entités, contraintes
+        /// et graines du journal.
+        croquis: EsquisseProjection,
+    },
 }
 
 impl Travail {
@@ -303,6 +325,10 @@ impl Travail {
                 };
                 ecris_fichier(generation, &chemin, &octets)
             }
+            Travail::ResoudreEsquisse { generation, edition, croquis } => {
+                let resultat = esquisse::resoudre(&croquis);
+                Retour::EsquisseResolue { generation, edition, resultat }
+            }
         }
     }
 }
@@ -351,6 +377,17 @@ enum Retour {
         /// Message d'échec.
         message: String,
     },
+    /// Croquis résolu au fil de travail (ADR-0018 D3) : positions et
+    /// diagnostic de l’édition demandée, ou message d’échec — le
+    /// journal n’est jamais touché (ADR-0018 D7).
+    EsquisseResolue {
+        /// Génération de l’état au moment de l’envoi du travail.
+        generation: u64,
+        /// Numéro d’édition du croquis résolu.
+        edition: u64,
+        /// Positions et diagnostic, ou message d’échec.
+        resultat: Result<CroquisResolu, String>,
+    },
 }
 
 impl Retour {
@@ -361,6 +398,7 @@ impl Retour {
             | Retour::ImportMaillage { generation, .. }
             | Retour::Export { generation, .. }
             | Retour::Erreur { generation, .. } => *generation,
+            | Retour::EsquisseResolue { generation, .. } => *generation,
         }
     }
 }
@@ -565,6 +603,15 @@ struct DemoApp {
     /// Choix des unités d'un maillage minuscule, en attente de la
     /// réponse de l'utilisateur (ADR-0017).
     demande_echelle: Option<DemandeEchelle>,
+    /// Cache des positions résolues du croquis, clé par numéro
+    /// d’édition de la projection (ADR-0018 D3) : état dérivé en
+    /// mémoire, jamais sérialisé ; un échec est mémorisé à sa
+    /// clé — pas re-résolu à chaque frame — et les graines du
+    /// journal restent la vérité affichable (ADR-0018 D7).
+    croquis_resolu: Option<(u64, Result<CroquisResolu, String>)>,
+    /// Numéro d’édition en cours de résolution au fil de travail :
+    /// une seule résolution en vol (ADR-0016 C1).
+    resolution_en_attente: Option<u64>,
 }
 
 impl DemoApp {
@@ -621,6 +668,8 @@ impl DemoApp {
             titre_sale: false,
             demande: None,
             demande_echelle: None,
+            croquis_resolu: None,
+            resolution_en_attente: None,
         };
         app.reinitialiser();
         app
@@ -642,6 +691,8 @@ impl DemoApp {
         self.vue = Vue::DeuxD;
         self.aide = None;
         self.demande_echelle = None;
+        self.croquis_resolu = None;
+        self.resolution_en_attente = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -778,6 +829,8 @@ impl DemoApp {
         self.camera = Camera2D::nouvelle();
         self.camera_cle = None;
         self.camera3d = Camera3D::nouvelle();
+        self.croquis_resolu = None;
+        self.resolution_en_attente = None;
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
         self.expr_buf = self.expression_courante();
@@ -1036,8 +1089,54 @@ impl DemoApp {
             Retour::Erreur { message, .. } => {
                 self.error = Some(message);
             }
+            Retour::EsquisseResolue { edition, resultat, .. } => {
+                if self.resolution_en_attente == Some(edition) {
+                    self.resolution_en_attente = None;
+                }
+                // L’échec est mémorisé à sa clé (ADR-0018 D7) : le
+                // journal est intact, les graines du croquis restent
+                // affichables — et la résolution ne repart pas à
+                // chaque frame (ADR-0016 C1).
+                if let Err(message) = &resultat {
+                    self.error = Some(message.clone());
+                }
+                self.croquis_resolu = Some((edition, resultat));
+            }
         }
     }
+    /// Demande la résolution du croquis contraint au fil de travail
+    /// si l’édition de la projection a changé (ADR-0018 D3) : le
+    /// solveur natif est instancié dans le fil de travail — jamais
+    /// sur le fil d’interface, jamais dans forge-session
+    /// (ADR-0016 C1). Une seule résolution en vol par édition ; un
+    /// échec déjà mémorisé ne repart pas à chaque frame.
+    fn demande_resolution_esquisse(&mut self) {
+        if self.session.esquisse().entites().is_empty() {
+            self.croquis_resolu = None;
+            self.resolution_en_attente = None;
+            return;
+        }
+        let edition = self.session.esquisse().edition();
+        if self.croquis_resolu.as_ref().is_some_and(|(cle, _)| *cle == edition) {
+            return;
+        }
+        if self.resolution_en_attente == Some(edition) {
+            return;
+        }
+        let Some(emetteur) = &self.travaux else {
+            return;
+        };
+        let travail = Travail::ResoudreEsquisse {
+            generation: self.generation,
+            edition,
+            croquis: self.session.esquisse().clone(),
+        };
+        if emetteur.send(travail).is_ok() {
+            self.resolution_en_attente = Some(edition);
+            self.travaux_en_attente += 1;
+        }
+    }
+
     /// Importe le maillage à l'échelle donnée : commande tout-ou-rien,
     /// le succès n'est affiché que si elle passe (ADR-0016 C4) ; une
     /// demande d'échelle en attente est consommée (ADR-0017).
@@ -1945,6 +2044,9 @@ impl eframe::App for DemoApp {
         for retour in garde_actuels(recus, self.generation) {
             self.appliquer_retour(retour);
         }
+        // Résolution du croquis contraint (ADR-0018 D3) : la demande
+        // ne part que si l’édition du croquis a changé.
+        self.demande_resolution_esquisse();
         if self.travaux_en_attente > 0 {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
@@ -2019,6 +2121,7 @@ fn main() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
+    use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse};
 
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
@@ -2635,5 +2738,117 @@ mod tests {
         assert!(app.demande_echelle.is_none(), "demande consommée");
         let maillage = app.session.geom().maillage().expect("maillage importé");
         assert_eq!(maillage.echelle, 1000.0, "échelle mètres retenue");
+    }
+
+    /// Compare une position résolue aux coordonnées attendues,
+    /// à la tolérance du domaine près (1e-6 mm).
+    fn proche(position: Option<(Length, Length)>, x: f64, y: f64) -> bool {
+        let (px, py) = match position {
+            Some((px, py)) => (px, py),
+            None => return false,
+        };
+        px.approx_eq(Length::from_millimeters(x)) && py.approx_eq(Length::from_millimeters(y))
+    }
+
+    /// Pompe les retours du fil de travail jusqu’à ce que la
+    /// résolution en vol revienne : délai maximal 10 secondes
+    /// (ADR-0016 C1).
+    fn pomper_les_retours(app: &mut DemoApp) {
+        for _ in 0..2_000 {
+            if app.resolution_en_attente.is_none() {
+                return;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("la résolution du croquis ne revient jamais");
+    }
+
+    /// Le croquis contraint se résout au fil de travail : une entité
+    /// posée, une demande, le cache reçoit les positions résolues
+    /// (ADR-0018 D3).
+    #[test]
+    fn le_croquis_se_resout_au_fil_de_travail() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(10.0),
+                y: Length::from_millimeters(20.0),
+            },
+        })
+        .expect("entité posée");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.resolution_en_attente, Some(1), "résolution demandée");
+        pomper_les_retours(&mut app);
+        let (edition, resultat) = app.croquis_resolu.expect("croquis résolu");
+        assert_eq!(edition, 1, "clé du cache : l’édition");
+        let resolu = resultat.expect("résolution réussie");
+        assert!(proche(resolu.position(0), 10.0, 20.0), "position résolue");
+    }
+
+    /// Le croquis résolu n’est pas renvoyé : une seule résolution par
+    /// édition, aucune nouvelle demande quand le cache est à jour —
+    /// et le croquis vide ne demande rien (ADR-0016 C1,
+    /// ADR-0018 D3).
+    #[test]
+    fn le_croquis_resolu_n_est_pas_reenvoye() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 0, "croquis vide : aucun envoi");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(10.0),
+                y: Length::from_millimeters(20.0),
+            },
+        })
+        .expect("entité posée");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "une résolution envoyée");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "en vol : pas de redemande");
+        pomper_les_retours(&mut app);
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 0, "cache à jour : aucun renvoi");
+        assert!(app.croquis_resolu.is_some(), "le cache est rempli");
+        app.session.undo().expect("undo");
+        app.demande_resolution_esquisse();
+        assert!(app.croquis_resolu.is_none(), "croquis vide : cache vidé");
+        assert_eq!(app.travaux_en_attente, 0, "aucun nouvel envoi");
+    }
+
+    /// La coïncidence traverse le fil de travail : deux points
+    /// distincts se superposent après résolution (ADR-0018 D3).
+    #[test]
+    fn la_coincidence_traverse_le_fil_de_travail() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(30.0),
+                y: Length::from_millimeters(40.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Coincidence { p1: 0, p2: 1 },
+        })
+        .expect("contrainte posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        let (x1, y1) = resolu.position(0).expect("premier point résolu");
+        let (x2, y2) = resolu.position(1).expect("second point résolu");
+        assert!(x1.approx_eq(x2) && y1.approx_eq(y2), "points superposés");
     }
 }
