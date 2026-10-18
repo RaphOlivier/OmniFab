@@ -252,3 +252,32 @@ fn export_inverse_l_axe_y() {
     let texte = String::from_utf8(octets).expect("svg en utf-8");
     assert!(texte.contains("M 0 -5 L 10 -5"), "y inversée : {texte}");
 }
+
+#[test]
+fn export_declare_la_taille_physique() {
+    // En-tête : boîte englobante du document — width/height en
+    // mm, viewBox exact, Y négatifs couverts, aucune translation.
+    let trace = Path2::from_points(vec![point(0.0, 0.0), point(20.0, 10.0)], false);
+    let octets = svg::export(&[trace]).expect("export svg");
+    let texte = String::from_utf8(octets).expect("svg en utf-8");
+    assert!(texte.contains("width=\"20mm\""), "largeur physique : {texte}");
+    assert!(texte.contains("height=\"10mm\""), "hauteur physique : {texte}");
+    assert!(texte.contains("viewBox=\"0 -10 20 10\""), "viewBox : {texte}");
+    assert!(texte.contains("fill=\"none\""), "sans remplissage : {texte}");
+    assert!(texte.contains("stroke-width=\"0.1\""), "trait fin : {texte}");
+}
+
+#[test]
+fn export_relit_aux_memes_dimensions() {
+    // Un lecteur extérieur (ici : notre import) interprète le
+    // document à la bonne taille physique — mêmes coordonnées.
+    let trace = Path2::from_points(vec![point(0.0, 0.0), point(20.0, 10.0)], false);
+    let octets = svg::export(&[trace]).expect("export svg");
+    let traces = svg::import(&octets, &SvgBudgets::default()).expect("relecture svg");
+    assert_eq!(traces.len(), 1);
+    let points = traces[0].points();
+    assert_eq!(points[0].x().millimeters(), 0.0);
+    assert_eq!(points[0].y().millimeters(), 0.0);
+    assert_eq!(points[1].x().millimeters(), 20.0);
+    assert_eq!(points[1].y().millimeters(), 10.0);
+}

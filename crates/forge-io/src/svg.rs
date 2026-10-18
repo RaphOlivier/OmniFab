@@ -86,13 +86,43 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
 /// Exporte les tracés en SVG : chaque tracé devient un élément
 /// `path` (`M`/`L` par sommet, `Z` si fermé), coordonnées en
 /// millimètres, l'axe Y du monde (vers le haut) inversé — le SVG
-/// descend. Le document de sortie est du SVG minimal, sans
-/// métadonnées.
+/// descend. L'en-tête déclare la boîte englobante (`width`/
+/// `height` en mm, `viewBox` exact, aucune translation) : un
+/// lecteur extérieur interprète le document à la bonne taille
+/// physique ; chaque tracé est émis sans remplissage, avec un
+/// trait fin.
 pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
     use std::fmt::Write as _;
-    let mut sortie = String::from(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\">\n",
-    );
+    // Boîte englobante en millimètres, coordonnées SVG (le monde
+    // monte, le SVG descend) : l'en-tête déclare la taille physique
+    // du document ; la viewBox couvre les Y négatifs, aucune
+    // translation — les coordonnées restent exactes.
+    let mut min_x = f64::INFINITY;
+    let mut min_y = f64::INFINITY;
+    let mut max_x = f64::NEG_INFINITY;
+    let mut max_y = f64::NEG_INFINITY;
+    for trace in traces {
+        for point in trace.points() {
+            let x = point.x().millimeters();
+            let y = -point.y().millimeters();
+            min_x = min_x.min(x);
+            min_y = min_y.min(y);
+            max_x = max_x.max(x);
+            max_y = max_y.max(y);
+        }
+    }
+    let mut sortie = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+    if min_x <= max_x {
+        let largeur = max_x - min_x;
+        let hauteur = max_y - min_y;
+        write!(
+            sortie,
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">\n"
+        )
+        .expect("écriture en mémoire infaillible");
+    } else {
+        sortie.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\">\n");
+    }
     for trace in traces {
         let points = trace.points();
         if points.is_empty() {
@@ -115,7 +145,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
         if trace.is_closed() {
             sortie.push_str(" Z");
         }
-        sortie.push_str("\"/>\n");
+        sortie.push_str("\" fill=\"none\" stroke=\"#000000\" stroke-width=\"0.1\"/>\n");
     }
     sortie.push_str("</svg>\n");
     Ok(sortie.into_bytes())
