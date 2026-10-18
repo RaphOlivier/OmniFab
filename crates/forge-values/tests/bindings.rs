@@ -10,8 +10,8 @@ fn assert_code(error: &ValuesError, code: &str) {
 #[test]
 fn chaine_de_liaisons_simple() {
     let mut graph = ValueGraph::new();
-    graph.set_input("width_mm", 800.0);
-    graph.set_input("height_mm", 600.0);
+    graph.set_input("width_mm", 800.0).unwrap();
+    graph.set_input("height_mm", 600.0).unwrap();
     graph
         .set_expression(
             "diagonal",
@@ -22,7 +22,7 @@ fn chaine_de_liaisons_simple() {
     assert!((diagonal - 1000.0).abs() < 1e-9);
 
     // Invalidation paresseuse : la dépendance est recalculée à la lecture.
-    graph.set_input("width_mm", 600.0);
+    graph.set_input("width_mm", 600.0).unwrap();
     let diagonal = graph.value("diagonal").unwrap();
     assert!((diagonal - 848.5281374238571).abs() < 1e-9);
 }
@@ -30,11 +30,11 @@ fn chaine_de_liaisons_simple() {
 #[test]
 fn marquage_dirty_explicite() {
     let mut graph = ValueGraph::new();
-    graph.set_input("a", 1.0);
+    graph.set_input("a", 1.0).unwrap();
     assert_eq!(graph.is_dirty("a"), Some(true));
     graph.value("a").unwrap();
     assert_eq!(graph.is_dirty("a"), Some(false));
-    graph.set_input("a", 2.0);
+    graph.set_input("a", 2.0).unwrap();
     assert_eq!(graph.is_dirty("a"), Some(true));
     assert_eq!(graph.is_dirty("inconnue"), None);
 }
@@ -43,7 +43,7 @@ fn marquage_dirty_explicite() {
 fn erreur_differee_jusqua_la_lecture() {
     // ADR-0002 : une erreur n'apparaît qu'au moment de la lecture.
     let mut graph = ValueGraph::new();
-    graph.set_input("a", 1.0);
+    graph.set_input("a", 1.0).unwrap();
     graph.set_expression("boom", "1 / (a - a)").unwrap();
     assert!(graph.value("boom").is_err());
     // Le reste du graphe reste sain.
@@ -53,7 +53,7 @@ fn erreur_differee_jusqua_la_lecture() {
 #[test]
 fn cycle_detecte_comme_erreur_typee() {
     let mut graph = ValueGraph::new();
-    graph.set_input("b", 1.0);
+    graph.set_input("b", 1.0).unwrap();
     graph.set_expression("a", "b").unwrap();
     graph.set_expression("b", "a").unwrap();
     match graph.value("a") {
@@ -87,7 +87,7 @@ fn expression_invalide() {
 #[test]
 fn division_par_zero() {
     let mut graph = ValueGraph::new();
-    graph.set_input("zero", 0.0);
+    graph.set_input("zero", 0.0).unwrap();
     graph.set_expression("x", "1 / zero").unwrap();
     let error = graph.value("x").unwrap_err();
     assert_code(&error, "OF-VAL-0004");
@@ -103,7 +103,7 @@ fn valeur_inconnue() {
 #[test]
 fn recalculer_tout_expose_les_erreurs() {
     let mut graph = ValueGraph::new();
-    graph.set_input("a", 1.0);
+    graph.set_input("a", 1.0).unwrap();
     graph.set_expression("ok", "a * 2").unwrap();
     graph.set_expression("ko", "1 / (a - a)").unwrap();
     assert!(graph.evaluate_all().is_err());
@@ -116,8 +116,8 @@ fn recalculer_tout_expose_les_erreurs() {
 #[test]
 fn fonctions_et_precedence() {
     let mut graph = ValueGraph::new();
-    graph.set_input("w", 800.0);
-    graph.set_input("h", 600.0);
+    graph.set_input("w", 800.0).unwrap();
+    graph.set_input("h", 600.0).unwrap();
     graph
         .set_expression("ratio", "min(w, h) / max(w, h)")
         .unwrap();
@@ -132,7 +132,7 @@ fn fonctions_et_precedence() {
 fn rejeu_deterministe() {
     let build = || {
         let mut graph = ValueGraph::new();
-        graph.set_input("w", 12.0);
+        graph.set_input("w", 12.0).unwrap();
         graph
             .set_expression("x", "sqrt(w * w + 1) + cos(0)")
             .unwrap();

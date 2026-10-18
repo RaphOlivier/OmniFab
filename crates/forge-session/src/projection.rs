@@ -89,8 +89,12 @@ impl Projection for ValuesProjection {
                 verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
                 let name = champ_str(event, "name")?;
                 let value = champ_nombre(event, "value")?;
-                self.graph.set_input(name, value);
-                Ok(())
+                self.graph
+                    .set_input(name, value)
+                    .map_err(|source| SessionError::ProjectionFailed {
+                        projection: "values".to_string(),
+                        message: source.to_string(),
+                    })
             }
             EVENT_EXPRESSION_SET => {
                 verifie_schema(event, VERSION_SCHEMA_CONNUE)?;

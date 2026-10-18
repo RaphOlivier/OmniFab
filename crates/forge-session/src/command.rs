@@ -48,6 +48,23 @@ pub trait Command {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError>;
 }
 
+/// Vérifie qu'un nom de valeur est référençable par le lexeur
+/// d'expressions (ADR-0016 A8) : `[A-Za-z_][A-Za-z0-9_]*`, à élargir
+/// en Unicode à l'implémentation de l'ADR-0006. Un nom hors de ce
+/// jeu n'est pas créable : il ne serait jamais référençable.
+fn verifie_nom(name: &str) -> Result<(), SessionError> {
+    let mut caracteres = name.chars();
+    let premier = caracteres.next();
+    let premier_valide = premier.is_some_and(|c| c.is_ascii_alphabetic() || c == '_');
+    let reste_valide = caracteres.all(|c| c.is_ascii_alphanumeric() || c == '_');
+    if premier_valide && reste_valide {
+        return Ok(());
+    }
+    Err(SessionError::CommandRejected {
+        reason: format!("le nom « {name} » n'est pas un identifiant référençable"),
+    })
+}
+
 /// Fixe la valeur d'entrée nommée du graphe de liaisons.
 ///
 /// Le nombre est sans unité (ADR-0007 phase 1 : l'unité sera déclarée par
@@ -68,6 +85,7 @@ impl Command for SetInput {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
             });
         }
+        verifie_nom(&self.name)?;
         if !self.value.is_finite() {
             return Err(SessionError::CommandRejected {
                 reason: "la valeur doit être un nombre fini".to_string(),
@@ -103,6 +121,7 @@ impl Command for SetExpression {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
             });
         }
+        verifie_nom(&self.name)?;
         if self.expression.trim().is_empty() {
             return Err(SessionError::CommandRejected {
                 reason: "l'expression ne peut pas être vide".to_string(),

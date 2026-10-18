@@ -31,6 +31,9 @@ fn toutes_les_variantes() -> Vec<ValuesError> {
         ValuesError::UnknownValue {
             name: "x".to_string(),
         },
+        ValuesError::NonFiniteInput {
+            name: "x".to_string(),
+        },
     ]
 }
 

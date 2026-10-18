@@ -44,6 +44,12 @@ pub enum ValuesError {
         /// Nom de la valeur introuvable.
         name: String,
     },
+    /// Écriture d'une valeur d'entrée non finie (OF-VAL-0006).
+    #[error("OF-VAL-0006 : la valeur d'entrée « {name} » doit être un nombre fini")]
+    NonFiniteInput {
+        /// Nom de la valeur fautive.
+        name: String,
+    },
 }
 
 impl ValuesError {
@@ -57,6 +63,7 @@ impl ValuesError {
             Self::InvalidExpression { .. } => "OF-VAL-0003",
             Self::Evaluation { .. } => "OF-VAL-0004",
             Self::UnknownValue { .. } => "OF-VAL-0005",
+            Self::NonFiniteInput { .. } => "OF-VAL-0006",
         }
     }
 }

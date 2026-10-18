@@ -84,7 +84,15 @@ impl ValueGraph {
     }
 
     /// Fixe la valeur d'entrée nommée et marque périmés ses dépendants.
-    pub fn set_input(&mut self, name: &str, value: f64) {
+    /// Un nombre non fini (NaN ou infini) est refusé : l'invariant de
+    /// finitude tient au niveau du graphe, pas seulement de la
+    /// commande (ADR-0016 A8).
+    pub fn set_input(&mut self, name: &str, value: f64) -> Result<(), ValuesError> {
+        if !value.is_finite() {
+            return Err(ValuesError::NonFiniteInput {
+                name: name.to_string(),
+            });
+        }
         let id = self.ensure_node(name);
         let node = match self.nodes.get_mut(&id) {
             Some(node) => node,
@@ -96,6 +104,7 @@ impl ValueGraph {
             self.clear_dependencies(id);
         }
         self.invalidate(id);
+        Ok(())
     }
 
     /// Définit l'expression de la valeur nommée. Les noms référencés doivent

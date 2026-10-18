@@ -24,6 +24,7 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-VAL-0003 | Expression invalide | Syntaxe hors du sous-ensemble déterministe accepté (cf. rustdoc de forge-values) | Corriger la syntaxe |
 | OF-VAL-0004 | Erreur d'évaluation | Division par zéro, racine carrée d'un nombre négatif, résultat non fini (NaN ou infini) | Corriger les données d'entrée ou l'expression |
 | OF-VAL-0005 | Valeur inconnue | Lecture d'un nom absent du graphe | Vérifier le nom demandé |
+| OF-VAL-0006 | Valeur d'entrée non finie | Écriture d'un NaN ou d'un infini par set_input | Corriger la valeur d'entrée |
 
 ## forge-doc (DOC) — conteneur et journal d'événements
 
@@ -49,7 +50,7 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 
 | Code | Signification | Cause probable | Action corrective |
 |---|---|---|---|
-| OF-SES-0001 | Commande refusée à la planification | Données invalides : nom vide, expression vide, nombre non fini, format d'import non supporté | Corriger la commande |
+| OF-SES-0001 | Commande refusée à la planification | Données invalides : nom vide ou hors du jeu du lexeur, expression vide, nombre non fini, format d'import non supporté | Corriger la commande |
 | OF-SES-0002 | Rejet par une projection | L'événement viole une règle du domaine (ex. expression référençant une valeur inconnue) | Corriger la commande ; le journal est intact |
 | OF-SES-0003 | Rien à annuler | Undo demandé alors que tout est déjà annulé | — |
 | OF-SES-0004 | Rien à rétablir | Redo demandé sans événement défait en attente | — |

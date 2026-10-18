@@ -525,6 +525,42 @@ fn refus_d_un_blob_retire_les_blobs_deposes() {
     );
 }
 
+/// Un nom qui n'est pas référençable par le lexeur d'expressions
+/// (espace, accent, chiffre initial) est refusé au plan : plus
+/// d'entrée créable mais jamais référençable (ADR-0016 A8).
+#[test]
+fn nom_non_referencable_refuse_au_plan() {
+    let mut session = Session::new("tests");
+    for name in ["largeur mm", "largéur", "1argeur"] {
+        let erreur = session
+            .execute(&SetInput {
+                name: name.into(),
+                value: 1.0,
+            })
+            .unwrap_err();
+        assert_eq!(erreur.code(), "OF-SES-0001");
+        let erreur = session
+            .execute(&SetExpression {
+                name: name.into(),
+                expression: "1".into(),
+            })
+            .unwrap_err();
+        assert_eq!(erreur.code(), "OF-SES-0001");
+    }
+    assert_eq!(
+        session.document().events().len(),
+        0,
+        "aucun événement écrit"
+    );
+    session
+        .execute(&SetInput {
+            name: "_x1".into(),
+            value: 1.0,
+        })
+        .expect("tiret bas initial et chiffres : identifiant valide");
+    assert_eq!(session.document().events().len(), 1);
+}
+
 /// L'identifiant de transaction est horodaté par l'horloge du document,
 /// pas par l'horloge système : une session à horloge figée attribue des
 /// transactions reproductibles (ADR-0016 A7).
