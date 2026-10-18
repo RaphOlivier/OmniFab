@@ -118,7 +118,10 @@ fn decalage_viewbox(bytes: &[u8], taille: usvg::Size) -> (f64, f64) {
 fn lis_viewbox(bytes: &[u8]) -> Option<(f64, f64, f64, f64)> {
     let texte = std::str::from_utf8(bytes).ok()?;
     let debut = texte.find("viewBox")?;
-    let suite = texte[debut + "viewBox".len()..].trim_start().strip_prefix('=')?.trim_start();
+    let suite = texte[debut + "viewBox".len()..]
+        .trim_start()
+        .strip_prefix('=')?
+        .trim_start();
     let separateur = suite.chars().next()?;
     if separateur != '"' && separateur != '\'' {
         return None;
