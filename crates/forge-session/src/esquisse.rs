@@ -1,0 +1,1038 @@
+//! Croquis contraint 2D de la session (ADR-0018, jalon 2 phase D) :
+//! entités, contraintes et graines de position au journal, positions
+//! résolues comme état dérivé jamais sérialisé.
+//!
+//! - **journal** : trois types d'événements (`sketch.entity.added`,
+//!   `sketch.constraint.added`, `sketch.point.moved`), identifiants
+//!   séquentiels émis par la commande — l'ordre d'ajout est figé au
+//!   journal et fait foi pour la reproductibilité du rejeu ;
+//! - **graines** : positions de départ des points, posées par les
+//!   glissements (`MovePoint`) — jamais la vérité : la vérité =
+//!   entités + contraintes + dernières graines, toutes au journal ;
+//! - **résolution dérivée** : [`EsquisseProjection::resoudre`]
+//!   reconstruit le système depuis le journal et résout via un
+//!   [`Solveur2D`] **injecté** (ADR-0018 D3 : forge-session
+//!   n'instancie jamais le solveur natif, frontière LGPL de
+//!   l'ADR-0013) — aucune position résolue n'est jamais écrite ni
+//!   sérialisée.
+
+use crate::SessionError;
+use crate::command::{
+    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
+};
+use crate::projection::{Projection, champ_entier, champ_nombre, champ_str, verifie_schema};
+use forge_doc::NewEvent;
+use forge_gcs::{
+    Algorithme, Contrainte, GcsError, IdCercle, IdLigne, IdPoint, Solveur2D, TagContrainte,
+};
+use forge_units::{Angle, Length};
+use std::collections::BTreeMap;
+
+/// Version de schéma des trois types d'événement du croquis (ADR-0018).
+const VERSION_SCHEMA_ESQUISSE: u32 = 1;
+
+/// Genre d'une entité du croquis (sélection et affichage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GenreEntite {
+    /// Point libre.
+    Point,
+    /// Ligne entre deux points.
+    Ligne,
+    /// Cercle par centre et rayon.
+    Cercle,
+    /// Arc par centre, extrémités et angles.
+    Arc,
+}
+
+/// Entité géométrique du croquis (ADR-0018 D1), sérialisable dans
+/// l'événement `sketch.entity.added` : les coordonnées et cotes sont
+/// des newtypes de forge-units, jamais de `f64` nu.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EntiteEsquisse {
+    /// Point libre.
+    Point {
+        /// Abscisse de départ (millimètres).
+        x: Length,
+        /// Ordonnée de départ (millimètres).
+        y: Length,
+    },
+    /// Ligne entre deux points existants (extrémités partagées).
+    Ligne {
+        /// Premier point.
+        p1: u32,
+        /// Second point.
+        p2: u32,
+    },
+    /// Cercle par centre et rayon.
+    Cercle {
+        /// Point centre.
+        centre: u32,
+        /// Rayon.
+        rayon: Length,
+    },
+    /// Arc par centre, extrémités, rayon et angles aux extrémités.
+    Arc {
+        /// Point centre.
+        centre: u32,
+        /// Point de début.
+        debut: u32,
+        /// Point de fin.
+        fin: u32,
+        /// Rayon.
+        rayon: Length,
+        /// Angle de début (radians).
+        angle_debut: Angle,
+        /// Angle de fin (radians).
+        angle_fin: Angle,
+    },
+}
+
+/// Contrainte géométrique du croquis (ADR-0018 D1) : les onze genres du
+/// trait `forge_gcs::Contrainte` plus l'ancrage `PointFixe` (pont vers
+/// `Solveur2D::fixer_point`). Les cotes sont des newtypes.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContrainteEsquisse {
+    /// Coïncidence de deux points.
+    Coincidence {
+        /// Premier point.
+        p1: u32,
+        /// Second point.
+        p2: u32,
+    },
+    /// Ligne horizontale.
+    Horizontale {
+        /// Ligne contrainte.
+        ligne: u32,
+    },
+    /// Ligne verticale.
+    Verticale {
+        /// Ligne contrainte.
+        ligne: u32,
+    },
+    /// Distance entre deux points (cote, pilotable en phase E).
+    Distance {
+        /// Premier point.
+        p1: u32,
+        /// Second point.
+        p2: u32,
+        /// Valeur de la cote.
+        valeur: Length,
+    },
+    /// Angle entre deux lignes (cote, pilotable en phase E).
+    Angle {
+        /// Première ligne.
+        ligne1: u32,
+        /// Seconde ligne.
+        ligne2: u32,
+        /// Valeur de l'angle.
+        valeur: Angle,
+    },
+    /// Deux lignes de même longueur.
+    MemeLongueur {
+        /// Première ligne.
+        ligne1: u32,
+        /// Seconde ligne.
+        ligne2: u32,
+    },
+    /// Point sur une ligne.
+    PointSurLigne {
+        /// Point contraint.
+        point: u32,
+        /// Ligne support.
+        ligne: u32,
+    },
+    /// Deux lignes parallèles.
+    Paralleles {
+        /// Première ligne.
+        ligne1: u32,
+        /// Seconde ligne.
+        ligne2: u32,
+    },
+    /// Deux lignes perpendiculaires.
+    Perpendiculaires {
+        /// Première ligne.
+        ligne1: u32,
+        /// Seconde ligne.
+        ligne2: u32,
+    },
+    /// Rayon d'un cercle (cote, pilotable en phase E).
+    RayonCercle {
+        /// Cercle contraint.
+        cercle: u32,
+        /// Valeur du rayon.
+        valeur: Length,
+    },
+    /// Point sur un cercle.
+    PointSurCercle {
+        /// Point contraint.
+        point: u32,
+        /// Cercle support.
+        cercle: u32,
+    },
+    /// Point fixé : ancrage du croquis (pont vers
+    /// `Solveur2D::fixer_point`, ADR-0018 D1).
+    PointFixe {
+        /// Point ancré.
+        point: u32,
+    },
+}
+
+/// Sérialise une entité pour l'événement `sketch.entity.added` :
+/// schéma plat v1 — `genre`, `id`, puis les champs de l'entité
+/// (coordonnées en millimètres, angles en radians).
+pub(crate) fn entite_en_json(id: u32, entite: &EntiteEsquisse) -> serde_json::Value {
+    match entite {
+        EntiteEsquisse::Point { x, y } => serde_json::json!({
+            "genre": "point",
+            "id": id,
+            "x": x.millimeters(),
+            "y": y.millimeters(),
+        }),
+        EntiteEsquisse::Ligne { p1, p2 } => serde_json::json!({
+            "genre": "ligne",
+            "id": id,
+            "p1": p1,
+            "p2": p2,
+        }),
+        EntiteEsquisse::Cercle { centre, rayon } => serde_json::json!({
+            "genre": "cercle",
+            "id": id,
+            "centre": centre,
+            "rayon": rayon.millimeters(),
+        }),
+        EntiteEsquisse::Arc {
+            centre,
+            debut,
+            fin,
+            rayon,
+            angle_debut,
+            angle_fin,
+        } => serde_json::json!({
+            "genre": "arc",
+            "id": id,
+            "centre": centre,
+            "debut": debut,
+            "fin": fin,
+            "rayon": rayon.millimeters(),
+            "angle_debut": angle_debut.radians(),
+            "angle_fin": angle_fin.radians(),
+        }),
+    }
+}
+
+/// Sérialise une contrainte pour l'événement `sketch.constraint.added` :
+/// schéma plat v1 — `genre`, `id`, puis les champs de la contrainte
+/// (cotes en millimètres, angles en radians).
+pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> serde_json::Value {
+    match contrainte {
+        ContrainteEsquisse::Coincidence { p1, p2 } => serde_json::json!({
+            "genre": "coincidence",
+            "id": id,
+            "p1": p1,
+            "p2": p2,
+        }),
+        ContrainteEsquisse::Horizontale { ligne } => serde_json::json!({
+            "genre": "horizontale",
+            "id": id,
+            "ligne": ligne,
+        }),
+        ContrainteEsquisse::Verticale { ligne } => serde_json::json!({
+            "genre": "verticale",
+            "id": id,
+            "ligne": ligne,
+        }),
+        ContrainteEsquisse::Distance {
+            p1,
+            p2,
+            valeur,
+        } => serde_json::json!({
+            "genre": "distance",
+            "id": id,
+            "p1": p1,
+            "p2": p2,
+            "valeur": valeur.millimeters(),
+        }),
+        ContrainteEsquisse::Angle {
+            ligne1,
+            ligne2,
+            valeur,
+        } => serde_json::json!({
+            "genre": "angle",
+            "id": id,
+            "ligne1": ligne1,
+            "ligne2": ligne2,
+            "valeur": valeur.radians(),
+        }),
+        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => serde_json::json!({
+            "genre": "meme-longueur",
+            "id": id,
+            "ligne1": ligne1,
+            "ligne2": ligne2,
+        }),
+        ContrainteEsquisse::PointSurLigne { point, ligne } => serde_json::json!({
+            "genre": "point-sur-ligne",
+            "id": id,
+            "point": point,
+            "ligne": ligne,
+        }),
+        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => serde_json::json!({
+            "genre": "paralleles",
+            "id": id,
+            "ligne1": ligne1,
+            "ligne2": ligne2,
+        }),
+        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => serde_json::json!({
+            "genre": "perpendiculaires",
+            "id": id,
+            "ligne1": ligne1,
+            "ligne2": ligne2,
+        }),
+        ContrainteEsquisse::RayonCercle { cercle, valeur } => serde_json::json!({
+            "genre": "rayon-cercle",
+            "id": id,
+            "cercle": cercle,
+            "valeur": valeur.millimeters(),
+        }),
+        ContrainteEsquisse::PointSurCercle { point, cercle } => serde_json::json!({
+            "genre": "point-sur-cercle",
+            "id": id,
+            "point": point,
+            "cercle": cercle,
+        }),
+        ContrainteEsquisse::PointFixe { point } => serde_json::json!({
+            "genre": "point-fixe",
+            "id": id,
+            "point": point,
+        }),
+    }
+}
+
+/// Relit une entité depuis l'événement `sketch.entity.added` (le
+/// champ `genre` choisit la variante, chaque champ est revalidé par
+/// la projection après lecture).
+fn entite_de_journal(event: &NewEvent) -> Result<(u32, EntiteEsquisse), SessionError> {
+    let genre = champ_str(event, "genre")?;
+    let id = champ_id(event, "id")?;
+    let entite = match genre {
+        "point" => EntiteEsquisse::Point {
+            x: Length::from_millimeters(champ_nombre(event, "x")?),
+            y: Length::from_millimeters(champ_nombre(event, "y")?),
+        },
+        "ligne" => EntiteEsquisse::Ligne {
+            p1: champ_id(event, "p1")?,
+            p2: champ_id(event, "p2")?,
+        },
+        "cercle" => EntiteEsquisse::Cercle {
+            centre: champ_id(event, "centre")?,
+            rayon: Length::from_millimeters(champ_nombre(event, "rayon")?),
+        },
+        "arc" => EntiteEsquisse::Arc {
+            centre: champ_id(event, "centre")?,
+            debut: champ_id(event, "debut")?,
+            fin: champ_id(event, "fin")?,
+            rayon: Length::from_millimeters(champ_nombre(event, "rayon")?),
+            angle_debut: Angle::from_radians(champ_nombre(event, "angle_debut")?),
+            angle_fin: Angle::from_radians(champ_nombre(event, "angle_fin")?),
+        },
+        _ => {
+            return Err(SessionError::InvalidEventData {
+                event_type: event.event_type.clone(),
+                reason: format!("genre d'entité inconnu : « {genre} »"),
+            })
+        }
+    };
+    Ok((id, entite))
+}
+
+/// Relit une contrainte depuis l'événement `sketch.constraint.added`.
+fn contrainte_de_journal(event: &NewEvent) -> Result<(u32, ContrainteEsquisse), SessionError> {
+    let genre = champ_str(event, "genre")?;
+    let id = champ_id(event, "id")?;
+    let contrainte = match genre {
+        "coincidence" => ContrainteEsquisse::Coincidence {
+            p1: champ_id(event, "p1")?,
+            p2: champ_id(event, "p2")?,
+        },
+        "horizontale" => ContrainteEsquisse::Horizontale {
+            ligne: champ_id(event, "ligne")?,
+        },
+        "verticale" => ContrainteEsquisse::Verticale {
+            ligne: champ_id(event, "ligne")?,
+        },
+        "distance" => ContrainteEsquisse::Distance {
+            p1: champ_id(event, "p1")?,
+            p2: champ_id(event, "p2")?,
+            valeur: Length::from_millimeters(champ_nombre(event, "valeur")?),
+        },
+        "angle" => ContrainteEsquisse::Angle {
+            ligne1: champ_id(event, "ligne1")?,
+            ligne2: champ_id(event, "ligne2")?,
+            valeur: Angle::from_radians(champ_nombre(event, "valeur")?),
+        },
+        "meme-longueur" => ContrainteEsquisse::MemeLongueur {
+            ligne1: champ_id(event, "ligne1")?,
+            ligne2: champ_id(event, "ligne2")?,
+        },
+        "point-sur-ligne" => ContrainteEsquisse::PointSurLigne {
+            point: champ_id(event, "point")?,
+            ligne: champ_id(event, "ligne")?,
+        },
+        "paralleles" => ContrainteEsquisse::Paralleles {
+            ligne1: champ_id(event, "ligne1")?,
+            ligne2: champ_id(event, "ligne2")?,
+        },
+        "perpendiculaires" => ContrainteEsquisse::Perpendiculaires {
+            ligne1: champ_id(event, "ligne1")?,
+            ligne2: champ_id(event, "ligne2")?,
+        },
+        "rayon-cercle" => ContrainteEsquisse::RayonCercle {
+            cercle: champ_id(event, "cercle")?,
+            valeur: Length::from_millimeters(champ_nombre(event, "valeur")?),
+        },
+        "point-sur-cercle" => ContrainteEsquisse::PointSurCercle {
+            point: champ_id(event, "point")?,
+            cercle: champ_id(event, "cercle")?,
+        },
+        "point-fixe" => ContrainteEsquisse::PointFixe {
+            point: champ_id(event, "point")?,
+        },
+        _ => {
+            return Err(SessionError::InvalidEventData {
+                event_type: event.event_type.clone(),
+                reason: format!("genre de contrainte inconnu : « {genre} »"),
+            })
+        }
+    };
+    Ok((id, contrainte))
+}
+
+/// Lit un champ identifiant (entier non négatif tenant dans un `u32`)
+/// du schéma v1.
+fn champ_id(event: &NewEvent, champ: &str) -> Result<u32, SessionError> {
+    let valeur = champ_entier(event, champ)?;
+    u32::try_from(valeur).map_err(|_| SessionError::InvalidEventData {
+        event_type: event.event_type.clone(),
+        reason: format!("champ « {champ} » hors des bornes de u32"),
+    })
+}
+
+/// Genre d'une entité.
+fn genre_de(entite: &EntiteEsquisse) -> GenreEntite {
+    match entite {
+        EntiteEsquisse::Point { .. } => GenreEntite::Point,
+        EntiteEsquisse::Ligne { .. } => GenreEntite::Ligne,
+        EntiteEsquisse::Cercle { .. } => GenreEntite::Cercle,
+        EntiteEsquisse::Arc { .. } => GenreEntite::Arc,
+    }
+}
+
+/// Erreur d'identifiant absent du croquis reconstruit dans le solveur.
+fn manquant(entite: &str, id: u32) -> GcsError {
+    GcsError::IdInconnu {
+        contexte: format!("{entite} {id} n'existe pas dans le croquis reconstruit"),
+    }
+}
+
+/// Reconstruction du croquis dans le solveur : identifiants solveur
+/// par identifiant de croquis (l'ordre d'ajout fait foi).
+#[derive(Debug, Default)]
+struct Reconstruction {
+    /// Points du croquis.
+    points: BTreeMap<u32, IdPoint>,
+    /// Lignes du croquis.
+    lignes: BTreeMap<u32, IdLigne>,
+    /// Cercles du croquis.
+    cercles: BTreeMap<u32, IdCercle>,
+}
+
+impl Reconstruction {
+    /// Identifiant solveur d'un point du croquis.
+    fn id_point(&self, id: u32) -> Result<IdPoint, GcsError> {
+        self.points
+            .get(&id)
+            .copied()
+            .ok_or_else(|| manquant("le point", id))
+    }
+
+    /// Identifiant solveur d'une ligne du croquis.
+    fn id_ligne(&self, id: u32) -> Result<IdLigne, GcsError> {
+        self.lignes
+            .get(&id)
+            .copied()
+            .ok_or_else(|| manquant("la ligne", id))
+    }
+
+    /// Identifiant solveur d'un cercle du croquis.
+    fn id_cercle(&self, id: u32) -> Result<IdCercle, GcsError> {
+        self.cercles
+            .get(&id)
+            .copied()
+            .ok_or_else(|| manquant("le cercle", id))
+    }
+}
+
+/// État dérivé d'un croquis résolu (ADR-0018 D3) : positions des
+/// points et diagnostic. Jamais sérialisé : le rejeu du journal le
+/// recalcule toujours.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct CroquisResolu {
+    /// Positions résolues des points, par identifiant de croquis.
+    positions: BTreeMap<u32, (Length, Length)>,
+    /// Degrés de liberté restants (0 : croquis entièrement contraint).
+    dof: usize,
+    /// Reproductibilité garantie par l'arène (FreeCAD #33399).
+    reproductible: bool,
+    /// Tags des contraintes conflictuelles (surentraînement).
+    conflictuelles: Vec<TagContrainte>,
+    /// Tags des contraintes redondantes.
+    redondantes: Vec<TagContrainte>,
+    /// Tags des contraintes partiellement redondantes.
+    partiellement_redondantes: Vec<TagContrainte>,
+}
+
+impl CroquisResolu {
+    /// Position résolue d'un point du croquis, ou `None` si ce n'est
+    /// pas un point connu.
+    pub fn position(&self, id: u32) -> Option<(Length, Length)> {
+        self.positions.get(&id).copied()
+    }
+
+    /// Degrés de liberté restants (0 : croquis entièrement contraint).
+    pub fn dof(&self) -> usize {
+        self.dof
+    }
+
+    /// Vrai si la reproductibilité des positions est garantie
+    /// (adresses de paramètres croissantes, FreeCAD #33399).
+    pub fn reproductible(&self) -> bool {
+        self.reproductible
+    }
+
+    /// Tags des contraintes conflictuelles (surentraînement).
+    pub fn conflictuelles(&self) -> &[TagContrainte] {
+        &self.conflictuelles
+    }
+
+    /// Tags des contraintes redondantes.
+    pub fn redondantes(&self) -> &[TagContrainte] {
+        &self.redondantes
+    }
+
+    /// Tags des contraintes partiellement redondantes.
+    pub fn partiellement_redondantes(&self) -> &[TagContrainte] {
+        &self.partiellement_redondantes
+    }
+}
+
+/// Projection du croquis contraint (ADR-0018) : entités, contraintes
+/// et graines de position rejouées depuis le journal ; les positions
+/// résolues sont un état dérivé, calculé à la demande via
+/// [`EsquisseProjection::resoudre`] et jamais sérialisé.
+#[derive(Debug, Default)]
+pub struct EsquisseProjection {
+    /// Entités du croquis, dans l'ordre d'ajout (l'identifiant est
+    /// l'indice d'ajout, ADR-0018 D1).
+    entites: Vec<(u32, EntiteEsquisse)>,
+    /// Contraintes du croquis, dans l'ordre d'ajout.
+    contraintes: Vec<(u32, ContrainteEsquisse)>,
+    /// Dernières positions de départ des points, posées par les
+    /// glissements (identifiant du point → position germe).
+    graines: BTreeMap<u32, (Length, Length)>,
+    /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
+    unknown: Vec<String>,
+    /// Numéro d'édition : croît à chaque événement appliqué, jamais
+    /// remis à zéro (clé de cache monotone pour l'application).
+    edition: u64,
+}
+
+impl EsquisseProjection {
+    /// Nouvelle projection vide.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Entités du croquis, dans l'ordre d'ajout au journal.
+    pub fn entites(&self) -> &[(u32, EntiteEsquisse)] {
+        &self.entites
+    }
+
+    /// Contraintes du croquis, dans l'ordre d'ajout au journal.
+    pub fn contraintes(&self) -> &[(u32, ContrainteEsquisse)] {
+        &self.contraintes
+    }
+
+    /// Genre d'une entité du croquis, ou `None` si l'identifiant est
+    /// inconnu.
+    pub fn genre_entite(&self, id: u32) -> Option<GenreEntite> {
+        self.entites
+            .iter()
+            .find(|(identifiant, _)| *identifiant == id)
+            .map(|(_, entite)| genre_de(entite))
+    }
+
+    /// Prochain identifiant d'entité (séquentiel : l'ordre d'ajout
+    /// au journal fait foi, ADR-0018 D1).
+    pub fn prochaine_id_entite(&self) -> u32 {
+        self.entites.len() as u32
+    }
+
+    /// Prochain identifiant de contrainte (séquentiel).
+    pub fn prochaine_id_contrainte(&self) -> u32 {
+        self.contraintes.len() as u32
+    }
+
+    /// Numéro d'édition du croquis : croît à chaque événement appliqué
+    /// et n'est jamais remis à zéro — deux contenus différents du
+    /// croquis portent toujours des éditions différentes.
+    pub fn edition(&self) -> u64 {
+        self.edition
+    }
+
+    /// Types d'événements ignorés par cette projection.
+    pub fn unknown_types(&self) -> &[String] {
+        &self.unknown
+    }
+
+    /// Raison du refus d'une entité au plan (ADR-0018 D2), ou `None`
+    /// si elle est valide contre l'état courant.
+    pub fn raison_refus_entite(&self, entite: &EntiteEsquisse) -> Option<String> {
+        match entite {
+            EntiteEsquisse::Point { x, y } => {
+                Self::raison_finie(x.millimeters(), "l'abscisse du point")?;
+                Self::raison_finie(y.millimeters(), "l'ordonnée du point")
+            }
+            EntiteEsquisse::Ligne { p1, p2 } => {
+                self.raison_deux_points(*p1, *p2)?;
+                if p1 == p2 {
+                    return Some("une ligne relie deux points distincts".to_string());
+                }
+                None
+            }
+            EntiteEsquisse::Cercle { centre, rayon } => {
+                self.raison_point(*centre)?;
+                Self::raison_positive(rayon.millimeters(), "le rayon du cercle")
+            }
+            EntiteEsquisse::Arc {
+                centre,
+                debut,
+                fin,
+                rayon,
+                angle_debut,
+                angle_fin,
+            } => {
+                self.raison_point(*centre)?;
+                self.raison_point(*debut)?;
+                self.raison_point(*fin)?;
+                Self::raison_positive(rayon.millimeters(), "le rayon de l'arc")?;
+                Self::raison_angle(angle_debut.radians())?;
+                Self::raison_angle(angle_fin.radians())
+            }
+        }
+    }
+
+    /// Raison du refus d'une contrainte au plan (ADR-0018 D2), ou
+    /// `None` si elle est valide contre l'état courant.
+    pub fn raison_refus_contrainte(&self, contrainte: &ContrainteEsquisse) -> Option<String> {
+        match contrainte {
+            ContrainteEsquisse::Coincidence { p1, p2 } => {
+                self.raison_deux_points(*p1, *p2)?;
+                if p1 == p2 {
+                    return Some(
+                        "une coïncidence relie deux points distincts".to_string(),
+                    );
+                }
+                None
+            }
+            ContrainteEsquisse::Horizontale { ligne } => self.raison_ligne(*ligne),
+            ContrainteEsquisse::Verticale { ligne } => self.raison_ligne(*ligne),
+            ContrainteEsquisse::Distance {
+                p1,
+                p2,
+                valeur,
+            } => {
+                self.raison_deux_points(*p1, *p2)?;
+                if p1 == p2 {
+                    return Some("une cote de distance relie deux points distincts".to_string());
+                }
+                Self::raison_positive(valeur.millimeters(), "la distance")
+            }
+            ContrainteEsquisse::Angle {
+                ligne1,
+                ligne2,
+                valeur,
+            } => {
+                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if ligne1 == ligne2 {
+                    return Some("une cote d'angle relie deux lignes distinctes".to_string());
+                }
+                Self::raison_angle(valeur.radians())
+            }
+            ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
+                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if ligne1 == ligne2 {
+                    return Some(
+                        "une égalité de longueur relie deux lignes distinctes".to_string(),
+                    );
+                }
+                None
+            }
+            ContrainteEsquisse::PointSurLigne { point, ligne } => {
+                self.raison_point(*point)?;
+                self.raison_ligne(*ligne)
+            }
+            ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
+                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if ligne1 == ligne2 {
+                    return Some("un parallélisme relie deux lignes distinctes".to_string());
+                }
+                None
+            }
+            ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
+                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if ligne1 == ligne2 {
+                    return Some(
+                        "une perpendicularité relie deux lignes distinctes".to_string(),
+                    );
+                }
+                None
+            }
+            ContrainteEsquisse::RayonCercle { cercle, valeur } => {
+                self.raison_cercle(*cercle)?;
+                Self::raison_positive(valeur.millimeters(), "le rayon")
+            }
+            ContrainteEsquisse::PointSurCercle { point, cercle } => {
+                self.raison_point(*point)?;
+                self.raison_cercle(*cercle)
+            }
+            ContrainteEsquisse::PointFixe { point } => self.raison_point(*point),
+        }
+    }
+
+    /// Raison du refus d'un déplacement de point au plan (ADR-0018 D2),
+    /// ou `None` si le point existe et les coordonnées sont finies.
+    pub fn raison_refus_deplacement(&self, point: u32, x: Length, y: Length) -> Option<String> {
+        self.raison_point(point)?;
+        Self::raison_finie(x.millimeters(), "l'abscisse du point")?;
+        Self::raison_finie(y.millimeters(), "l'ordonnée du point")
+    }
+
+    /// Résout le croquis : reconstruit le système depuis le journal
+    /// (ordre d'ajout figé, reproductibilité garantie par l'arène
+    /// de forge-gcs) et le résout via le solveur **injecté**
+    /// (ADR-0018 D3 : forge-session n'instancie jamais le solveur
+    /// natif). Algorithme par défaut : DogLeg, le plus robuste.
+    pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
+        if self.entites.is_empty() {
+            return Ok(CroquisResolu {
+                positions: BTreeMap::new(),
+                dof: 0,
+                reproductible: true,
+                conflictuelles: Vec::new(),
+                redondantes: Vec::new(),
+                partiellement_redondantes: Vec::new(),
+            });
+        }
+        let mut reconstruction = Reconstruction::default();
+        for (id, entite) in &self.entites {
+            match entite {
+                EntiteEsquisse::Point { x, y } => {
+                    let graine = self.graines.get(id).copied().unwrap_or((*x, *y));
+                    let identifiant = solveur.ajouter_point(graine.0, graine.1)?;
+                    reconstruction.points.insert(*id, identifiant);
+                }
+                EntiteEsquisse::Ligne { p1, p2 } => {
+                    let identifiant = solveur.ajouter_ligne(
+                        reconstruction.id_point(*p1)?,
+                        reconstruction.id_point(*p2)?,
+                    )?;
+                    reconstruction.lignes.insert(*id, identifiant);
+                }
+                EntiteEsquisse::Cercle { centre, rayon } => {
+                    let identifiant = solveur.ajouter_cercle(
+                        reconstruction.id_point(*centre)?,
+                        *rayon,
+                    )?;
+                    reconstruction.cercles.insert(*id, identifiant);
+                }
+                EntiteEsquisse::Arc {
+                    centre,
+                    debut,
+                    fin,
+                    rayon,
+                    angle_debut,
+                    angle_fin,
+                } => {
+                    // Aucune contrainte ne référence un arc en v1 : son
+                    // identifiant solveur n'a pas besoin d'être gardé.
+                    solveur.ajouter_arc(
+                        reconstruction.id_point(*centre)?,
+                        reconstruction.id_point(*debut)?,
+                        reconstruction.id_point(*fin)?,
+                        *rayon,
+                        *angle_debut,
+                        *angle_fin,
+                    )?;
+                }
+            }
+        }
+        for (_, contrainte) in &self.contraintes {
+            applique_contrainte(solveur, &reconstruction, contrainte)?;
+        }
+        solveur.resoudre(Algorithme::DogLeg)?;
+        let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
+        let mut positions = BTreeMap::new();
+        for (id, identifiant) in &reconstruction.points {
+            let position = solveur.position_point(*identifiant)?;
+            positions.insert(*id, position);
+        }
+        Ok(CroquisResolu {
+            positions,
+            dof: diagnostic.dof(),
+            reproductible: diagnostic.reproductible(),
+            conflictuelles: diagnostic.conflictuelles().to_vec(),
+            redondantes: diagnostic.redondantes().to_vec(),
+            partiellement_redondantes: diagnostic.partiellement_redondantes().to_vec(),
+        })
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas un point connu.
+    fn raison_point(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Point) {
+            None
+        } else {
+            Some(format!("le point {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas une ligne connue.
+    fn raison_ligne(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Ligne) {
+            None
+        } else {
+            Some(format!("la ligne {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas un cercle connu.
+    fn raison_cercle(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Cercle) {
+            None
+        } else {
+            Some(format!("le cercle {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle l'un des deux identifiants n'est pas un
+    /// point connu.
+    fn raison_deux_points(&self, p1: u32, p2: u32) -> Option<String> {
+        self.raison_point(p1).or_else(|| self.raison_point(p2))
+    }
+
+    /// Raison pour laquelle l'un des deux identifiants n'est pas une
+    /// ligne connue.
+    fn raison_deux_lignes(&self, ligne1: u32, ligne2: u32) -> Option<String> {
+        self.raison_ligne(ligne1)
+            .or_else(|| self.raison_ligne(ligne2))
+    }
+
+    /// Raison pour laquelle une coordonnée n'est pas un nombre fini.
+    fn raison_finie(valeur: f64, nom: &str) -> Option<String> {
+        if valeur.is_finite() {
+            None
+        } else {
+            Some(format!("{nom} doit être un nombre fini"))
+        }
+    }
+
+    /// Raison pour laquelle une cote n'est pas finie et strictement
+    /// positive.
+    fn raison_positive(valeur: f64, nom: &str) -> Option<String> {
+        if valeur.is_finite() && valeur > 0.0 {
+            None
+        } else {
+            Some(format!("{nom} doit être finie et strictement positive"))
+        }
+    }
+
+    /// Raison pour laquelle un angle n'est pas fini.
+    fn raison_angle(valeur: f64) -> Option<String> {
+        if valeur.is_finite() {
+            None
+        } else {
+            Some("l'angle doit être fini".to_string())
+        }
+    }
+}
+
+/// Traduit une contrainte du croquis vers le solveur et l'ajoute
+/// (ADR-0018 D1 : les onze genres du trait plus l'ancrage `PointFixe`).
+fn applique_contrainte(
+    solveur: &mut dyn Solveur2D,
+    reconstruction: &Reconstruction,
+    contrainte: &ContrainteEsquisse,
+) -> Result<(), GcsError> {
+    match contrainte {
+        ContrainteEsquisse::Coincidence { p1, p2 } => {
+            solveur.ajouter_contrainte(Contrainte::Coincidence {
+                p1: reconstruction.id_point(*p1)?,
+                p2: reconstruction.id_point(*p2)?,
+            })?;
+        }
+        ContrainteEsquisse::Horizontale { ligne } => {
+            solveur.ajouter_contrainte(Contrainte::Horizontale {
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+        }
+        ContrainteEsquisse::Verticale { ligne } => {
+            solveur.ajouter_contrainte(Contrainte::Verticale {
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+        }
+        ContrainteEsquisse::Distance {
+            p1,
+            p2,
+            valeur,
+        } => {
+            solveur.ajouter_contrainte(Contrainte::Distance {
+                p1: reconstruction.id_point(*p1)?,
+                p2: reconstruction.id_point(*p2)?,
+                valeur: *valeur,
+            })?;
+        }
+        ContrainteEsquisse::Angle {
+            ligne1,
+            ligne2,
+            valeur,
+        } => {
+            solveur.ajouter_contrainte(Contrainte::Angle {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+                valeur: *valeur,
+            })?;
+        }
+        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
+            solveur.ajouter_contrainte(Contrainte::MemeLongueur {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+        }
+        ContrainteEsquisse::PointSurLigne { point, ligne } => {
+            solveur.ajouter_contrainte(Contrainte::PointSurLigne {
+                point: reconstruction.id_point(*point)?,
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+        }
+        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
+            solveur.ajouter_contrainte(Contrainte::Paralleles {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+        }
+        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
+            solveur.ajouter_contrainte(Contrainte::Perpendiculaires {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+        }
+        ContrainteEsquisse::RayonCercle { cercle, valeur } => {
+            solveur.ajouter_contrainte(Contrainte::RayonCercle {
+                cercle: reconstruction.id_cercle(*cercle)?,
+                valeur: *valeur,
+            })?;
+        }
+        ContrainteEsquisse::PointSurCercle { point, cercle } => {
+            solveur.ajouter_contrainte(Contrainte::PointSurCercle {
+                point: reconstruction.id_point(*point)?,
+                cercle: reconstruction.id_cercle(*cercle)?,
+            })?;
+        }
+        ContrainteEsquisse::PointFixe { point } => {
+            solveur.fixer_point(reconstruction.id_point(*point)?)?;
+        }
+    }
+    Ok(())
+}
+
+impl Projection for EsquisseProjection {
+    fn name(&self) -> &'static str {
+        "esquisse"
+    }
+
+    fn reset(&mut self) {
+        self.entites.clear();
+        self.contraintes.clear();
+        self.graines.clear();
+        self.unknown.clear();
+        // `edition` n'est jamais remis à zéro : clé de cache monotone —
+        // deux contenus différents du croquis portent des éditions
+        // différentes, même après un rejeu complet.
+    }
+
+    fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
+        match event.event_type.as_str() {
+            EVENT_SKETCH_ENTITY_ADDED => {
+                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                let (id, entite) = entite_de_journal(event)?;
+                if id != self.entites.len() as u32 {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("identifiant d'entité {id} non séquentiel"),
+                    });
+                }
+                if let Some(raison) = self.raison_refus_entite(&entite) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                self.entites.push((id, entite));
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_CONSTRAINT_ADDED => {
+                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                let (id, contrainte) = contrainte_de_journal(event)?;
+                if id != self.contraintes.len() as u32 {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("identifiant de contrainte {id} non séquentiel"),
+                    });
+                }
+                if let Some(raison) = self.raison_refus_contrainte(&contrainte) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                self.contraintes.push((id, contrainte));
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_POINT_MOVED => {
+                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                let point = champ_id(event, "point")?;
+                let x = Length::from_millimeters(champ_nombre(event, "x")?);
+                let y = Length::from_millimeters(champ_nombre(event, "y")?);
+                if let Some(raison) = self.raison_refus_deplacement(point, x, y) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                self.graines.insert(point, (x, y));
+                self.edition += 1;
+                Ok(())
+            }
+            _ => {
+                if !self.unknown.contains(&event.event_type) {
+                    self.unknown.push(event.event_type.clone());
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn types_connus(&self) -> &'static [&'static str] {
+        &[EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_POINT_MOVED]
+    }
+}

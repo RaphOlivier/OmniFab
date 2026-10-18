@@ -1,12 +1,17 @@
 //! Tests de forge-session (ADR-0008, ADR-0011) : commandes, undo/redo
 //! par curseur, abandon des événements défaisables, imports de géométrie
 //! et purge des blobs orphelins, sauvegarde du journal visible.
+//! Croquis contraint (ADR-0018) : entités, contraintes, graines et
+//! résolution dérivée par rejeu.
 
 use forge_doc::{Document, FixedClock, NewEvent};
+use forge_gcs::Systeme2D;
+use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
 use forge_session::{
     Command, CommandPlan, EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection,
     Session, SessionError, SetExpression, SetInput,
 };
+use forge_units::{Angle, Length};
 
 /// Session de référence : deux entrées + une expression (diagonale 1000).
 fn rectangle() -> Session {
@@ -655,4 +660,270 @@ fn journal_v1_migre_le_maillage_en_v2() {
     let session = Session::from_document("tests", document).expect("rejeu");
     let maillage = session.geom().maillage().expect("maillage projeté");
     assert_eq!(maillage.echelle, 1.0, "échelle de migration");
+}
+
+/// Croquis rectangle de référence (ADR-0018) : quatre points, quatre
+/// lignes, coin fixé, deux horizontales, deux verticales, deux
+/// distances — quinze événements. Les graines sont volontairement
+/// déformées : la résolution doit retomber sur le rectangle exact.
+fn croquis_rectangle() -> Session {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (80.0, -3.0), (97.0, 44.0), (-6.0, 51.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("ligne ajoutée");
+    }
+    let contraintes = [
+        ContrainteEsquisse::PointFixe { point: 0 },
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: Length::from_millimeters(100.0),
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: Length::from_millimeters(50.0),
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    session
+}
+
+/// Vérifie qu'une position résolue est la position attendue à la
+/// tolérance géométrique du projet près (1e-6 mm).
+fn proche(position: Option<(Length, Length)>, x: f64, y: f64) -> bool {
+    match position {
+        Some((px, py)) => {
+            px.approx_eq(Length::from_millimeters(x)) && py.approx_eq(Length::from_millimeters(y))
+        }
+        None => false,
+    }
+}
+
+/// Le croquis rectangle de référence est résolu exactement : degrés
+/// de liberté à zéro, reproductibilité garantie, positions exactes —
+/// et aucune position résolue au journal (ADR-0018 D3).
+#[test]
+fn le_rectangle_est_resolu_exactement() {
+    let session = croquis_rectangle();
+    assert_eq!(session.document().events().len(), 15);
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
+    assert!(resolu.reproductible(), "l'arène garantit le rejeu");
+    assert!(proche(resolu.position(0), 0.0, 0.0));
+    assert!(proche(resolu.position(1), 100.0, 0.0));
+    assert!(proche(resolu.position(2), 100.0, 50.0));
+    assert!(proche(resolu.position(3), 0.0, 50.0));
+    assert_eq!(
+        session.document().events().len(),
+        15,
+        "aucune position résolue au journal"
+    );
+}
+
+/// Le rejeu complet du croquis (sauvegarde → ouverture → résolution)
+/// donne des positions identiques au premier passage (écart ≤ 1e-9,
+/// ADR-0018 D8).
+#[test]
+fn le_rejeu_du_croquis_est_reproductible() {
+    let session = croquis_rectangle();
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let premier = session.esquisse().resoudre(&mut solveur).expect("résolu");
+
+    let octets = session.save_to_bytes().expect("sauvegarde");
+    let registre = forge_session::registre_migrations_courant();
+    let document = Document::from_bytes_with(&octets, registre).expect("journal migré");
+    let session = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let rejoue = session.esquisse().resoudre(&mut solveur).expect("résolu");
+
+    assert!(rejoue.reproductible(), "reproductibilité signalée");
+    for id in 0..4u32 {
+        let (x1, y1) = premier.position(id).expect("position au premier passage");
+        let (x2, y2) = rejoue.position(id).expect("position au rejeu");
+        assert!(
+            (x1.millimeters() - x2.millimeters()).abs() <= 1e-9,
+            "x divergent au rejeu pour le point {id}"
+        );
+        assert!(
+            (y1.millimeters() - y2.millimeters()).abs() <= 1e-9,
+            "y divergent au rejeu pour le point {id}"
+        );
+    }
+}
+
+/// Une contrainte référençant une entité absente est refusée au
+/// plan : rien au journal (OF-SES-0001, ADR-0018 D2).
+#[test]
+fn une_contrainte_sur_entite_absente_est_refusee() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point ajouté");
+    let erreur = session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 9 },
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert_eq!(
+        session.document().events().len(),
+        1,
+        "seul le point initial est au journal"
+    );
+    assert_eq!(session.esquisse().entites().len(), 1);
+    assert_eq!(session.esquisse().contraintes().len(), 0);
+}
+
+/// Le déplacement pose la graine du point, l'annulation la retire :
+/// la résolution suit la dernière graine au journal (ADR-0018 D1).
+#[test]
+fn le_deplacement_pose_la_graine_et_l_annulation_la_retire() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (30.0, 0.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne ajoutée");
+
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(resolu.dof(), 4, "deux points libres : quatre degrés");
+    assert!(proche(resolu.position(1), 30.0, 0.0));
+
+    session
+        .execute(&MovePoint {
+            point: 1,
+            x: Length::from_millimeters(60.0),
+            y: Length::from_millimeters(10.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(proche(resolu.position(1), 60.0, 10.0));
+
+    session.undo().expect("undo");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(proche(resolu.position(1), 30.0, 0.0));
+}
+
+/// L'annulation remonte tout le journal : le croquis se vide ; le
+/// rétablissement le reconstruit et la résolution retombe sur les
+/// mêmes positions (ADR-0018).
+#[test]
+fn l_annulation_vide_le_croquis_le_retablissement_le_restaure() {
+    let mut session = croquis_rectangle();
+    while session.can_undo() {
+        session.undo().expect("undo");
+    }
+    assert_eq!(session.esquisse().entites().len(), 0, "croquis vide");
+    assert_eq!(session.esquisse().contraintes().len(), 0, "croquis vide");
+    while session.can_redo() {
+        session.redo().expect("redo");
+    }
+    assert_eq!(session.esquisse().entites().len(), 8);
+    assert_eq!(session.esquisse().contraintes().len(), 7);
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(proche(resolu.position(2), 100.0, 50.0));
+}
+
+/// Les entités et contraintes invalides (références absentes, valeurs
+/// non finies, cotes non positives) sont refusées au plan : rien au
+/// journal (ADR-0018 D2).
+#[test]
+fn les_entites_invalides_sont_refusees() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point de référence");
+    let entites_invalides = vec![
+        EntiteEsquisse::Ligne { p1: 0, p2: 9 },
+        EntiteEsquisse::Ligne { p1: 0, p2: 0 },
+        EntiteEsquisse::Cercle {
+            centre: 9,
+            rayon: Length::from_millimeters(10.0),
+        },
+        EntiteEsquisse::Cercle {
+            centre: 0,
+            rayon: Length::from_millimeters(0.0),
+        },
+        EntiteEsquisse::Arc {
+            centre: 0,
+            debut: 0,
+            fin: 9,
+            rayon: Length::from_millimeters(10.0),
+            angle_debut: Angle::from_radians(0.0),
+            angle_fin: Angle::from_radians(1.0),
+        },
+        EntiteEsquisse::Point {
+            x: Length::from_millimeters(f64::NAN),
+            y: Length::from_millimeters(0.0),
+        },
+    ];
+    for entite in entites_invalides {
+        let resultat = session.execute(&AddEntity { entite });
+        assert!(resultat.is_err(), "l'entité invalide doit être refusée");
+        assert_eq!(session.document().events().len(), 1);
+    }
+    let contraintes_invalides = vec![
+        ContrainteEsquisse::Coincidence { p1: 0, p2: 0 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 9,
+            valeur: Length::from_millimeters(10.0),
+        },
+        ContrainteEsquisse::RayonCercle {
+            cercle: 0,
+            valeur: Length::from_millimeters(10.0),
+        },
+    ];
+    for contrainte in contraintes_invalides {
+        let resultat = session.execute(&AddConstraint { contrainte });
+        assert!(resultat.is_err(), "contrainte invalide refusée");
+        assert_eq!(session.document().events().len(), 1);
+    }
 }

@@ -16,7 +16,17 @@ wasm = ["forge-doc/wasm"]
 
 [dependencies]
 forge-doc = { path = "../forge-doc" }
+# Solveur de contraintes : trait et identifiants uniquement
+# (default-features = false — le natif planegcs reste instancié par
+# l'application, frontière LGPL des ADR-0013/0018).
+forge-gcs = { path = "../forge-gcs", default-features = false }
+forge-units = { path = "../forge-units" }
 forge-values = { path = "../forge-values" }
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+# Solveur natif pour les tests de résolution du croquis (ADR-0018) ;
+# l'app Android ne construit pas forge-gcs-sys.
+forge-gcs = { path = "../forge-gcs" }

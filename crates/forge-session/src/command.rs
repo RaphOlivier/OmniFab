@@ -2,8 +2,10 @@
 //! utilisateur = une validation contre l'état courant, puis 1..n
 //! événements et d'éventuels blobs à déposer.
 
+use crate::esquisse::{ContrainteEsquisse, EntiteEsquisse};
 use crate::{Session, SessionError};
 use forge_doc::NewEvent;
+use forge_units::Length;
 
 /// Type d'événement : valeur d'entrée fixée (schéma v1 : `name`, `value`).
 pub const EVENT_INPUT_SET: &str = "value.input_set";
@@ -16,6 +18,16 @@ pub const EVENT_TRACES_IMPORTED: &str = "geom.traces.imported";
 /// Type d'événement : maillage importé (schéma v2 : `format`, `blob`,
 /// `triangles`, `echelle` — ADR-0017).
 pub const EVENT_MESH_IMPORTED: &str = "geom.mesh.imported";
+/// Type d'événement : entité ajoutée au croquis contraint (schéma
+/// v1 : `genre`, `id`, puis les champs de l'entité — ADR-0018).
+pub const EVENT_SKETCH_ENTITY_ADDED: &str = "sketch.entity.added";
+/// Type d'événement : contrainte ajoutée au croquis contraint
+/// (schéma v1 : `genre`, `id`, puis les champs de la contrainte —
+/// ADR-0018).
+pub const EVENT_SKETCH_CONSTRAINT_ADDED: &str = "sketch.constraint.added";
+/// Type d'événement : germe de position d'un point du croquis
+/// (schéma v1 : `point`, `x`, `y` — ADR-0018).
+pub const EVENT_SKETCH_POINT_MOVED: &str = "sketch.point.moved";
 
 /// Production d'une commande : ses événements et les blobs à déposer.
 /// L'exécution est tout-ou-rien (ADR-0011) : si une projection refuse
@@ -226,5 +238,92 @@ impl Command for ImportMesh {
         )]);
         plan.blobs.push((blob, self.octets.clone()));
         Ok(plan)
+    }
+}
+
+/// Ajoute une entité au croquis contraint (ADR-0018 D1). L'identifiant
+/// est attribué par le plan : séquentiel, l'ordre d'ajout au journal
+/// fait foi pour la reproductibilité du rejeu. Un refus (entité
+/// invalide, références absentes) ne laisse rien au journal
+/// (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct AddEntity {
+    /// Entité à ajouter : point, ligne, cercle ou arc.
+    pub entite: EntiteEsquisse,
+}
+
+impl Command for AddEntity {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        let esquisse = session.esquisse();
+        if let Some(raison) = esquisse.raison_refus_entite(&self.entite) {
+            return Err(SessionError::CommandRejected { reason });
+        }
+        let id = esquisse.prochaine_id_entite();
+        Ok(CommandPlan::new(vec![NewEvent::new(
+            EVENT_SKETCH_ENTITY_ADDED,
+            1,
+            "",
+            crate::esquisse::entite_en_json(id, &self.entite),
+        )]))
+    }
+}
+
+/// Ajoute une contrainte au croquis contraint (ADR-0018 D1) : les
+/// onze genres du solveur plus l'ancrage d'un point. Un refus
+/// (entités référencées absentes, cote invalide) ne laisse rien au
+/// journal (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct AddConstraint {
+    /// Contrainte à ajouter.
+    pub contrainte: ContrainteEsquisse,
+}
+
+impl Command for AddConstraint {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        let esquisse = session.esquisse();
+        if let Some(raison) = esquisse.raison_refus_contrainte(&self.contrainte) {
+            return Err(SessionError::CommandRejected { reason });
+        }
+        let id = esquisse.prochaine_id_contrainte();
+        Ok(CommandPlan::new(vec![NewEvent::new(
+            EVENT_SKETCH_CONSTRAINT_ADDED,
+            1,
+            "",
+            crate::esquisse::contrainte_en_json(id, &self.contrainte),
+        )]))
+    }
+}
+
+/// Pose la graine de position d'un point du croquis (ADR-0018 D1) :
+/// la nouvelle position devient le point de départ de la prochaine
+/// résolution — jamais une position résolue au journal. Un refus
+/// (point absent, coordonnées non finies) ne laisse rien au journal
+/// (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct MovePoint {
+    /// Identifiant du point déplacé.
+    pub point: u32,
+    /// Nouvelle abscisse de départ (millimètres).
+    pub x: Length,
+    /// Nouvelle ordonnée de départ (millimètres).
+    pub y: Length,
+}
+
+impl Command for MovePoint {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        let esquisse = session.esquisse();
+        if let Some(raison) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
+            return Err(SessionError::CommandRejected { reason });
+        }
+        Ok(CommandPlan::new(vec![NewEvent::new(
+            EVENT_SKETCH_POINT_MOVED,
+            1,
+            "",
+            serde_json::json!({
+                "point": self.point,
+                "x": self.x.millimeters(),
+                "y": self.y.millimeters(),
+            }),
+        )]))
     }
 }

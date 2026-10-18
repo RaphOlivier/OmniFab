@@ -267,7 +267,7 @@ impl Projection for GeomProjection {
 }
 
 /// Lit un champ chaîne du schéma v1 du type d'événement.
-fn champ_str<'a>(event: &'a NewEvent, champ: &str) -> Result<&'a str, SessionError> {
+pub(crate) fn champ_str<'a>(event: &'a NewEvent, champ: &str) -> Result<&'a str, SessionError> {
     event
         .data
         .get(champ)
@@ -279,7 +279,7 @@ fn champ_str<'a>(event: &'a NewEvent, champ: &str) -> Result<&'a str, SessionErr
 }
 
 /// Lit un champ nombre du schéma v1 du type d'événement.
-fn champ_nombre(event: &NewEvent, champ: &str) -> Result<f64, SessionError> {
+pub(crate) fn champ_nombre(event: &NewEvent, champ: &str) -> Result<f64, SessionError> {
     event
         .data
         .get(champ)
@@ -294,7 +294,7 @@ fn champ_nombre(event: &NewEvent, champ: &str) -> Result<f64, SessionError> {
 /// (ADR-0016 A3) : le registre de migrations le refuse déjà à
 /// l'ouverture, la projection est la dernière ligne de défense —
 /// un journal plus récent n'est jamais lu comme du v1.
-fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
+pub(crate) fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
     if event.schema_version != version {
         return Err(SessionError::InvalidEventData {
             event_type: event.event_type.clone(),
@@ -311,7 +311,7 @@ fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), SessionError> {
 /// négatifs, fractionnaires ou hors `usize` sont refusés — jamais
 /// de conversion `as` silencieuse depuis un `f64` de fichier
 /// (ADR-0016 A3).
-fn champ_entier(event: &NewEvent, champ: &str) -> Result<usize, SessionError> {
+pub(crate) fn champ_entier(event: &NewEvent, champ: &str) -> Result<usize, SessionError> {
     let valeur = event
         .data
         .get(champ)

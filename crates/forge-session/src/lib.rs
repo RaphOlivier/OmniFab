@@ -32,13 +32,19 @@
 
 mod command;
 mod error;
+mod esquisse;
 mod projection;
 
 pub use command::{
-    Command, CommandPlan, EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED,
-    EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, SetExpression, SetInput,
+    AddConstraint, AddEntity, Command, CommandPlan, EVENT_EXPRESSION_SET, EVENT_INPUT_SET,
+    EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_ENTITY_ADDED,
+    EVENT_SKETCH_POINT_MOVED, EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint,
+    SetExpression, SetInput,
 };
 pub use error::SessionError;
+pub use esquisse::{
+    ContrainteEsquisse, CroquisResolu, EntiteEsquisse, EsquisseProjection, GenreEntite,
+};
 pub use projection::{
     GeomProjection, MaillageImporte, Projection, TracesImportees, ValuesProjection,
 };
@@ -47,8 +53,9 @@ use forge_doc::{DocError, Document, Event, MigrationRegistry, NewEvent};
 use forge_values::ValueGraph;
 
 /// Registre de migrations courant de la session (ADR-0016 A3) : les
-/// quatre types d'événement connus, déclarés à leur version
-/// courante — le maillage importé migre du v1 au v2 (ADR-0017). À
+/// sept types d'événement connus, déclarés à leur version courante —
+/// le maillage importé migre du v1 au v2 (ADR-0017), les trois types
+/// du croquis contraint sont au v1 (ADR-0018). À
 /// passer à l'ouverture d'un projet (Document::from_bytes_with,
 /// Document::open_from_path_with, feature native) : un journal écrit
 /// par une version plus récente est refusé par SchemaTooNew (ADR-0001)
@@ -60,6 +67,9 @@ pub fn registre_migrations_courant() -> MigrationRegistry {
     registre.declare(EVENT_TRACES_IMPORTED, 1);
     registre.declare(EVENT_MESH_IMPORTED, 2);
     registre.register(EVENT_MESH_IMPORTED, 1, migre_mesh_v1_v2);
+    registre.declare(EVENT_SKETCH_ENTITY_ADDED, 1);
+    registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 1);
+    registre.declare(EVENT_SKETCH_POINT_MOVED, 1);
     registre
 }
 
@@ -85,6 +95,8 @@ pub struct Session {
     values: ValuesProjection,
     /// Projection du domaine de la géométrie importée (ADR-0011).
     geom: GeomProjection,
+    /// Projection du croquis contraint (ADR-0018, phase D).
+    esquisse: EsquisseProjection,
     /// Projections des domaines futurs, enregistrées.
     projections: Vec<Box<dyn Projection>>,
     /// Nombre d'événements appliqués aux projections ; les événements
@@ -95,8 +107,8 @@ pub struct Session {
 }
 
 impl Session {
-    /// Session vide, avec les projections des liaisons et de la
-    /// géométrie importée (jalon 1).
+    /// Session vide, avec les projections des liaisons, de la
+    /// géométrie importée et du croquis contraint.
     ///
     /// `actor` identifie l'application ou la zone UI à l'origine des
     /// événements (ex. `desktop`, `android.machine`).
@@ -105,6 +117,7 @@ impl Session {
             doc: Document::new(),
             values: ValuesProjection::new(),
             geom: GeomProjection::new(),
+            esquisse: EsquisseProjection::new(),
             projections: Vec::new(),
             applied: 0,
             actor: actor.to_string(),
@@ -252,8 +265,15 @@ impl Session {
         &self.geom
     }
 
+    /// Projection du croquis contraint (entités, contraintes et
+    /// graines, lecture) — les positions résolues sont un état dérivé
+    /// (ADR-0018 D3).
+    pub fn esquisse(&self) -> &EsquisseProjection {
+        &self.esquisse
+    }
+
     /// Types d'événements « ignorés » par l'interface : inconnus de
-    /// toutes les projections (values, geom, enregistrées) — un type
+    /// toutes les projections (values, geom, esquisse, enregistrées) — un type
     /// connu d'une seule projection n'est pas un type ignoré (ADR-0011).
     pub fn unknown_types(&self) -> Vec<String> {
         self.values
@@ -261,6 +281,7 @@ impl Session {
             .iter()
             .filter(|event_type| {
                 !self.geom.types_connus().contains(&event_type.as_str())
+                    && !self.esquisse.types_connus().contains(&event_type.as_str())
                     && self
                         .projections
                         .iter()
@@ -323,6 +344,7 @@ impl Session {
     fn apply_all(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         self.values.apply(event)?;
         self.geom.apply(event)?;
+        self.esquisse.apply(event)?;
         for projection in &mut self.projections {
             projection.apply(event)?;
         }
@@ -333,6 +355,7 @@ impl Session {
     fn reset_all(&mut self) {
         self.values.reset();
         self.geom.reset();
+        self.esquisse.reset();
         for projection in &mut self.projections {
             projection.reset();
         }

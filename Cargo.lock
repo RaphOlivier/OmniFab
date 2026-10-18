@@ -1437,6 +1437,8 @@ name = "forge-session"
 version = "0.1.0"
 dependencies = [
  "forge-doc",
+ "forge-gcs",
+ "forge-units",
  "forge-values",
  "serde_json",
  "thiserror 2.0.21",
