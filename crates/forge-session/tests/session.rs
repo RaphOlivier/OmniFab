@@ -1,4 +1,3 @@
-//! Tests de forge-session (ADR-0008, ADR-0011) : commandes, undo/redo
 //! par curseur, abandon des événements défaisables, imports de géométrie
 //! et purge des blobs orphelins, sauvegarde du journal visible.
 //! Croquis contraint (ADR-0018) : entités, contraintes, graines et
@@ -926,4 +925,47 @@ fn les_entites_invalides_sont_refusees() {
         assert!(resultat.is_err(), "contrainte invalide refusée");
         assert_eq!(session.document().events().len(), 1);
     }
+}
+
+/// Les tags solveur sont exposés par contrainte du croquis ; ils
+/// sont distincts deux à deux, et l’ancrage `PointFixe` n’en a pas —
+/// ce n’est pas une contrainte du solveur, le diagnostic ne peut
+/// jamais le référencer (ADR-0018 D3, lot 3 : affichage des
+/// redondances par l’application).
+#[test]
+fn les_tags_des_contraintes_sont_exposes() {
+    let session = croquis_rectangle();
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(
+        resolu.tag(0).is_none(),
+        "l’ancrage PointFixe n’a pas de tag solveur"
+    );
+    let mut tags = Vec::new();
+    for id in 1..7u32 {
+        tags.push(resolu.tag(id).expect("contrainte du solveur"));
+    }
+    assert_eq!(tags.len(), 6, "six contraintes posées au solveur");
+    for i in 0..tags.len() {
+        for j in i + 1..tags.len() {
+            assert_ne!(tags[i], tags[j], "les tags sont distincts");
+        }
+    }
+}
+
+/// Le croquis est clonable en un instantané détaché de la session :
+/// l’annulation dans la session ne touche pas l’instantané, et la
+/// résolution du clone sur un solveur frais retombe sur les
+/// positions exactes (pattern C1 du lot 3 : la résolution part sur
+/// le fil de travail avec une copie du croquis).
+#[test]
+fn le_clone_de_l_esquisse_resout_identiquement() {
+    let mut session = croquis_rectangle();
+    let instantane = session.esquisse().clone();
+    session.undo().expect("undo de la dernière contrainte");
+    assert_eq!(instantane.contraintes().len(), 7, "instantané détaché");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = instantane.resoudre(&mut solveur).expect("résolu");
+    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
+    assert!(proche(resolu.position(2), 100.0, 50.0));
 }

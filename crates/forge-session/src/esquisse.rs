@@ -1,4 +1,3 @@
-//! Croquis contraint 2D de la session (ADR-0018, jalon 2 phase D) :
 //! entités, contraintes et graines de position au journal, positions
 //! résolues comme état dérivé jamais sérialisé.
 //!
@@ -484,6 +483,11 @@ pub struct CroquisResolu {
     redondantes: Vec<TagContrainte>,
     /// Tags des contraintes partiellement redondantes.
     partiellement_redondantes: Vec<TagContrainte>,
+    /// Tag solveur de chaque contrainte posée, par identifiant de
+    /// contrainte du croquis ; l’ancrage `PointFixe` n’a pas de
+    /// tag — ce n’est pas une contrainte du solveur, le diagnostic
+    /// ne peut jamais le référencer.
+    tags: BTreeMap<u32, TagContrainte>,
 }
 
 impl CroquisResolu {
@@ -518,13 +522,19 @@ impl CroquisResolu {
     pub fn partiellement_redondantes(&self) -> &[TagContrainte] {
         &self.partiellement_redondantes
     }
+
+    /// Tag solveur de la contrainte du croquis, ou `None` si elle
+    /// n’en a pas (ancrage `PointFixe`) ou est inconnue.
+    pub fn tag(&self, id: u32) -> Option<TagContrainte> {
+        self.tags.get(&id).copied()
+    }
 }
 
 /// Projection du croquis contraint (ADR-0018) : entités, contraintes
 /// et graines de position rejouées depuis le journal ; les positions
 /// résolues sont un état dérivé, calculé à la demande via
 /// [`EsquisseProjection::resoudre`] et jamais sérialisé.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct EsquisseProjection {
     /// Entités du croquis, dans l'ordre d'ajout (l'identifiant est
     /// l'indice d'ajout, ADR-0018 D1).
@@ -756,6 +766,7 @@ impl EsquisseProjection {
                 conflictuelles: Vec::new(),
                 redondantes: Vec::new(),
                 partiellement_redondantes: Vec::new(),
+                tags: BTreeMap::new(),
             });
         }
         let mut reconstruction = Reconstruction::default();
@@ -799,8 +810,11 @@ impl EsquisseProjection {
                 }
             }
         }
-        for (_, contrainte) in &self.contraintes {
-            applique_contrainte(solveur, &reconstruction, contrainte)?;
+        let mut tags = BTreeMap::new();
+        for (id, contrainte) in &self.contraintes {
+            if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {
+                tags.insert(*id, tag);
+            }
         }
         solveur.resoudre(Algorithme::DogLeg)?;
         let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
@@ -816,6 +830,7 @@ impl EsquisseProjection {
             conflictuelles: diagnostic.conflictuelles().to_vec(),
             redondantes: diagnostic.redondantes().to_vec(),
             partiellement_redondantes: diagnostic.partiellement_redondantes().to_vec(),
+            tags,
         })
     }
 
@@ -888,89 +903,103 @@ impl EsquisseProjection {
     }
 }
 
-/// Traduit une contrainte du croquis vers le solveur et l'ajoute
-/// (ADR-0018 D1 : les onze genres du trait plus l'ancrage `PointFixe`).
+/// Traduit une contrainte du croquis vers le solveur et l’ajoute
+/// (ADR-0018 D1 : les onze genres du trait plus l’ancrage
+/// `PointFixe`). Renvoie le tag solveur de la contrainte posée ;
+/// l’ancrage n’a pas de tag — ce n’est pas une contrainte du
+/// solveur, le diagnostic ne peut jamais le référencer.
 fn applique_contrainte(
     solveur: &mut dyn Solveur2D,
     reconstruction: &Reconstruction,
     contrainte: &ContrainteEsquisse,
-) -> Result<(), GcsError> {
+) -> Result<Option<TagContrainte>, GcsError> {
     match contrainte {
         ContrainteEsquisse::Coincidence { p1, p2 } => {
-            solveur.ajouter_contrainte(Contrainte::Coincidence {
+            let tag = solveur.ajouter_contrainte(Contrainte::Coincidence {
                 p1: reconstruction.id_point(*p1)?,
                 p2: reconstruction.id_point(*p2)?,
             })?;
+            Ok(Some(tag))
         }
         ContrainteEsquisse::Horizontale { ligne } => {
-            solveur.ajouter_contrainte(Contrainte::Horizontale {
+            let tag = solveur.ajouter_contrainte(Contrainte::Horizontale {
                 ligne: reconstruction.id_ligne(*ligne)?,
             })?;
+            Ok(Some(tag))
         }
         ContrainteEsquisse::Verticale { ligne } => {
-            solveur.ajouter_contrainte(Contrainte::Verticale {
+            let tag = solveur.ajouter_contrainte(Contrainte::Verticale {
                 ligne: reconstruction.id_ligne(*ligne)?,
             })?;
+            Ok(Some(tag))
         }
         ContrainteEsquisse::Distance { p1, p2, valeur } => {
-            solveur.ajouter_contrainte(Contrainte::Distance {
+            let tag = solveur.ajouter_contrainte(Contrainte::Distance {
                 p1: reconstruction.id_point(*p1)?,
                 p2: reconstruction.id_point(*p2)?,
                 valeur: *valeur,
             })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::PointSurLigne { point, ligne } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::PointSurLigne {
+                point: reconstruction.id_point(*point)?,
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::MemeLongueur {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Paralleles {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::PointSurCercle { point, cercle } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::PointSurCercle {
+                point: reconstruction.id_point(*point)?,
+                cercle: reconstruction.id_cercle(*cercle)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::RayonCercle { cercle, valeur } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::RayonCercle {
+                cercle: reconstruction.id_cercle(*cercle)?,
+                valeur: *valeur,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Perpendiculaires {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
         }
         ContrainteEsquisse::Angle {
             ligne1,
             ligne2,
             valeur,
         } => {
-            solveur.ajouter_contrainte(Contrainte::Angle {
+            let tag = solveur.ajouter_contrainte(Contrainte::Angle {
                 ligne1: reconstruction.id_ligne(*ligne1)?,
                 ligne2: reconstruction.id_ligne(*ligne2)?,
                 valeur: *valeur,
             })?;
-        }
-        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
-            solveur.ajouter_contrainte(Contrainte::MemeLongueur {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-        }
-        ContrainteEsquisse::PointSurLigne { point, ligne } => {
-            solveur.ajouter_contrainte(Contrainte::PointSurLigne {
-                point: reconstruction.id_point(*point)?,
-                ligne: reconstruction.id_ligne(*ligne)?,
-            })?;
-        }
-        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
-            solveur.ajouter_contrainte(Contrainte::Paralleles {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-        }
-        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
-            solveur.ajouter_contrainte(Contrainte::Perpendiculaires {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-        }
-        ContrainteEsquisse::RayonCercle { cercle, valeur } => {
-            solveur.ajouter_contrainte(Contrainte::RayonCercle {
-                cercle: reconstruction.id_cercle(*cercle)?,
-                valeur: *valeur,
-            })?;
-        }
-        ContrainteEsquisse::PointSurCercle { point, cercle } => {
-            solveur.ajouter_contrainte(Contrainte::PointSurCercle {
-                point: reconstruction.id_point(*point)?,
-                cercle: reconstruction.id_cercle(*cercle)?,
-            })?;
+            Ok(Some(tag))
         }
         ContrainteEsquisse::PointFixe { point } => {
             solveur.fixer_point(reconstruction.id_point(*point)?)?;
+            Ok(None)
         }
     }
-    Ok(())
 }
 
 impl Projection for EsquisseProjection {
