@@ -15,8 +15,10 @@
 //! Sécurité (ADR-0009) : la détection du format se fait par
 //! cohérence de la taille (`84 + 50 × n`), pas par l'en-tête — un
 //! binaire dont l'en-tête commence par « solid » est bien lu en
-//! binaire. Tout dépassement de [`StlBudgets`] est une erreur
-//! typée avant toute allocation proportionnelle.
+//! binaire ; un binaire portant des octets excédentaires est lu
+//! en tolérant (bourrage de fin de fichier ignoré). Tout
+//! dépassement de [`StlBudgets`] est une erreur typée avant toute
+//! allocation proportionnelle.
 
 use crate::IoError;
 use forge_geom::{Mesh, Point3};
@@ -68,6 +70,9 @@ pub fn import(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
     if est_ascii(bytes) {
         return import_ascii(bytes, budgets);
     }
+    if est_binaire_tolerant(bytes) {
+        return import_binaire(bytes, budgets);
+    }
     Err(IoError::UnknownFormat)
 }
 
@@ -116,7 +121,19 @@ fn est_binaire(bytes: &[u8]) -> bool {
         return false;
     }
     let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
-    bytes.len() == 84 + 50 * compteur as usize
+    bytes.len() as u64 == 84 + 50 * u64::from(compteur)
+}
+
+/// Détecte un STL binaire tolérant : le fichier porte au moins les
+/// `84 + 50 × n` octets annoncés (arithmétique en `u64`) — les octets
+/// excédentaires (bourrage de fin de fichier produit par certains
+/// logiciels) sont ignorés à la lecture.
+fn est_binaire_tolerant(bytes: &[u8]) -> bool {
+    if bytes.len() < 84 {
+        return false;
+    }
+    let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
+    bytes.len() as u64 >= 84 + 50 * u64::from(compteur)
 }
 
 /// Détecte un STL ASCII : premier mot « solid » (BOM UTF-8 toléré).
@@ -131,7 +148,8 @@ fn est_ascii(bytes: &[u8]) -> bool {
     )
 }
 
-/// Importe un STL binaire (appelée seulement si la taille est cohérente).
+/// Importe un STL binaire (appelée après détection binaire, exacte
+/// ou tolérante — les octets excédentaires sont ignorés).
 fn import_binaire(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
     let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
     if u64::from(compteur) > u64::from(budgets.max_triangles) {

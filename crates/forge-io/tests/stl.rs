@@ -105,6 +105,29 @@ fn binaire_tronque_format_inconnu() {
 }
 
 #[test]
+fn binaire_avec_bourrage_final_importe() {
+    // Des logiciels terminent le STL binaire par des octets
+    // excédents : la lecture tolérante les ignore.
+    let budgets = StlBudgets::default();
+    let mut octets = export(&triangle()).expect("export");
+    octets.extend_from_slice(&[0u8; 7]);
+    let maillage = import(&octets, &budgets).expect("bourrage final toléré");
+    assert_eq!(maillage.triangle_count(), 1, "un triangle");
+}
+
+#[test]
+fn compteur_demensuel_petit_fichier_erreur_propre() {
+    // Compteur u32::MAX démenti par la taille : erreur typée,
+    // jamais de débordement (arithmétique u64, cible 32 bits
+    // comprise).
+    let budgets = StlBudgets::default();
+    let mut octets = vec![0u8; 84];
+    octets[80..84].copy_from_slice(&u32::MAX.to_le_bytes());
+    let erreur = import(&octets, &budgets).expect_err("compteur démenti par la taille");
+    assert_eq!(erreur.code(), "OF-IO-0005");
+}
+
+#[test]
 fn ascii_invalide() {
     let budgets = StlBudgets::default();
     let contenu = "solid demo\nbizarre 1 2 3\nendsolid demo\n";
