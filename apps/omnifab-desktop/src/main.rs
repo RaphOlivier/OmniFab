@@ -402,7 +402,7 @@ fn plus_grande_dimension(maillage: &Mesh) -> f64 {
 /// l'import propose l'échelle × 1000 (ADR-0017). Un maillage vide ou
 /// déjà grand ne déclenche rien.
 fn propose_echelle_metres(dimension: f64) -> bool {
-    (0.0..SEUIL_METRES).contains(&dimension)
+    (0.0..SEUIL_METRES).contains(&dimension) && dimension > 0.0
 }
 
 /// Applique l'échelle d'import aux coordonnées du maillage (ADR-0017) :
@@ -2612,9 +2612,9 @@ mod tests {
         let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
         let grossi = maillage_echelle(maillage, 1000.0).expect("échelle appliquée");
         assert_eq!(grossi.vertices()[0].x().millimeters(), 0.0);
-        assert_eq!(grossi.vertices()[0].y().millimeters(), 1000.0);
+        assert_eq!(grossi.vertices()[0].z().millimeters(), 1000.0);
         let intact = maillage_echelle(grossi, 1.0).expect("identité");
-        assert_eq!(intact.vertices()[0].y().millimeters(), 1000.0);
+        assert_eq!(intact.vertices()[0].z().millimeters(), 1000.0);
     }
 
     /// Un import minuscule attend le choix des unités : rien n'est
