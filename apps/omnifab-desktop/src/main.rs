@@ -338,6 +338,27 @@ fn met_en_cache<T>(
     true
 }
 
+/// Raccourcis globaux d'annulation et de rétablissement
+/// (ADR-0016 C2) : `command` (Ctrl sous Windows/Linux, Cmd sous
+/// macOS) avec Z annule, avec Y ou Maj+Z rétablit. Aucun raccourci
+/// quand un champ de texte a le focus (`clavier_pris`) : la saisie
+/// en cours n'est pas écrasée par un Ctrl+Z global.
+///
+/// Retourne `(annuler, retablir)`.
+fn raccourcis_annulation(
+    modifiers: &egui::Modifiers,
+    z: bool,
+    y: bool,
+    clavier_pris: bool,
+) -> (bool, bool) {
+    if clavier_pris {
+        return (false, false);
+    }
+    let cmd = modifiers.command;
+    let maj = modifiers.shift;
+    (cmd && !maj && z, cmd && (y || maj && z))
+}
+
 /// Retour d'erreur du fil de travail : message à afficher au canal
 /// d'erreur (ADR-0016 C1).
 fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour {
@@ -1567,15 +1588,18 @@ impl DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Raccourcis : Ctrl+Z annule, Ctrl+Y ou Ctrl+Maj+Z rétablit ;
-        // un raccourci impossible est ignoré silencieusement (ADR-0011).
+        // Raccourcis : Cmd (Ctrl sous Windows/Linux) annule, Cmd+Y ou
+        // Cmd+Maj+Z rétablit ; aucun raccourci quand un champ de texte
+        // a le focus — la saisie en cours n'est pas écrasée
+        // (ADR-0016 C2) ; un raccourci impossible est ignoré
+        // silencieusement (ADR-0011).
+        let clavier_pris = ctx.wants_keyboard_input();
         let (annuler, retablir) = ctx.input(|i| {
-            let ctrl = i.modifiers.ctrl;
-            let maj = i.modifiers.shift;
-            (
-                ctrl && !maj && i.key_pressed(egui::Key::Z),
-                (ctrl && i.key_pressed(egui::Key::Y))
-                    || (ctrl && maj && i.key_pressed(egui::Key::Z)),
+            raccourcis_annulation(
+                &i.modifiers,
+                i.key_pressed(egui::Key::Z),
+                i.key_pressed(egui::Key::Y),
+                clavier_pris,
             )
         });
         if annuler && self.session.can_undo() {
@@ -2068,5 +2092,40 @@ mod tests {
         let gardes = garde_actuels(file, 8);
         assert_eq!(gardes.len(), 1, "seul le retour courant est gardé");
         assert_eq!(gardes[0].generation(), 8, "le retour gardé est courant");
+    }
+
+    /// Modificateurs pour un test de raccourcis (ADR-0016 C2).
+    fn modificateurs(ctrl: bool, command: bool, maj: bool) -> egui::Modifiers {
+        egui::Modifiers { alt: false, ctrl, shift: maj, mac_cmd: false, command }
+    }
+
+    /// Raccourcis globaux : Cmd annule, Cmd+Y ou Cmd+Maj+Z rétablit,
+    /// rien ne se déclenche quand un champ de texte a le focus, et
+    /// Ctrl nu ne fait rien — Cmd macOS est « command », pas « ctrl »
+    /// (ADR-0016 C2).
+    #[test]
+    fn les_raccourcis_ignorent_la_saisie_en_cours() {
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), true, false, false),
+            (true, false)
+        );
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), false, true, false),
+            (false, true)
+        );
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, true), true, false, false),
+            (false, true)
+        );
+        // Un champ de texte a le focus : la saisie n'est pas écrasée.
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), true, false, true),
+            (false, false)
+        );
+        // Ctrl seul (sans Cmd) ne déclenche rien sous macOS.
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(true, false, false), true, false, false),
+            (false, false)
+        );
     }
 }
