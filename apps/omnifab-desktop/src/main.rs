@@ -22,6 +22,9 @@
 //!   sauvegarde — le titre de la fenêtre porte `*`, « Nouveau »,
 //!   « Ouvrir » et « Reprendre » demandent confirmation, et
 //!   l'enregistrement ne casse plus la pile redo ;
+//! - **messages d'état fidèles** (ADR-0016 C4) : une commande refusée
+//!   n'affiche jamais de succès, l'action suivante efface l'erreur —
+//!   plus de rouge persistant après correction ;
 //! - **bibliothèque de projets** (ADR-0014) : écran d'accueil listant
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
@@ -538,8 +541,7 @@ impl DemoApp {
         self.generation += 1;
         self.session = Session::new(ACTEUR);
         self.expr_buf = DEFAULT_DIAGONAL_EXPR.to_string();
-        self.error = None;
-        self.info = None;
+        self.effacer_messages();
         self.cache = None;
         self.cache_maillage = None;
         self.camera = Camera2D::nouvelle();
@@ -548,15 +550,15 @@ impl DemoApp {
         self.vue = Vue::DeuxD;
         self.aide = None;
         self.chemin_projet = None;
-        self.executer(&SetInput {
+        let _ = self.executer(&SetInput {
             name: "width_mm".into(),
             value: 800.0,
         });
-        self.executer(&SetInput {
+        let _ = self.executer(&SetInput {
             name: "height_mm".into(),
             value: 600.0,
         });
-        self.executer(&SetExpression {
+        let _ = self.executer(&SetExpression {
             name: "diagonal".into(),
             expression: DEFAULT_DIAGONAL_EXPR.into(),
         });
@@ -564,19 +566,31 @@ impl DemoApp {
         self.dirty = false;
     }
 
+    /// Efface les messages d'état de l'action précédente : chaque
+    /// action utilisateur repart sans message — l'erreur rouge ne
+    /// survit pas à l'action qui la corrige (ADR-0016 C4).
+    fn effacer_messages(&mut self) {
+        self.error = None;
+        self.info = None;
+    }
+
     /// Exécute une commande de session ; un refus remonte au canal
     /// d'erreur du viewport sans interrompre l'interface. Toute
     /// commande effective pose l'indicateur de travail non enregistré
-    /// (ADR-0016 C3).
-    fn executer(&mut self, commande: &dyn Command) {
+    /// (ADR-0016 C3). Le `Result` porte le verdict : seul l'appelant
+    /// affiche un succès, jamais après un refus (ADR-0016 C4).
+    fn executer(&mut self, commande: &dyn Command) -> Result<(), String> {
+        self.effacer_messages();
         let empreinte_avant = self.empreinte_journal();
         if let Err(error) = self.session.execute(commande) {
-            self.error = Some(error.to_string());
-            return;
+            let message = error.to_string();
+            self.error = Some(message.clone());
+            return Err(message);
         }
         if self.empreinte_journal() != empreinte_avant {
             self.dirty = true;
         }
+        Ok(())
     }
 
     /// Empreinte du journal appliqué : longueur et bornes undo/redo —
@@ -591,6 +605,7 @@ impl DemoApp {
     /// tampon d'édition est rafraîchi et le travail non enregistré
     /// suit le journal (ADR-0016 C3).
     fn annuler(&mut self) {
+        self.effacer_messages();
         if self.session.undo().is_ok() {
             self.dirty = true;
             self.expr_buf = self.expression_courante();
@@ -601,6 +616,7 @@ impl DemoApp {
     /// d'édition est rafraîchi et le travail non enregistré suit le
     /// journal (ADR-0016 C3).
     fn retablir(&mut self) {
+        self.effacer_messages();
         if self.session.redo().is_ok() {
             self.dirty = true;
             self.expr_buf = self.expression_courante();
@@ -643,6 +659,7 @@ impl DemoApp {
     /// bibliothèque) : rejeu du journal, mémorisation du chemin —
     /// état d'app UI, pas un événement (ADR-0014).
     fn ouvrir_projet(&mut self, chemin: &Path) {
+        self.effacer_messages();
         // Registre des types connus (ADR-0016 A3) : un journal écrit
         // par une version plus récente est refusé à l'ouverture.
         let registre = forge_session::registre_migrations_courant();
@@ -670,7 +687,6 @@ impl DemoApp {
         self.camera3d = Camera3D::nouvelle();
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
-        self.error = None;
         self.expr_buf = self.expression_courante();
         self.info = Some(self.texte_avec("info-recharge", &[("n", Argument::from(nombre))]));
         self.dirty = false;
@@ -680,6 +696,7 @@ impl DemoApp {
     /// actions annulées sont abandonnées (ADR-0008) ; le chemin
     /// devient le projet courant (ADR-0014).
     fn enregistrer_dans(&mut self, chemin: &Path) {
+        self.effacer_messages();
         if let Err(error) = self.session.save_to_path(chemin) {
             self.error = Some(error.to_string());
             return;
@@ -742,6 +759,7 @@ impl DemoApp {
                 self.ouvrir_projet(&chemin);
             }
             ActionDestructrice::Reprendre => {
+                self.effacer_messages();
                 self.ecran = Ecran::Atelier;
             }
         }
@@ -792,6 +810,7 @@ impl DemoApp {
     /// natif : lecture et parse partent au fil de travail, le format
     /// suit le bouton (ADR-0014, ADR-0016 C1).
     fn charger_traces(&mut self, format: &'static str, chemin: &Path) {
+        self.effacer_messages();
         self.envoyer_travail(Travail::ImportTraces {
             generation: self.generation,
             format,
@@ -802,6 +821,7 @@ impl DemoApp {
     /// natif : lecture et parse au fil de travail (ADR-0014,
     /// ADR-0016 C1).
     fn charger_maillage(&mut self, chemin: &Path) {
+        self.effacer_messages();
         self.envoyer_travail(Travail::ImportMaillage {
             generation: self.generation,
             chemin: chemin.to_path_buf(),
@@ -823,6 +843,9 @@ impl DemoApp {
     /// session pour un import, message pour un export, canal
     /// d'erreur pour un échec (ADR-0016 C1).
     fn appliquer_retour(&mut self, retour: Retour) {
+        // Fin d'une action : le verdict remplace l'état précédent
+        // (ADR-0016 C4).
+        self.effacer_messages();
         match retour {
             Retour::ImportTraces {
                 format,
@@ -831,34 +854,40 @@ impl DemoApp {
                 sommets,
                 ..
             } => {
-                self.executer(&ImportTraces {
+                // Le succès n'est affiché que si la commande passe :
+                // un refus ne pose jamais de message (ADR-0016 C4).
+                let resultat = self.executer(&ImportTraces {
                     format: format.to_string(),
                     octets,
                     traces,
                     sommets,
                 });
-                self.cache = None;
-                self.info = Some(self.texte_avec(
-                    "info-import-traces",
-                    &[
-                        ("traces", Argument::from(traces)),
-                        ("sommets", Argument::from(sommets)),
-                    ],
-                ));
+                if resultat.is_ok() {
+                    self.cache = None;
+                    self.info = Some(self.texte_avec(
+                        "info-import-traces",
+                        &[
+                            ("traces", Argument::from(traces)),
+                            ("sommets", Argument::from(sommets)),
+                        ],
+                    ));
+                }
             }
             Retour::ImportMaillage {
                 octets, triangles, ..
             } => {
-                self.executer(&ImportMesh {
+                let resultat = self.executer(&ImportMesh {
                     format: "stl".to_string(),
                     octets,
                     triangles,
                 });
-                self.cache_maillage = None;
-                self.info = Some(self.texte_avec(
-                    "info-import-maillage",
-                    &[("triangles", Argument::from(triangles))],
-                ));
+                if resultat.is_ok() {
+                    self.cache_maillage = None;
+                    self.info = Some(self.texte_avec(
+                        "info-import-maillage",
+                        &[("triangles", Argument::from(triangles))],
+                    ));
+                }
             }
             Retour::Export { chemin, .. } => {
                 self.info = Some(self.texte_avec(
@@ -876,6 +905,7 @@ impl DemoApp {
     /// de travail. L'export ne change pas l'état du projet : rien au
     /// journal (ADR-0011, ADR-0016 C1).
     fn exporter_traces(&mut self, format: &'static str, chemin: &Path) {
+        self.effacer_messages();
         let Some(reference) = self.session.geom().traces() else {
             return;
         };
@@ -900,6 +930,7 @@ impl DemoApp {
     /// choisi : re-parse et écriture au fil de travail, depuis les
     /// octets d'origine (ADR-0011, ADR-0016 C1).
     fn exporter_maillage(&mut self, chemin: &Path) {
+        self.effacer_messages();
         let Some(reference) = self.session.geom().maillage() else {
             return;
         };
@@ -1254,6 +1285,7 @@ impl DemoApp {
         let reponse = ui.button(self.texte("top-recalculer"));
         avec_aide(&reponse, "aide-top-recalculer", &mut self.aide);
         if reponse.clicked() {
+            self.effacer_messages();
             match self.session.graph_mut().evaluate_all() {
                 Ok(()) => self.info = Some(self.texte("info-recalcul-ok")),
                 Err(error) => self.error = Some(error.to_string()),
@@ -1437,7 +1469,7 @@ impl DemoApp {
             self.tampon_dimensions.insert(name, (tampon, actif));
         }
         if let Some((name, value)) = edited {
-            self.executer(&SetInput {
+            let _ = self.executer(&SetInput {
                 name: name.into(),
                 value,
             });
@@ -1448,7 +1480,7 @@ impl DemoApp {
         avec_aide(&reponse, "aide-params-expression", &mut self.aide);
         if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             let expression = self.expr_buf.clone();
-            self.executer(&SetExpression {
+            let _ = self.executer(&SetExpression {
                 name: "diagonal".into(),
                 expression,
             });
@@ -1839,7 +1871,8 @@ mod tests {
             octets: SVG_TEST.to_vec(),
             traces: traces.len(),
             sommets,
-        });
+        })
+        .expect("import de test");
     }
 
     /// L'import est une action annulable : undo vide la géométrie de
@@ -1904,7 +1937,8 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 1234.0,
-        });
+        })
+        .expect("largeur");
         let dossier = std::env::temp_dir().join("omnifab-phase-b-enregistrer");
         let _ = std::fs::remove_dir_all(&dossier);
         std::fs::create_dir_all(&dossier).expect("dossier de test");
@@ -2251,7 +2285,8 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
-        });
+        })
+        .expect("largeur");
         app.annuler();
         assert!(app.session.can_redo(), "le redo est en place");
         let dossier = std::env::temp_dir().join("omnifab-c3-enregistrer-undo");
@@ -2281,7 +2316,8 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
-        });
+        })
+        .expect("largeur");
         assert!(app.dirty, "une commande effective pose l'indicateur");
         let dossier = std::env::temp_dir().join("omnifab-c3-dirty");
         let _ = std::fs::remove_dir_all(&dossier);
@@ -2291,6 +2327,51 @@ mod tests {
         assert!(!app.dirty, "la sauvegarde lève l'indicateur");
         app.annuler();
         assert!(app.dirty, "l'annulation repose l'indicateur");
+    }
+
+    /// Un import au format inconnu est refusé par la session : aucun
+    /// succès n'est affiché, et l'import valide suivant efface le
+    /// refus (ADR-0016 C4).
+    #[test]
+    fn succes_d_import_conditionne_a_la_commande() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::ImportTraces {
+            generation: app.generation,
+            format: "step",
+            octets: vec![],
+            traces: 1,
+            sommets: 3,
+        });
+        assert!(app.error.is_some(), "le refus est affiché");
+        assert!(app.info.is_none(), "aucun succès après un refus");
+        app.appliquer_retour(Retour::ImportTraces {
+            generation: app.generation,
+            format: "svg",
+            octets: SVG_TEST.to_vec(),
+            traces: 1,
+            sommets: 3,
+        });
+        assert!(app.info.is_some(), "l'import réussi affiche son succès");
+        assert!(app.error.is_none(), "le refus précédent est effacé");
+    }
+
+    /// L'action suivante efface l'erreur de la précédente : plus de
+    /// rouge persistant après correction (ADR-0016 C4).
+    #[test]
+    fn messages_d_etat_fideles() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::Erreur {
+            generation: app.generation,
+            message: "fichier invalide".to_string(),
+        });
+        assert!(app.error.is_some(), "l'échec est affiché");
+        assert!(app.info.is_none(), "aucun succès affiché");
+        app.executer(&SetInput {
+            name: "width_mm".into(),
+            value: 900.0,
+        })
+        .expect("commande valide");
+        assert!(app.error.is_none(), "la correction efface l'erreur");
     }
 
     /// Modificateurs pour un test de raccourcis (ADR-0016 C2).
