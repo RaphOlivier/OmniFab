@@ -275,8 +275,10 @@ fn identifiants_v7_tires_de_l_horloge() {
     let uuid = uuid::Uuid::parse_str(&premier).expect("UUID canonique");
     assert_eq!(uuid.get_version_num(), 7);
     let octets = uuid.as_bytes();
-    let millis: u64 = octets[..6].iter().fold(0u64, |acc, octet| (acc << 8) | u64::from(*octet));
-    assert_eq!(millis, 951782400_000, "ms de l'horloge");
+    let millis: u64 = octets[..6]
+        .iter()
+        .fold(0u64, |acc, octet| (acc << 8) | u64::from(*octet));
+    assert_eq!(millis, 951_782_400_000, "ms de l'horloge");
 }
 
 #[test]

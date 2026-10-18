@@ -539,7 +539,10 @@ fn txn_horodate_par_l_horloge_du_document() {
                 value: 800.0,
             })
             .expect("commande");
-        session.document().events()[0].txn.clone().expect("txn attribué")
+        session.document().events()[0]
+            .txn
+            .clone()
+            .expect("txn attribué")
     };
     assert_eq!(
         fabrique(),
