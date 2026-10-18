@@ -20,5 +20,7 @@ use forge_session::{CroquisResolu, EsquisseProjection};
 /// ses graines demeurent la vérité affichable (ADR-0018 D7).
 pub(crate) fn resoudre(croquis: &EsquisseProjection) -> Result<CroquisResolu, String> {
     let mut systeme = Systeme2D::new().map_err(|erreur| erreur.to_string())?;
-    croquis.resoudre(&mut systeme).map_err(|erreur| erreur.to_string())
+    croquis
+        .resoudre(&mut systeme)
+        .map_err(|erreur| erreur.to_string())
 }

@@ -325,9 +325,17 @@ impl Travail {
                 };
                 ecris_fichier(generation, &chemin, &octets)
             }
-            Travail::ResoudreEsquisse { generation, edition, croquis } => {
+            Travail::ResoudreEsquisse {
+                generation,
+                edition,
+                croquis,
+            } => {
                 let resultat = esquisse::resoudre(&croquis);
-                Retour::EsquisseResolue { generation, edition, resultat }
+                Retour::EsquisseResolue {
+                    generation,
+                    edition,
+                    resultat,
+                }
             }
         }
     }
@@ -398,7 +406,7 @@ impl Retour {
             | Retour::ImportMaillage { generation, .. }
             | Retour::Export { generation, .. }
             | Retour::Erreur { generation, .. } => *generation,
-            | Retour::EsquisseResolue { generation, .. } => *generation,
+            Retour::EsquisseResolue { generation, .. } => *generation,
         }
     }
 }
@@ -1089,7 +1097,9 @@ impl DemoApp {
             Retour::Erreur { message, .. } => {
                 self.error = Some(message);
             }
-            Retour::EsquisseResolue { edition, resultat, .. } => {
+            Retour::EsquisseResolue {
+                edition, resultat, ..
+            } => {
                 if self.resolution_en_attente == Some(edition) {
                     self.resolution_en_attente = None;
                 }
@@ -1117,7 +1127,11 @@ impl DemoApp {
             return;
         }
         let edition = self.session.esquisse().edition();
-        if self.croquis_resolu.as_ref().is_some_and(|(cle, _)| *cle == edition) {
+        if self
+            .croquis_resolu
+            .as_ref()
+            .is_some_and(|(cle, _)| *cle == edition)
+        {
             return;
         }
         if self.resolution_en_attente == Some(edition) {
