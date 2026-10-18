@@ -78,6 +78,12 @@ pub struct Document {
     /// (d'autres horloges que l'horloge système rendent le journal
     /// déterministe en test).
     pub(crate) clock: Box<dyn Clock>,
+    /// Dernière milliseconde d'un UUIDv7 attribué : le compteur de
+    /// monotonie repart à zéro à chaque nouvelle milliseconde.
+    pub(crate) uuid_derniere_ms: u64,
+    /// Compteur de monotonie des UUIDv7 attribués dans la même
+    /// milliseconde (ADR-0016 A7).
+    pub(crate) uuid_counter: u16,
 }
 
 impl Default for Document {
@@ -88,6 +94,8 @@ impl Default for Document {
             snapshot: None,
             migrations: MigrationRegistry::new(),
             clock: Box::new(SystemClock),
+            uuid_derniere_ms: 0,
+            uuid_counter: 0,
         }
     }
 }
@@ -113,12 +121,13 @@ impl Document {
     }
 
     /// Ajoute un événement au journal : lui attribue le prochain numéro de
-    /// séquence et un horodatage ISO 8601 fourni par l'horloge du
-    /// document, puis retourne le numéro attribué.
+    /// séquence, un horodatage ISO 8601 et un identifiant UUIDv7, tous
+    /// tirés de l'horloge du document (ADR-0016 A7), puis retourne le
+    /// numéro attribué.
     pub fn append(&mut self, new_event: NewEvent) -> u64 {
         let seq = self.events.len() as u64 + 1;
         let timestamp = iso8601_from_unix(self.clock.now_unix());
-        let id = uuid::Uuid::now_v7().to_string();
+        let id = self.nouvel_uuid_v7();
         self.events.push(Event {
             seq,
             id: Some(id),
@@ -130,6 +139,28 @@ impl Document {
             txn: new_event.txn,
         });
         seq
+    }
+
+    /// Attribue un nouvel identifiant UUIDv7 : l'horodatage (précision
+    /// ms) vient de l'horloge injectable du document, et un compteur de
+    /// monotonie sur 12 bits distingue les identifiants attribués dans
+    /// la même milliseconde — le journal reste déterministe sous
+    /// [`FixedClock`] et ne dépend plus de l'horloge système, dont le
+    /// comportement est incertain en wasm32 (ADR-0016 A7).
+    pub fn nouvel_uuid_v7(&mut self) -> String {
+        let millis = u64::try_from(self.clock.now_unix()).unwrap_or(0) * 1000;
+        if millis != self.uuid_derniere_ms {
+            self.uuid_derniere_ms = millis;
+            self.uuid_counter = 0;
+        }
+        let compteur = self.uuid_counter.min(0x0FFF);
+        self.uuid_counter = self.uuid_counter.saturating_add(1);
+        let mut counter_random_bytes = [0u8; 10];
+        counter_random_bytes[0] = (compteur >> 8) as u8;
+        counter_random_bytes[1] = (compteur & 0xFF) as u8;
+        uuid::Builder::from_unix_timestamp_millis(millis, &counter_random_bytes)
+            .into_uuid()
+            .to_string()
     }
 
     /// Journal complet, dans l'ordre.

@@ -2,7 +2,7 @@
 //! par curseur, abandon des événements défaisables, imports de géométrie
 //! et purge des blobs orphelins, sauvegarde du journal visible.
 
-use forge_doc::{Document, NewEvent};
+use forge_doc::{Document, FixedClock, NewEvent};
 use forge_session::{
     Command, CommandPlan, EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection,
     Session, SessionError, SetExpression, SetInput,
@@ -522,5 +522,28 @@ fn refus_d_un_blob_retire_les_blobs_deposes() {
     assert!(
         session.document().blob_names().is_empty(),
         "le rejeu ne ressuscite aucun blob"
+    );
+}
+
+/// L'identifiant de transaction est horodaté par l'horloge du document,
+/// pas par l'horloge système : une session à horloge figée attribue des
+/// transactions reproductibles (ADR-0016 A7).
+#[test]
+fn txn_horodate_par_l_horloge_du_document() {
+    let fabrique = || {
+        let document = Document::new().with_clock(Box::new(FixedClock { unix: 951782400 }));
+        let mut session = Session::from_document("tests", document).expect("rejeu");
+        session
+            .execute(&SetInput {
+                name: "width_mm".into(),
+                value: 800.0,
+            })
+            .expect("commande");
+        session.document().events()[0].txn.clone().expect("txn attribué")
+    };
+    assert_eq!(
+        fabrique(),
+        fabrique(),
+        "une session à horloge figée attribue un txn reproductible"
     );
 }

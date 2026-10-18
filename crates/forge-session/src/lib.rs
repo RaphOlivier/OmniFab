@@ -171,7 +171,8 @@ impl Session {
         references.extend(deposes.iter().cloned());
         self.truncate_pending();
         self.gc_blobs(&references);
-        let txn = uuid::Uuid::now_v7().to_string();
+        // UUIDv7 horodaté par l'horloge du document (ADR-0016 A7).
+        let txn = self.doc.nouvel_uuid_v7();
         for mut event in plan.events {
             event.actor = self.actor.clone();
             event.txn = Some(txn.clone());

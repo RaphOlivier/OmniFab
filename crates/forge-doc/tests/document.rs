@@ -247,6 +247,39 @@ fn horloge_fixe_deterministe() {
 }
 
 #[test]
+fn identifiants_v7_tires_de_l_horloge() {
+    // ADR-0016 A7 : les UUIDv7 sont construits depuis l'horloge injectable
+    // du document, au lieu de l'horloge système — un document à horloge
+    // figée attribue des identifiants reproductibles, et deux appends
+    // dans la même milliseconde restent distincts et ordonnés (compteur
+    // de monotonie).
+    let mut doc = Document::new().with_clock(Box::new(FixedClock { unix: 951782400 }));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    doc.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    let premier = doc.events()[0].id.clone().expect("id attribué");
+    let second = doc.events()[1].id.clone().expect("id attribué");
+    assert_ne!(
+        premier, second,
+        "le compteur de monotonie distingue les appends"
+    );
+    assert!(
+        premier < second,
+        "les identifiants se trient dans l'ordre d'ajout"
+    );
+    let mut autre = Document::new().with_clock(Box::new(FixedClock { unix: 951782400 }));
+    autre.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    autre.append(NewEvent::new("demo.test", 1, "test", json!({})));
+    assert_eq!(autre.events()[0].id.as_deref(), Some(premier.as_str()));
+    assert_eq!(autre.events()[1].id.as_deref(), Some(second.as_str()));
+    // L'horodatage ms de l'horloge est encodé dans l'identifiant, version 7.
+    let uuid = uuid::Uuid::parse_str(&premier).expect("UUID canonique");
+    assert_eq!(uuid.get_version_num(), 7);
+    let octets = uuid.as_bytes();
+    let millis: u64 = octets[..6].iter().fold(0u64, |acc, octet| (acc << 8) | u64::from(*octet));
+    assert_eq!(millis, 951782400_000, "ms de l'horloge");
+}
+
+#[test]
 fn nom_de_blob_invalide_rejete() {
     // OF-DOC-0013 : noms capables de sortir du dossier `objects/`.
     let mut doc = Document::new();
