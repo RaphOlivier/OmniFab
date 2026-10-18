@@ -156,7 +156,11 @@ impl Travail {
     /// devient un retour d'erreur à message (ADR-0016 C1).
     fn executer(self) -> Retour {
         match self {
-            Travail::ImportTraces { generation, format, chemin } => {
+            Travail::ImportTraces {
+                generation,
+                format,
+                chemin,
+            } => {
                 let octets = match std::fs::read(&chemin) {
                     Ok(octets) => octets,
                     Err(error) => return erreur_de_travail(generation, error),
@@ -198,7 +202,13 @@ impl Travail {
                     Err(error) => erreur_de_travail(generation, error),
                 }
             }
-            Travail::ExportTraces { generation, format_origine, format, octets, chemin } => {
+            Travail::ExportTraces {
+                generation,
+                format_origine,
+                format,
+                octets,
+                chemin,
+            } => {
                 let parse = if format_origine == "svg" {
                     svg::import(&octets, &svg::SvgBudgets::default())
                 } else {
@@ -219,7 +229,11 @@ impl Travail {
                 };
                 ecris_fichier(generation, &chemin, &octets)
             }
-            Travail::ExportMaillage { generation, octets, chemin } => {
+            Travail::ExportMaillage {
+                generation,
+                octets,
+                chemin,
+            } => {
                 let maillage = match stl::import(&octets, &stl::StlBudgets::default()) {
                     Ok(maillage) => maillage,
                     Err(error) => return erreur_de_travail(generation, error),
@@ -364,13 +378,13 @@ struct DemoApp {
     /// Fichier projet courant, choisi par l'utilisateur : état de
     /// l'app UI, jamais un événement (ADR-0014).
     chemin_projet: Option<PathBuf>,
-    /// Cache mémoire non autoritaire des tracés re-parsés (nom du blob
-    /// + tracés ou échec de parse), invalidé quand la référence
+    /// Cache mémoire non autoritaire des tracés re-parsés (nom du
+    /// blob + tracés ou échec de parse), invalidé quand la référence
     /// change (ADR-0011) — un échec est mémorisé, pas re-parsé à
     /// chaque frame (ADR-0016 C1).
     cache: Option<(String, Result<Vec<Path2>, String>)>,
-    /// Cache mémoire non autoritaire du maillage re-parsé (nom du blob
-    /// + maillage ou échec de parse), invalidé quand la référence
+    /// Cache mémoire non autoritaire du maillage re-parsé (nom du
+    /// blob + maillage ou échec de parse), invalidé quand la référence
     /// change (ADR-0014, ADR-0016 C1).
     cache_maillage: Option<(String, Result<Mesh, String>)>,
     /// Caméra du viewport : ajustée automatiquement quand la scêne
@@ -645,7 +659,13 @@ impl DemoApp {
     /// d'erreur pour un échec (ADR-0016 C1).
     fn appliquer_retour(&mut self, retour: Retour) {
         match retour {
-            Retour::ImportTraces { format, octets, traces, sommets, .. } => {
+            Retour::ImportTraces {
+                format,
+                octets,
+                traces,
+                sommets,
+                ..
+            } => {
                 self.executer(&ImportTraces {
                     format: format.to_string(),
                     octets,
@@ -661,7 +681,9 @@ impl DemoApp {
                     ],
                 ));
             }
-            Retour::ImportMaillage { octets, triangles, .. } => {
+            Retour::ImportMaillage {
+                octets, triangles, ..
+            } => {
                 self.executer(&ImportMesh {
                     format: "stl".to_string(),
                     octets,
@@ -948,10 +970,9 @@ impl DemoApp {
             };
             parse.map_err(|erreur| erreur.to_string())
         };
-        if met_en_cache(&mut self.cache, blob, parse) {
-            if let Some((_, Err(erreur))) = &self.cache {
-                self.error = Some(erreur.clone());
-            }
+        met_en_cache(&mut self.cache, blob, parse);
+        if let Some((_, Err(erreur))) = &self.cache {
+            self.error = Some(erreur.clone());
         }
     }
     /// Re-parse le maillage courant si le blob référencé a changé :
@@ -978,10 +999,9 @@ impl DemoApp {
         let parse = move || {
             stl::import(&octets, &stl::StlBudgets::default()).map_err(|erreur| erreur.to_string())
         };
-        if met_en_cache(&mut self.cache_maillage, blob, parse) {
-            if let Some((_, Err(erreur))) = &self.cache_maillage {
-                self.error = Some(erreur.clone());
-            }
+        met_en_cache(&mut self.cache_maillage, blob, parse);
+        if let Some((_, Err(erreur))) = &self.cache_maillage {
+            self.error = Some(erreur.clone());
         }
     }
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -2010,9 +2030,21 @@ mod tests {
     fn un_echec_de_parse_est_en_cache_pas_reparse() {
         let mut parses: u32 = 0;
         let mut cache: Option<(String, Result<Vec<u8>, String>)> = None;
-        assert!(met_en_cache(&mut cache, "a".into(), echec_de_parse(&mut parses)));
-        assert!(!met_en_cache(&mut cache, "a".into(), echec_de_parse(&mut parses)));
-        assert!(met_en_cache(&mut cache, "b".into(), echec_de_parse(&mut parses)));
+        assert!(met_en_cache(
+            &mut cache,
+            "a".into(),
+            echec_de_parse(&mut parses)
+        ));
+        assert!(!met_en_cache(
+            &mut cache,
+            "a".into(),
+            echec_de_parse(&mut parses)
+        ));
+        assert!(met_en_cache(
+            &mut cache,
+            "b".into(),
+            echec_de_parse(&mut parses)
+        ));
         assert_eq!(parses, 2, "deux parses pour deux clés distinctes");
         let (_, resultat) = cache.expect("entrée en cache");
         assert!(resultat.is_err(), "l'échec est mémorisé");
