@@ -38,8 +38,9 @@ pub fn dossier() -> Option<PathBuf> {
     creer_dossier_dans(&std::env::home_dir()?).ok()
 }
 
-/// Liste les projets d'un dossier : fichiers `.omnifab` uniquement,
-/// du plus récemment modifié au plus ancien. Un fichier illisible
+/// Liste les projets d'un dossier : fichiers `.omnifab` uniquement
+/// — extension comparée sans casse (ADR-0016 C5) —, du plus
+/// récemment modifié au plus ancien. Un fichier illisible
 /// est ignoré — la bibliothèque ne doit jamais empêcher le
 /// démarrage de l'application.
 pub fn lister(dossier: &Path) -> Vec<EntreeProjet> {
@@ -50,7 +51,7 @@ pub fn lister(dossier: &Path) -> Vec<EntreeProjet> {
         .filter_map(|entree| {
             let chemin = entree.ok()?.path();
             let extension = chemin.extension()?.to_str()?;
-            if extension != EXTENSION {
+            if !extension.eq_ignore_ascii_case(EXTENSION) {
                 return None;
             }
             let nom = chemin.file_stem()?.to_str()?.to_string();
@@ -116,6 +117,21 @@ mod tests {
         assert!(noms.contains(&"b"), "projet b listé");
         let tailles: Vec<u64> = projets.iter().map(|p| p.taille).collect();
         assert!(tailles.contains(&1), "taille de a lue");
+    }
+
+    /// L'extension se compare sans casse : « PROJET.OMNIFAB » est
+    /// listé comme un projet (ADR-0016 C5).
+    #[test]
+    fn lister_ignore_la_casse_de_l_extension() {
+        let racine = dossier_temp("casse");
+        let dossier = creer_dossier_dans(&racine).expect("création");
+        std::fs::write(dossier.join("maj.OMNIFAB"), b"x").expect("écriture");
+        std::fs::write(dossier.join("bas.omnifab"), b"y").expect("écriture");
+        let projets = lister(&dossier);
+        assert_eq!(projets.len(), 2, "les deux casses sont listées");
+        let noms: Vec<&str> = projets.iter().map(|p| p.nom.as_str()).collect();
+        assert!(noms.contains(&"maj"), "projet en majuscules listé");
+        assert!(noms.contains(&"bas"), "projet en minuscules listé");
     }
 
     /// Le tri va du plus récent au plus ancien.

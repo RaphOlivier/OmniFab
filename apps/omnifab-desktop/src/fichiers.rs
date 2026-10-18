@@ -32,7 +32,8 @@ pub fn chemin_export(libelle: &str, extensions: &[&str]) -> Option<PathBuf> {
 
 /// Demande un chemin pour un nouveau projet `.omnifab` : la
 /// bibliothèque est proposée comme dossier par défaut quand elle est
-/// disponible (ADR-0014).
+/// disponible (ADR-0014). L'extension `.omnifab` est ajoutée si
+/// l'utilisateur l'a omise (ADR-0016 C5).
 pub fn chemin_projet(libelle: &str, dossier_defaut: Option<&std::path::Path>) -> Option<PathBuf> {
     let dialogue = rfd::FileDialog::new()
         .add_filter(libelle, &["omnifab"])
@@ -41,7 +42,8 @@ pub fn chemin_projet(libelle: &str, dossier_defaut: Option<&std::path::Path>) ->
         Some(dossier) => dialogue.set_directory(dossier),
         None => dialogue,
     };
-    dialogue.save_file()
+    let chemin = dialogue.save_file()?;
+    Some(ajouter_suffixe(chemin, &["omnifab"]))
 }
 
 /// Demande un projet existant à ouvrir, n'importe où sur le disque.
@@ -51,10 +53,19 @@ pub fn choisir_projet(libelle: &str) -> Option<PathBuf> {
         .pick_file()
 }
 
-/// Ajoute le premier suffixe quand il manque : l'utilisateur a
-/// souvent omis l'extension dans le dialogue d'enregistrement.
+/// Ajoute le premier suffixe quand l'extension actuelle n'est pas
+/// déjà parmi les extensions attendues (comparaison sans casse) :
+/// « plan v1.5 » devient « plan v1.5.svg » — son extension est « 5 »,
+/// pas « svg » —, « dessin.SVG » est conservé tel quel (ADR-0016 C5).
 fn ajouter_suffixe(chemin: PathBuf, extensions: &[&str]) -> PathBuf {
-    if chemin.extension().is_some() {
+    let extension = chemin
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase());
+    let extension_attendue = extension.as_deref().is_some_and(|extension| {
+        extensions.iter().any(|attendue| attendue.to_ascii_lowercase() == extension)
+    });
+    if extension_attendue {
         return chemin;
     }
     let mut nom = chemin.into_os_string();
@@ -74,5 +85,30 @@ mod tests {
         assert_eq!(chemin.extension().and_then(|e| e.to_str()), Some("svg"));
         let chemin = ajouter_suffixe(PathBuf::from("/tmp/dessin.svg"), &["svg"]);
         assert_eq!(chemin.to_str(), Some("/tmp/dessin.svg"), "suffixe conservé");
+    }
+
+    /// « plan v1.5 » a pour extension « 5 » : le suffixe est ajouté ;
+    /// une extension attendue en casse différente est conservée
+    /// (ADR-0016 C5).
+    #[test]
+    fn ajouter_suffixe_v1_5_et_casse() {
+        let chemin = ajouter_suffixe(PathBuf::from("/tmp/plan v1.5"), &["svg"]);
+        assert_eq!(
+            chemin.to_str(),
+            Some("/tmp/plan v1.5.svg"),
+            "l'extension « 5 » n'est pas « svg » : le suffixe est ajouté"
+        );
+        let chemin = ajouter_suffixe(PathBuf::from("/tmp/dessin.SVG"), &["svg"]);
+        assert_eq!(
+            chemin.to_str(),
+            Some("/tmp/dessin.SVG"),
+            "extension attendue, casse différente : conservée"
+        );
+        let chemin = ajouter_suffixe(PathBuf::from("/tmp/projet"), &["omnifab"]);
+        assert_eq!(
+            chemin.to_str(),
+            Some("/tmp/projet.omnifab"),
+            "projet sans extension complété"
+        );
     }
 }
