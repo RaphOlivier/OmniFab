@@ -96,7 +96,7 @@ impl ValueGraph {
         let id = self.ensure_node(name);
         let node = match self.nodes.get_mut(&id) {
             Some(node) => node,
-            None => return,
+            None => return Ok(()),
         };
         let was_computed = matches!(node.kind, NodeKind::Computed(_));
         node.kind = NodeKind::Input(value);
