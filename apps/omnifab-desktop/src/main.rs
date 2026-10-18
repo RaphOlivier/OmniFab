@@ -14,6 +14,9 @@
 //!   références et compteurs (ADR-0001) ; l'export ne change pas l'état
 //!   — rien au journal ; **les fichiers sont choisis par l'utilisateur
 //!   via les sélecteurs natifs** (ADR-0014) ;
+//! - **fil de travail** (ADR-0016 C1) : lectures, parses et exports
+//!   détachés du fil d'interface, échecs de parse mémorisés — un
+//!   fichier invalide n'est plus re-parsé à chaque frame ;
 //! - **bibliothèque de projets** (ADR-0014) : écran d'accueil listant
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
@@ -54,6 +57,7 @@ use forge_session::{
 use forge_units::Length;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 
 /// État de rendu wgpu d'eframe : alias pour alléger la signature du
 /// constructeur (ADR-0015).
@@ -103,6 +107,244 @@ enum Vue {
     TroisD,
 }
 
+/// Travail confié au fil de travail : lecture et parse d'un
+/// import, parse et écriture d'un export — jamais sur le fil
+/// d'interface (ADR-0016 C1).
+enum Travail {
+    /// Lecture puis parse d'un fichier de tracés (SVG ou DXF).
+    ImportTraces {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+        /// Format attendu : « svg » ou « dxf ».
+        format: &'static str,
+        /// Fichier à lire.
+        chemin: PathBuf,
+    },
+    /// Lecture puis parse d'un maillage STL.
+    ImportMaillage {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+        /// Fichier à lire.
+        chemin: PathBuf,
+    },
+    /// Re-parse du blob d'origine puis export des tracés.
+    ExportTraces {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+        /// Format du blob d'origine : « svg » ou « dxf ».
+        format_origine: &'static str,
+        /// Format d'export demandé : « svg » ou « dxf ».
+        format: &'static str,
+        /// Octets du blob d'origine.
+        octets: Vec<u8>,
+        /// Fichier de destination.
+        chemin: PathBuf,
+    },
+    /// Re-parse du blob d'origine puis export du maillage en STL.
+    ExportMaillage {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+        /// Octets du blob d'origine.
+        octets: Vec<u8>,
+        /// Fichier de destination.
+        chemin: PathBuf,
+    },
+}
+
+impl Travail {
+    /// Exécute le travail hors du fil d'interface : tout échec
+    /// devient un retour d'erreur à message (ADR-0016 C1).
+    fn executer(self) -> Retour {
+        match self {
+            Travail::ImportTraces { generation, format, chemin } => {
+                let octets = match std::fs::read(&chemin) {
+                    Ok(octets) => octets,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                let parse = if format == "svg" {
+                    svg::import(&octets, &svg::SvgBudgets::default())
+                } else {
+                    dxf::import(&octets, &dxf::DxfBudgets::default())
+                };
+                match parse {
+                    Ok(traces) => {
+                        let nombre_traces = traces.len();
+                        let sommets: usize = traces.iter().map(|trace| trace.len()).sum();
+                        Retour::ImportTraces {
+                            generation,
+                            format,
+                            octets,
+                            traces: nombre_traces,
+                            sommets,
+                        }
+                    }
+                    Err(error) => erreur_de_travail(generation, error),
+                }
+            }
+            Travail::ImportMaillage { generation, chemin } => {
+                let octets = match std::fs::read(&chemin) {
+                    Ok(octets) => octets,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                match stl::import(&octets, &stl::StlBudgets::default()) {
+                    Ok(maillage) => {
+                        let triangles = maillage.triangle_count();
+                        Retour::ImportMaillage {
+                            generation,
+                            octets,
+                            triangles,
+                        }
+                    }
+                    Err(error) => erreur_de_travail(generation, error),
+                }
+            }
+            Travail::ExportTraces { generation, format_origine, format, octets, chemin } => {
+                let parse = if format_origine == "svg" {
+                    svg::import(&octets, &svg::SvgBudgets::default())
+                } else {
+                    dxf::import(&octets, &dxf::DxfBudgets::default())
+                };
+                let traces = match parse {
+                    Ok(traces) => traces,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                let sortie = if format == "svg" {
+                    svg::export(&traces)
+                } else {
+                    dxf::export(&traces)
+                };
+                let octets = match sortie {
+                    Ok(octets) => octets,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                ecris_fichier(generation, &chemin, &octets)
+            }
+            Travail::ExportMaillage { generation, octets, chemin } => {
+                let maillage = match stl::import(&octets, &stl::StlBudgets::default()) {
+                    Ok(maillage) => maillage,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                let octets = match stl::export(&maillage) {
+                    Ok(octets) => octets,
+                    Err(error) => return erreur_de_travail(generation, error),
+                };
+                ecris_fichier(generation, &chemin, &octets)
+            }
+        }
+    }
+}
+
+/// Retour du fil de travail : import réussi (octets d'origine et
+/// compteurs), export écrit, ou échec à message (ADR-0016 C1).
+enum Retour {
+    /// Tracés lus et parsés : octets d'origine pour le blob,
+    /// compteurs pour le journal.
+    ImportTraces {
+        /// Génération de l'état au moment de l'envoi du travail.
+        generation: u64,
+        /// Format du fichier importé : « svg » ou « dxf ».
+        format: &'static str,
+        /// Octets d'origine.
+        octets: Vec<u8>,
+        /// Nombre de tracés.
+        traces: usize,
+        /// Nombre de sommets.
+        sommets: usize,
+    },
+    /// Maillage lu et parsé : octets d'origine et compte de
+    /// triangles.
+    ImportMaillage {
+        /// Génération de l'état au moment de l'envoi du travail.
+        generation: u64,
+        /// Octets d'origine.
+        octets: Vec<u8>,
+        /// Nombre de triangles.
+        triangles: usize,
+    },
+    /// Export écrit au chemin donné.
+    Export {
+        /// Génération de l'état au moment de l'envoi du travail.
+        generation: u64,
+        /// Chemin du fichier écrit.
+        chemin: String,
+    },
+    /// Échec du travail : message affiché au canal d'erreur.
+    Erreur {
+        /// Génération de l'état au moment de l'envoi du travail.
+        generation: u64,
+        /// Message d'échec.
+        message: String,
+    },
+}
+
+impl Retour {
+    /// Génération de l'état au moment de l'envoi du travail.
+    fn generation(&self) -> u64 {
+        match self {
+            Retour::ImportTraces { generation, .. }
+            | Retour::ImportMaillage { generation, .. }
+            | Retour::Export { generation, .. }
+            | Retour::Erreur { generation, .. } => *generation,
+        }
+    }
+}
+
+/// Boucle du fil de travail : chaque travail reçu est exécuté et son
+/// retour émis ; le fil s'éteint quand l'émetteur des travaux est
+/// abandonné (ADR-0016 C1).
+fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Retour>) {
+    for travail in recepteur {
+        let _ = emetteur.send(travail.executer());
+    }
+}
+
+/// Ne garde que les retours de la génération courante : les travaux
+/// lancés avant une réinitialisation ou une ouverture sont
+/// obsolètes, leurs résultats ne touchent plus l'état (ADR-0016 C1).
+fn garde_actuels(retours: Vec<Retour>, generation: u64) -> Vec<Retour> {
+    retours
+        .into_iter()
+        .filter(|retour| retour.generation() == generation)
+        .collect()
+}
+
+/// Mémorise le résultat d'un parse dans le cache, clé à l'appui :
+/// la même clé n'est plus re-parsée, même en échec (ADR-0016 C1) —
+/// un fichier invalide ne revient pas à chaque frame. Retourne
+/// « true » si un parse a eu lieu.
+fn met_en_cache<T>(
+    cache: &mut Option<(String, Result<T, String>)>,
+    cle: String,
+    parse: impl FnOnce() -> Result<T, String>,
+) -> bool {
+    if cache.as_ref().is_some_and(|(nom, _)| *nom == cle) {
+        return false;
+    }
+    *cache = Some((cle, parse()));
+    true
+}
+
+/// Retour d'erreur du fil de travail : message à afficher au canal
+/// d'erreur (ADR-0016 C1).
+fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour {
+    Retour::Erreur {
+        generation,
+        message: erreur.to_string(),
+    }
+}
+
+/// Écrit les octets exportés au chemin choisi : retour d'export ou
+/// d'erreur (ADR-0016 C1).
+fn ecris_fichier(generation: u64, chemin: &Path, octets: &[u8]) -> Retour {
+    if let Err(error) = std::fs::write(chemin, octets) {
+        return erreur_de_travail(generation, error);
+    }
+    Retour::Export {
+        generation,
+        chemin: chemin.display().to_string(),
+    }
+}
+
 struct DemoApp {
     /// Session de travail : document, projections, undo/redo
     /// (ADR-0008/0011).
@@ -123,11 +365,14 @@ struct DemoApp {
     /// l'app UI, jamais un événement (ADR-0014).
     chemin_projet: Option<PathBuf>,
     /// Cache mémoire non autoritaire des tracés re-parsés (nom du blob
-    /// + tracés), invalidé quand la référence change (ADR-0011).
-    cache: Option<(String, Vec<Path2>)>,
+    /// + tracés ou échec de parse), invalidé quand la référence
+    /// change (ADR-0011) — un échec est mémorisé, pas re-parsé à
+    /// chaque frame (ADR-0016 C1).
+    cache: Option<(String, Result<Vec<Path2>, String>)>,
     /// Cache mémoire non autoritaire du maillage re-parsé (nom du blob
-    /// + maillage), invalidé quand la référence change (ADR-0014).
-    cache_maillage: Option<(String, Mesh)>,
+    /// + maillage ou échec de parse), invalidé quand la référence
+    /// change (ADR-0014, ADR-0016 C1).
+    cache_maillage: Option<(String, Result<Mesh, String>)>,
     /// Caméra du viewport : ajustée automatiquement quand la scêne
     /// change, pilotée ensuite par l'utilisateur (ADR-0015).
     camera: Camera2D,
@@ -149,6 +394,19 @@ struct DemoApp {
     /// donc sa valeur et son activité d'une frame à l'autre
     /// (validation C1 round 6).
     tampon_dimensions: BTreeMap<&'static str, (f64, bool)>,
+    /// Émetteur vers le fil de travail : lectures, parses et exports
+    /// hors du fil d'interface (ADR-0016 C1) ; `None` si le fil n'a
+    /// pas pu démarrer.
+    travaux: Option<mpsc::Sender<Travail>>,
+    /// Retours du fil de travail, consommés à chaque frame.
+    retours: mpsc::Receiver<Retour>,
+    /// Travaux confiés non revenus : le viewport demande un
+    /// rafraîchissement tant qu'il y en a (ADR-0016 C1).
+    travaux_en_attente: u32,
+    /// Génération de l'état : incrémentée à chaque réinitialisation
+    /// ou ouverture — les travaux en vol deviennent obsolètes
+    /// (ADR-0016 C1).
+    generation: u64,
 }
 
 impl DemoApp {
@@ -170,6 +428,16 @@ impl DemoApp {
                 .insert(Renderer2D::nouveau(device, format));
             viewport_wgpu = true;
         }
+        // Fil de travail (ADR-0016 C1) : lectures, parses et exports
+        // détachés du fil d'interface ; le fil s'éteint quand
+        // l'émetteur des travaux est abandonné.
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let travaux = std::thread::Builder::new()
+            .name("omnifab-travail".to_string())
+            .spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours))
+            .is_ok()
+            .then_some(emetteur_travaux);
         let mut app = Self {
             session: Session::new(ACTEUR),
             expr_buf: String::new(),
@@ -187,6 +455,10 @@ impl DemoApp {
             vue: Vue::DeuxD,
             viewport_wgpu,
             tampon_dimensions: BTreeMap::new(),
+            travaux,
+            retours: recepteur_retours,
+            travaux_en_attente: 0,
+            generation: 0,
         };
         app.reinitialiser();
         app
@@ -196,6 +468,7 @@ impl DemoApp {
     /// nouvelle session, dimensions et expression par défaut — trois
     /// groupes d'undo séparés (ADR-0011).
     fn reinitialiser(&mut self) {
+        self.generation += 1;
         self.session = Session::new(ACTEUR);
         self.expr_buf = DEFAULT_DIAGONAL_EXPR.to_string();
         self.error = None;
@@ -285,6 +558,7 @@ impl DemoApp {
             }
         };
         self.session = session;
+        self.generation += 1;
         self.cache = None;
         self.cache_maillage = None;
         self.camera = Camera2D::nouvelle();
@@ -335,142 +609,109 @@ impl DemoApp {
         self.enregistrer_dans(&chemin);
     }
 
-    /// Importe des tracés SVG ou DXF déjà lus en octets : parse forge-io
-    /// sous budgets (la validation du contenu précède la commande,
-    /// ADR-0011), puis commande `ImportTraces` — une transaction = un
-    /// groupe d'undo, octets d'origine dans un blob.
-    fn importer_traces(&mut self, format: &'static str, octets: Vec<u8>) {
-        let parse = if format == "svg" {
-            svg::import(&octets, &svg::SvgBudgets::default())
-        } else {
-            dxf::import(&octets, &dxf::DxfBudgets::default())
-        };
-        let traces = match parse {
-            Ok(traces) => traces,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        let nombre_traces = traces.len();
-        let sommets: usize = traces.iter().map(|trace| trace.len()).sum();
-        self.executer(&ImportTraces {
-            format: format.to_string(),
-            octets,
-            traces: nombre_traces,
-            sommets,
-        });
-        self.cache = None;
-        self.info = Some(self.texte_avec(
-            "info-import-traces",
-            &[
-                ("traces", Argument::from(nombre_traces)),
-                ("sommets", Argument::from(sommets)),
-            ],
-        ));
-    }
-
     /// Lit puis importe le fichier de tracés choisi dans le sélecteur
-    /// natif : le format suit le bouton, l'erreur de lecture remonte
-    /// au canal d'erreur (ADR-0014).
+    /// natif : lecture et parse partent au fil de travail, le format
+    /// suit le bouton (ADR-0014, ADR-0016 C1).
     fn charger_traces(&mut self, format: &'static str, chemin: &Path) {
-        let octets = match std::fs::read(chemin) {
-            Ok(octets) => octets,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        self.importer_traces(format, octets);
-    }
-
-    /// Importe un maillage STL déjà lu en octets : parse forge-io sous
-    /// budgets, puis commande `ImportMesh`.
-    fn importer_maillage(&mut self, octets: Vec<u8>) {
-        let maillage = match stl::import(&octets, &stl::StlBudgets::default()) {
-            Ok(maillage) => maillage,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        let triangles = maillage.triangle_count();
-        self.executer(&ImportMesh {
-            format: "stl".to_string(),
-            octets,
-            triangles,
+        self.envoyer_travail(Travail::ImportTraces {
+            generation: self.generation,
+            format,
+            chemin: chemin.to_path_buf(),
         });
-        self.cache_maillage = None;
-        self.info = Some(self.texte_avec(
-            "info-import-maillage",
-            &[("triangles", Argument::from(triangles))],
-        ));
     }
-
-    /// Lit puis importe le maillage STL choisi dans le sélecteur natif
-    /// (ADR-0014).
+    /// Lit puis importe le maillage STL choisi dans le sélecteur
+    /// natif : lecture et parse au fil de travail (ADR-0014,
+    /// ADR-0016 C1).
     fn charger_maillage(&mut self, chemin: &Path) {
-        let octets = match std::fs::read(chemin) {
-            Ok(octets) => octets,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        self.importer_maillage(octets);
+        self.envoyer_travail(Travail::ImportMaillage {
+            generation: self.generation,
+            chemin: chemin.to_path_buf(),
+        });
     }
-
+    /// Confie un travail au fil de travail : compteur des travaux en
+    /// attente et message d'information (ADR-0016 C1) ; sans fil
+    /// disponible, la demande est abandonnée en silence.
+    fn envoyer_travail(&mut self, travail: Travail) {
+        let Some(emetteur) = &self.travaux else {
+            return;
+        };
+        if emetteur.send(travail).is_ok() {
+            self.travaux_en_attente += 1;
+            self.info = Some(self.texte("info-travail-en-cours"));
+        }
+    }
+    /// Applique un retour du fil de travail à l'état : commande de
+    /// session pour un import, message pour un export, canal
+    /// d'erreur pour un échec (ADR-0016 C1).
+    fn appliquer_retour(&mut self, retour: Retour) {
+        match retour {
+            Retour::ImportTraces { format, octets, traces, sommets, .. } => {
+                self.executer(&ImportTraces {
+                    format: format.to_string(),
+                    octets,
+                    traces,
+                    sommets,
+                });
+                self.cache = None;
+                self.info = Some(self.texte_avec(
+                    "info-import-traces",
+                    &[
+                        ("traces", Argument::from(traces)),
+                        ("sommets", Argument::from(sommets)),
+                    ],
+                ));
+            }
+            Retour::ImportMaillage { octets, triangles, .. } => {
+                self.executer(&ImportMesh {
+                    format: "stl".to_string(),
+                    octets,
+                    triangles,
+                });
+                self.cache_maillage = None;
+                self.info = Some(self.texte_avec(
+                    "info-import-maillage",
+                    &[("triangles", Argument::from(triangles))],
+                ));
+            }
+            Retour::Export { chemin, .. } => {
+                self.info = Some(self.texte_avec(
+                    "info-export",
+                    &[("chemin", Argument::from(chemin.as_str()))],
+                ));
+            }
+            Retour::Erreur { message, .. } => {
+                self.error = Some(message);
+            }
+        }
+    }
     /// Exporte les tracés courants au format demandé, vers le chemin
-    /// choisi : re-parse du blob d'origine via forge-io puis
-    /// sérialisation. L'export ne change pas l'état du projet : rien
-    /// au journal (ADR-0011).
+    /// choisi : re-parse du blob d'origine puis sérialisation au fil
+    /// de travail. L'export ne change pas l'état du projet : rien au
+    /// journal (ADR-0011, ADR-0016 C1).
     fn exporter_traces(&mut self, format: &'static str, chemin: &Path) {
         let Some(reference) = self.session.geom().traces() else {
             return;
         };
-        let (format_origine, blob) = (reference.format.clone(), reference.blob.clone());
+        let blob = reference.blob.clone();
         let Some(octets) = self.session.document().blob(&blob) else {
             self.error = Some(format!("blob absent du document : {blob}"));
             return;
         };
-        let octets = octets.to_vec();
-        let parse = if format_origine == "svg" {
-            svg::import(&octets, &svg::SvgBudgets::default())
-        } else {
-            dxf::import(&octets, &dxf::DxfBudgets::default())
+        let format_origine = match reference.format.as_str() {
+            "svg" => "svg",
+            _ => "dxf",
         };
-        let traces = match parse {
-            Ok(traces) => traces,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        let sortie = if format == "svg" {
-            svg::export(&traces)
-        } else {
-            dxf::export(&traces)
-        };
-        let octets = match sortie {
-            Ok(octets) => octets,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        if let Err(error) = std::fs::write(chemin, &octets) {
-            self.error = Some(error.to_string());
-            return;
-        }
-        let affiche = chemin.display().to_string();
-        self.info = Some(self.texte_avec(
-            "info-export",
-            &[("chemin", Argument::from(affiche.as_str()))],
-        ));
+        self.envoyer_travail(Travail::ExportTraces {
+            generation: self.generation,
+            format_origine,
+            format,
+            octets: octets.to_vec(),
+            chemin: chemin.to_path_buf(),
+        });
     }
-
     /// Exporte le maillage courant en STL binaire, vers le chemin
-    /// choisi, depuis les octets d'origine re-parsés (ADR-0011).
+    /// choisi : re-parse et écriture au fil de travail, depuis les
+    /// octets d'origine (ADR-0011, ADR-0016 C1).
     fn exporter_maillage(&mut self, chemin: &Path) {
         let Some(reference) = self.session.geom().maillage() else {
             return;
@@ -480,32 +721,12 @@ impl DemoApp {
             self.error = Some(format!("blob absent du document : {blob}"));
             return;
         };
-        let octets = octets.to_vec();
-        let maillage = match stl::import(&octets, &stl::StlBudgets::default()) {
-            Ok(maillage) => maillage,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        let octets = match stl::export(&maillage) {
-            Ok(octets) => octets,
-            Err(error) => {
-                self.error = Some(error.to_string());
-                return;
-            }
-        };
-        if let Err(error) = std::fs::write(chemin, &octets) {
-            self.error = Some(error.to_string());
-            return;
-        }
-        let affiche = chemin.display().to_string();
-        self.info = Some(self.texte_avec(
-            "info-export",
-            &[("chemin", Argument::from(affiche.as_str()))],
-        ));
+        self.envoyer_travail(Travail::ExportMaillage {
+            generation: self.generation,
+            octets: octets.to_vec(),
+            chemin: chemin.to_path_buf(),
+        });
     }
-
     /// Boîte englobante 2D de la scêne importée : union des tracés et
     /// du maillage projeté de dessus — une seule échelle pour tout
     /// (ADR-0014).
@@ -703,7 +924,9 @@ impl DemoApp {
     }
 
     /// Re-parse les tracés courants si le blob référencé a changé :
-    /// cache mémoire non autoritaire, clé = nom du blob (ADR-0011).
+    /// cache mémoire non autoritaire, clé = nom du blob (ADR-0011) ;
+    /// un échec est mémorisé, pas re-parsé à chaque frame
+    /// (ADR-0016 C1).
     fn mettre_a_jour_cache(&mut self) {
         let Some(reference) = self.session.geom().traces() else {
             self.cache = None;
@@ -717,19 +940,24 @@ impl DemoApp {
             return;
         };
         let octets = octets.to_vec();
-        let parse = if format == "svg" {
-            svg::import(&octets, &svg::SvgBudgets::default())
-        } else {
-            dxf::import(&octets, &dxf::DxfBudgets::default())
+        let parse = move || {
+            let parse = if format == "svg" {
+                svg::import(&octets, &svg::SvgBudgets::default())
+            } else {
+                dxf::import(&octets, &dxf::DxfBudgets::default())
+            };
+            parse.map_err(|erreur| erreur.to_string())
         };
-        match parse {
-            Ok(traces) => self.cache = Some((blob, traces)),
-            Err(error) => self.error = Some(error.to_string()),
+        if met_en_cache(&mut self.cache, blob, parse) {
+            if let Some((_, Err(erreur))) = &self.cache {
+                self.error = Some(erreur.clone());
+            }
         }
     }
-
     /// Re-parse le maillage courant si le blob référencé a changé :
-    /// cache mémoire non autoritaire, clé = nom du blob (ADR-0014).
+    /// cache mémoire non autoritaire, clé = nom du blob (ADR-0014) ;
+    /// un échec est mémorisé, pas re-parsé à chaque frame
+    /// (ADR-0016 C1).
     fn mettre_a_jour_cache_maillage(&mut self) {
         let Some(reference) = self.session.geom().maillage() else {
             self.cache_maillage = None;
@@ -747,12 +975,15 @@ impl DemoApp {
             return;
         };
         let octets = octets.to_vec();
-        match stl::import(&octets, &stl::StlBudgets::default()) {
-            Ok(maillage) => self.cache_maillage = Some((blob, maillage)),
-            Err(error) => self.error = Some(error.to_string()),
+        let parse = move || {
+            stl::import(&octets, &stl::StlBudgets::default()).map_err(|erreur| erreur.to_string())
+        };
+        if met_en_cache(&mut self.cache_maillage, blob, parse) {
+            if let Some((_, Err(erreur))) = &self.cache_maillage {
+                self.error = Some(erreur.clone());
+            }
         }
     }
-
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let reponse = ui.add_enabled(
             self.session.can_undo(),
@@ -1162,10 +1393,13 @@ impl DemoApp {
             .map(|reference| reference.blob.clone());
         let cle = (cle_traces, cle_maillage);
         let traces: &[Path2] = match &self.cache {
-            Some((_, traces)) => traces,
-            None => &[],
+            Some((_, Ok(traces))) => traces,
+            _ => &[],
         };
-        let maillage: Option<&Mesh> = self.cache_maillage.as_ref().map(|(_, m)| m);
+        let maillage: Option<&Mesh> = match &self.cache_maillage {
+            Some((_, Ok(maillage))) => Some(maillage),
+            _ => None,
+        };
         let rect = response.rect;
         if self.camera_cle.as_ref() != Some(&cle) {
             // Le cadrage vise la scêne importée quand il y en a une,
@@ -1331,6 +1565,17 @@ impl eframe::App for DemoApp {
         if retablir && self.session.can_redo() {
             let _ = self.session.redo();
             self.expr_buf = self.expression_courante();
+        }
+        // Retours du fil de travail : imports, exports et échecs
+        // (ADR-0016 C1) ; les travaux d'une génération dépassée
+        // (réinitialisation, ouverture) sont ignorés.
+        let recus: Vec<Retour> = self.retours.try_iter().collect();
+        self.travaux_en_attente = self.travaux_en_attente.saturating_sub(recus.len() as u32);
+        for retour in garde_actuels(recus, self.generation) {
+            self.appliquer_retour(retour);
+        }
+        if self.travaux_en_attente > 0 {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
         egui::TopBottomPanel::top("top").show(ctx, |ui| {
             ui.add_space(4.0);
@@ -1749,5 +1994,47 @@ mod tests {
                 .all(|segment| segment.couleur == COULEUR_WIREFRAME),
             "arêtes cyan"
         );
+    }
+
+    /// Parse factice : échoue en comptant ses appels.
+    fn echec_de_parse(parses: &mut u32) -> impl FnOnce() -> Result<Vec<u8>, String> + '_ {
+        move || {
+            *parses += 1;
+            Err("fichier invalide".to_string())
+        }
+    }
+
+    /// Un échec de parse reste en cache : la même clé n'est plus
+    /// re-parsée à chaque frame (ADR-0016 C1).
+    #[test]
+    fn un_echec_de_parse_est_en_cache_pas_reparse() {
+        let mut parses: u32 = 0;
+        let mut cache: Option<(String, Result<Vec<u8>, String>)> = None;
+        assert!(met_en_cache(&mut cache, "a".into(), echec_de_parse(&mut parses)));
+        assert!(!met_en_cache(&mut cache, "a".into(), echec_de_parse(&mut parses)));
+        assert!(met_en_cache(&mut cache, "b".into(), echec_de_parse(&mut parses)));
+        assert_eq!(parses, 2, "deux parses pour deux clés distinctes");
+        let (_, resultat) = cache.expect("entrée en cache");
+        assert!(resultat.is_err(), "l'échec est mémorisé");
+    }
+
+    /// Les retours d'une génération obsolète sont ignorés : un
+    /// travail parti avant une réinitialisation ou une ouverture ne
+    /// touche plus l'état (ADR-0016 C1).
+    #[test]
+    fn les_retours_obsoletes_sont_ignores() {
+        let file = vec![
+            Retour::Erreur {
+                generation: 7,
+                message: "obsolète".to_string(),
+            },
+            Retour::Erreur {
+                generation: 8,
+                message: "actuel".to_string(),
+            },
+        ];
+        let gardes = garde_actuels(file, 8);
+        assert_eq!(gardes.len(), 1, "seul le retour courant est gardé");
+        assert_eq!(gardes[0].generation(), 8, "le retour gardé est courant");
     }
 }

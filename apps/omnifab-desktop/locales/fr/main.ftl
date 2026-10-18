@@ -87,6 +87,7 @@ info-recharge = Projet ouvert : {$n} événements rejoués.
 info-import-traces = Import réussi : {$traces} tracés · {$sommets} sommets.
 info-import-maillage = Import réussi : {$triangles} triangles.
 info-export = Exporté dans « {$chemin} ».
+info-travail-en-cours = Traitement du fichier en cours…
 
 # --- Fenêtre d'aide ---
 

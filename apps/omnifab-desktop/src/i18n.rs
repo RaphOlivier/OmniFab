@@ -77,6 +77,7 @@ mod tests {
         "info-import-traces",
         "info-import-maillage",
         "info-export",
+        "info-travail-en-cours",
         aide::CLE_TITRE,
         aide::CLE_EXEMPLE,
         aide::CLE_INTROUVABLE,
