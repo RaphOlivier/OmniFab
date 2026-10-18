@@ -1876,6 +1876,26 @@ impl DemoApp {
             egui::Sense::click_and_drag(),
         );
         avec_aide(&response, "aide-viewport-camera", &mut self.aide);
+        // Mode esquisse (vue 2D) : un clic pose l'entité de l'outil
+        // actif à l'endroit visé — la commande passe par la session,
+        // la résolution part au fil de travail (ADR-0018 D3). Le
+        // clic s'exécute avant l'emprunt des tracés importés,
+        // qui vit jusqu'au dessin des scènes.
+        if response.clicked()
+            && self.vue == Vue::DeuxD
+            && let Some(curseur) = response.interact_pointer_pos()
+        {
+            let decalage = curseur - response.rect.center();
+            let (x, y) = self
+                .camera
+                .depuis_ecran((decalage.x as f64, decalage.y as f64));
+            if let Some(entite) = self
+                .outil
+                .entite_du_clic(Length::from_millimeters(x), Length::from_millimeters(y))
+            {
+                let _ = self.executer(&AddEntity { entite });
+            }
+        }
         // Références des blobs tracés et maillage : la caméra se
         // réajuste quand l'une d'elles change (import, undo/redo,
         // ouverture — ADR-0015).
@@ -1941,24 +1961,6 @@ impl DemoApp {
                 Vue::TroisD => self.camera3d.orbiter((delta.x as f64, delta.y as f64)),
             }
         }
-        // Mode esquisse (vue 2D) : un clic pose l'entité de l'outil
-        // actif à l'endroit visé — la commande passe par la session,
-        // la résolution part au fil de travail (ADR-0018 D3).
-        if response.clicked()
-            && self.vue == Vue::DeuxD
-            && let Some(curseur) = response.interact_pointer_pos()
-        {
-            let decalage = curseur - rect.center();
-            let (x, y) = self
-                .camera
-                .depuis_ecran((decalage.x as f64, decalage.y as f64));
-            if let Some(entite) = self
-                .outil
-                .entite_du_clic(Length::from_millimeters(x), Length::from_millimeters(y))
-            {
-                let _ = self.executer(&AddEntity { entite });
-            }
-        }
         // Vue 2D : rectangle paramétrique par le painter (remplissage
         // et contour, une seule entité), grille, tracés et wireframe
         // du maillage en projection de dessus par le GPU. Vue 3D :
@@ -2017,13 +2019,13 @@ impl DemoApp {
                     .croquis_resolu
                     .as_ref()
                     .filter(|(edition, _)| *edition == self.session.esquisse().edition())
-                    .and_then(|(_, resultat)| resultat.ok());
+                    .and_then(|(_, resultat)| resultat.as_ref().ok());
                 atelier_esquisse::dessiner(
                     &painter,
                     &self.camera,
                     rect,
                     self.session.esquisse(),
-                    resolu.as_ref(),
+                    resolu,
                 );
                 // Cote du rectangle par le painter, après les
                 // callbacks GPU : elle reste lisible par-dessus les
