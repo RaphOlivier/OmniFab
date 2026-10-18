@@ -1,3 +1,4 @@
+//! Tests de forge-session (ADR-0008, ADR-0011) : commandes, undo/redo
 //! par curseur, abandon des événements défaisables, imports de géométrie
 //! et purge des blobs orphelins, sauvegarde du journal visible.
 //! Croquis contraint (ADR-0018) : entités, contraintes, graines et

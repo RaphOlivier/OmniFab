@@ -1,3 +1,4 @@
+//! Croquis contraint 2D de la session (ADR-0018, jalon 2 phase D) :
 //! entités, contraintes et graines de position au journal, positions
 //! résolues comme état dérivé jamais sérialisé.
 //!
