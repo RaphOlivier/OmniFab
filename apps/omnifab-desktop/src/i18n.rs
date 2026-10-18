@@ -78,6 +78,11 @@ mod tests {
         "info-import-maillage",
         "info-export",
         "info-travail-en-cours",
+        "titre-fenetre-modifie",
+        "confirmation-titre",
+        "confirmation-texte",
+        "confirmation-confirmer",
+        "confirmation-annuler",
         aide::CLE_TITRE,
         aide::CLE_EXEMPLE,
         aide::CLE_INTROUVABLE,
@@ -116,6 +121,7 @@ mod tests {
         "aide-viewport-vue-2d",
         "aide-viewport-vue-3d",
         "aide-geom-compteur",
+        "aide-confirmation-perte",
     ];
 
     /// Chaque clé utilisée par l'interface existe dans le FTL.

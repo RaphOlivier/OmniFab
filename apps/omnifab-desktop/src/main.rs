@@ -17,6 +17,11 @@
 //! - **fil de travail** (ADR-0016 C1) : lectures, parses et exports
 //!   détachés du fil d'interface, échecs de parse mémorisés — un
 //!   fichier invalide n'est plus re-parsé à chaque frame ;
+//! - **protection du travail** (ADR-0016 C3) : indicateur « non
+//!   enregistré » posé par toute commande effective et levé par la
+//!   sauvegarde — le titre de la fenêtre porte `*`, « Nouveau »,
+//!   « Ouvrir » et « Reprendre » demandent confirmation, et
+//!   l'enregistrement ne casse plus la pile redo ;
 //! - **bibliothèque de projets** (ADR-0014) : écran d'accueil listant
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
@@ -105,6 +110,21 @@ enum Vue {
     DeuxD,
     /// Vue 3D : wireframe du maillage en volume, caméra orbite.
     TroisD,
+}
+
+/// Action destructive : elle ne part qu'après confirmation quand du
+/// travail non enregistré existe (ADR-0016 C3).
+#[derive(Debug, Clone)]
+enum ActionDestructrice {
+    /// Nouveau projet : la session courante est remplacée.
+    Nouveau,
+    /// Ouverture d'un projet : chemin déjà choisi, ou sélecteur natif.
+    Ouvrir {
+        /// Chemin du projet à ouvrir, s'il est déjà connu.
+        chemin: Option<PathBuf>,
+    },
+    /// Reprise de la session en cours depuis l'écran d'accueil.
+    Reprendre,
 }
 
 /// Travail confié au fil de travail : lecture et parse d'un
@@ -442,6 +462,15 @@ struct DemoApp {
     /// ou ouverture — les travaux en vol deviennent obsolètes
     /// (ADR-0016 C1).
     generation: u64,
+    /// Travail non enregistré : posé par toute commande effective,
+    /// levé par la sauvegarde (ADR-0016 C3).
+    dirty: bool,
+    /// Le titre de la fenêtre reflète-t-il déjà `dirty` ? La commande
+    /// de titre n'est émise que quand il change (ADR-0016 C3).
+    titre_sale: bool,
+    /// Action destructive demandée, en attente de confirmation
+    /// (ADR-0016 C3).
+    demande: Option<ActionDestructrice>,
 }
 
 impl DemoApp {
@@ -494,6 +523,9 @@ impl DemoApp {
             retours: recepteur_retours,
             travaux_en_attente: 0,
             generation: 0,
+            dirty: false,
+            titre_sale: false,
+            demande: None,
         };
         app.reinitialiser();
         app
@@ -528,13 +560,50 @@ impl DemoApp {
             name: "diagonal".into(),
             expression: DEFAULT_DIAGONAL_EXPR.into(),
         });
+        // La session posée est à jour : rien à perdre (ADR-0016 C3).
+        self.dirty = false;
     }
 
     /// Exécute une commande de session ; un refus remonte au canal
-    /// d'erreur du viewport sans interrompre l'interface.
+    /// d'erreur du viewport sans interrompre l'interface. Toute
+    /// commande effective pose l'indicateur de travail non enregistré
+    /// (ADR-0016 C3).
     fn executer(&mut self, commande: &dyn Command) {
+        let empreinte_avant = self.empreinte_journal();
         if let Err(error) = self.session.execute(commande) {
             self.error = Some(error.to_string());
+            return;
+        }
+        if self.empreinte_journal() != empreinte_avant {
+            self.dirty = true;
+        }
+    }
+
+    /// Empreinte du journal appliqué : longueur et bornes undo/redo —
+    /// toute divergence marque le travail non enregistré
+    /// (ADR-0016 C3).
+    fn empreinte_journal(&self) -> (usize, bool, bool) {
+        let journal = self.session.document().events().len();
+        (journal, self.session.can_undo(), self.session.can_redo())
+    }
+
+    /// Annule le dernier groupe d'actions (bouton ou raccourci) : le
+    /// tampon d'édition est rafraîchi et le travail non enregistré
+    /// suit le journal (ADR-0016 C3).
+    fn annuler(&mut self) {
+        if self.session.undo().is_ok() {
+            self.dirty = true;
+            self.expr_buf = self.expression_courante();
+        }
+    }
+
+    /// Rétablit le groupe défait (bouton ou raccourci) : le tampon
+    /// d'édition est rafraîchi et le travail non enregistré suit le
+    /// journal (ADR-0016 C3).
+    fn retablir(&mut self) {
+        if self.session.redo().is_ok() {
+            self.dirty = true;
+            self.expr_buf = self.expression_courante();
         }
     }
 
@@ -604,6 +673,7 @@ impl DemoApp {
         self.error = None;
         self.expr_buf = self.expression_courante();
         self.info = Some(self.texte_avec("info-recharge", &[("n", Argument::from(nombre))]));
+        self.dirty = false;
     }
 
     /// Enregistre le projet dans `chemin` : conteneur ZIP, les
@@ -620,6 +690,7 @@ impl DemoApp {
             "info-enregistre",
             &[("chemin", Argument::from(affiche.as_str()))],
         ));
+        self.dirty = false;
     }
 
     /// « Enregistrer » : dans le projet courant, sinon via le
@@ -642,6 +713,79 @@ impl DemoApp {
             return;
         };
         self.enregistrer_dans(&chemin);
+    }
+
+    /// Demande une action destructive : confirmation d'abord si du
+    /// travail non enregistré existe, exécution directe sinon
+    /// (ADR-0016 C3).
+    fn demander(&mut self, action: ActionDestructrice) {
+        if self.dirty {
+            self.demande = Some(action);
+        } else {
+            self.executer_action(action);
+        }
+    }
+
+    /// Exécute l'action destructive confirmée (ou immédiate quand
+    /// rien n'est à perdre) : nouveau projet, ouverture — chemin
+    /// reçu ou sélecteur natif — ou retour à l'atelier (ADR-0016 C3).
+    fn executer_action(&mut self, action: ActionDestructrice) {
+        match action {
+            ActionDestructrice::Nouveau => {
+                self.reinitialiser();
+                self.ecran = Ecran::Atelier;
+            }
+            ActionDestructrice::Ouvrir { chemin } => {
+                let Some(chemin) = chemin.or_else(|| self.demander_chemin()) else {
+                    return;
+                };
+                self.ouvrir_projet(&chemin);
+            }
+            ActionDestructrice::Reprendre => {
+                self.ecran = Ecran::Atelier;
+            }
+        }
+    }
+
+    /// Chemin d'ouverture demandé au sélecteur natif quand l'action
+    /// destructive n'en porte pas (ADR-0014, ADR-0016 C3).
+    fn demander_chemin(&self) -> Option<PathBuf> {
+        let libelle = self.texte("filtre-projet");
+        fichiers::choisir_projet(&libelle)
+    }
+
+    /// Fenêtre de confirmation d'une action destructive (ADR-0016 C3) :
+    /// « Continuer » exécute l'action, « Annuler » la rejette — du
+    /// travail non enregistré serait perdu.
+    fn fenetre_confirmation(&mut self, ctx: &egui::Context) {
+        let Some(action) = self.demande.clone() else {
+            return;
+        };
+        let mut decision: Option<bool> = None;
+        egui::Window::new(self.texte("confirmation-titre"))
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(self.texte("confirmation-texte"));
+                ui.horizontal(|ui| {
+                    let reponse = ui.button(self.texte("confirmation-confirmer"));
+                    avec_aide(&reponse, "aide-confirmation-perte", &mut self.aide);
+                    if reponse.clicked() {
+                        decision = Some(true);
+                    }
+                    let reponse = ui.button(self.texte("confirmation-annuler"));
+                    if reponse.clicked() {
+                        decision = Some(false);
+                    }
+                });
+            });
+        match decision {
+            Some(true) => {
+                self.demande = None;
+                self.executer_action(action);
+            }
+            Some(false) => self.demande = None,
+            None => {}
+        }
     }
 
     /// Lit puis importe le fichier de tracés choisi dans le sélecteur
@@ -1032,8 +1176,7 @@ impl DemoApp {
         );
         avec_aide(&reponse, "aide-top-annuler", &mut self.aide);
         if reponse.clicked() {
-            let _ = self.session.undo();
-            self.expr_buf = self.expression_courante();
+            self.annuler();
         }
         let reponse = ui.add_enabled(
             self.session.can_redo(),
@@ -1041,8 +1184,7 @@ impl DemoApp {
         );
         avec_aide(&reponse, "aide-top-retablir", &mut self.aide);
         if reponse.clicked() {
-            let _ = self.session.redo();
-            self.expr_buf = self.expression_courante();
+            self.retablir();
         }
         ui.separator();
         let reponse = ui.button(self.texte("top-importer-svg"));
@@ -1130,17 +1272,12 @@ impl DemoApp {
         let reponse = ui.button(self.texte("top-ouvrir"));
         avec_aide(&reponse, "aide-top-ouvrir", &mut self.aide);
         if reponse.clicked() {
-            let libelle = self.texte("filtre-projet");
-            let Some(chemin) = fichiers::choisir_projet(&libelle) else {
-                return;
-            };
-            self.ouvrir_projet(&chemin);
+            self.demander(ActionDestructrice::Ouvrir { chemin: None });
         }
         let reponse = ui.button(self.texte("top-nouveau"));
         avec_aide(&reponse, "aide-top-nouveau", &mut self.aide);
         if reponse.clicked() {
-            self.reinitialiser();
-            self.ecran = Ecran::Atelier;
+            self.demander(ActionDestructrice::Nouveau);
         }
         let reponse = ui.button(self.texte("top-bibliotheque"));
         avec_aide(&reponse, "aide-top-bibliotheque", &mut self.aide);
@@ -1187,16 +1324,12 @@ impl DemoApp {
         let reponse = ui.button(self.texte("accueil-nouveau"));
         avec_aide(&reponse, "aide-accueil-nouveau", &mut self.aide);
         if reponse.clicked() {
-            self.reinitialiser();
-            self.ecran = Ecran::Atelier;
+            self.demander(ActionDestructrice::Nouveau);
         }
         let reponse = ui.button(self.texte("accueil-ouvrir"));
         avec_aide(&reponse, "aide-accueil-ouvrir", &mut self.aide);
         if reponse.clicked() {
-            let libelle = self.texte("filtre-projet");
-            if let Some(chemin) = fichiers::choisir_projet(&libelle) {
-                self.ouvrir_projet(&chemin);
-            }
+            self.demander(ActionDestructrice::Ouvrir { chemin: None });
         }
         let en_cours = self.session.document().events().len() > EVENEMENTS_VIERGES
             || self.chemin_projet.is_some();
@@ -1204,7 +1337,7 @@ impl DemoApp {
             let reponse = ui.button(self.texte("accueil-reprendre"));
             avec_aide(&reponse, "aide-accueil-reprendre", &mut self.aide);
             if reponse.clicked() {
-                self.ecran = Ecran::Atelier;
+                self.demander(ActionDestructrice::Reprendre);
             }
         }
         ui.add_space(12.0);
@@ -1230,7 +1363,7 @@ impl DemoApp {
                     avec_aide(&reponse, "aide-accueil-projet", &mut self.aide);
                     if reponse.clicked() {
                         let chemin = projet.chemin.clone();
-                        self.ouvrir_projet(&chemin);
+                        self.demander(ActionDestructrice::Ouvrir { chemin: Some(chemin) });
                     }
                 });
             }
@@ -1603,12 +1736,10 @@ impl eframe::App for DemoApp {
             )
         });
         if annuler && self.session.can_undo() {
-            let _ = self.session.undo();
-            self.expr_buf = self.expression_courante();
+            self.annuler();
         }
         if retablir && self.session.can_redo() {
-            let _ = self.session.redo();
-            self.expr_buf = self.expression_courante();
+            self.retablir();
         }
         // Retours du fil de travail : imports, exports et échecs
         // (ADR-0016 C1) ; les travaux d'une génération dépassée
@@ -1648,6 +1779,21 @@ impl eframe::App for DemoApp {
                 self.viewport(ui);
             }
         });
+        // Titre de la fenêtre : « * » signale le travail non
+        // enregistré, levé par la sauvegarde (ADR-0016 C3). La
+        // fermeture de la fenêtre n'est pas interceptable dans
+        // eframe 0.29 (pas de `on_request_exit`) : limite documentée
+        // du démonstrateur.
+        if self.titre_sale != self.dirty {
+            let cle = if self.dirty {
+                "titre-fenetre-modifie"
+            } else {
+                "titre-fenetre"
+            };
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.texte(cle)));
+            self.titre_sale = self.dirty;
+        }
+        self.fenetre_confirmation(ctx);
         aide::fenetre(ctx, &self.i18n, &mut self.aide);
     }
 }
@@ -2092,6 +2238,57 @@ mod tests {
         let gardes = garde_actuels(file, 8);
         assert_eq!(gardes.len(), 1, "seul le retour courant est gardé");
         assert_eq!(gardes[0].generation(), 8, "le retour gardé est courant");
+    }
+
+    /// La sauvegarde après un undo ne casse plus le redo : le fichier
+    /// contient le journal appliqué, la pile redo survit en mémoire
+    /// (ADR-0016 C3).
+    #[test]
+    fn enregistrer_apres_undo_preserve_le_redo() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&SetInput {
+            name: "width_mm".into(),
+            value: 900.0,
+        });
+        app.annuler();
+        assert!(app.session.can_redo(), "le redo est en place");
+        let dossier = std::env::temp_dir().join("omnifab-c3-enregistrer-undo");
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).expect("dossier de test");
+        let chemin = dossier.join("projet.omnifab");
+        app.enregistrer_dans(&chemin);
+        assert!(chemin.is_file(), "le projet est écrit");
+        let document = Document::open_from_path(&chemin).expect("ouverture");
+        assert_eq!(
+            document.events().len(),
+            EVENEMENTS_VIERGES,
+            "le fichier contient le journal appliqué"
+        );
+        assert!(app.session.can_redo(), "enregistrer garde le redo");
+        app.retablir();
+        let largeur = app.session.graph_mut().value("width_mm").expect("valeur");
+        assert_eq!(largeur, 900.0, "le redo restaure la largeur");
+    }
+
+    /// L'indicateur de travail non enregistré suit les commandes,
+    /// l'annulation et la sauvegarde (ADR-0016 C3).
+    #[test]
+    fn dirty_suit_les_commandes_et_la_sauvegarde() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        assert!(!app.dirty, "session vierge : rien à enregistrer");
+        app.executer(&SetInput {
+            name: "width_mm".into(),
+            value: 900.0,
+        });
+        assert!(app.dirty, "une commande effective pose l'indicateur");
+        let dossier = std::env::temp_dir().join("omnifab-c3-dirty");
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).expect("dossier de test");
+        let chemin = dossier.join("projet.omnifab");
+        app.enregistrer_dans(&chemin);
+        assert!(!app.dirty, "la sauvegarde lève l'indicateur");
+        app.annuler();
+        assert!(app.dirty, "l'annulation repose l'indicateur");
     }
 
     /// Modificateurs pour un test de raccourcis (ADR-0016 C2).

@@ -277,6 +277,36 @@ impl Document {
         container::write(self)
     }
 
+    /// Sérialise le préfixe appliqué du journal en conteneur ZIP (en
+    /// mémoire), **sans muter le document** : les événements défaits
+    /// ne figurent pas dans le fichier — qui reste le journal linéaire
+    /// visible (ADR-0008) — et la pile redo survit à l'enregistrement
+    /// (ADR-0016 C3). Seuls les blobs référencés par le préfixe
+    /// sérialisé accompagnent le fichier.
+    pub fn to_bytes_prefix(&self, applied: usize) -> Result<Vec<u8>, DocError> {
+        let applique = applied.min(self.events.len());
+        let mut document = Document::new();
+        document.events.extend(self.events[..applique].iter().cloned());
+        let references: Vec<String> = document
+            .events
+            .iter()
+            .filter_map(|event| event.data.get("blob").and_then(|donnee| donnee.as_str()))
+            .map(|nom| nom.to_string())
+            .collect();
+        for nom in references {
+            if let Some(octets) = self.blobs.get(&nom) {
+                document.blobs.insert(nom, octets.clone());
+            }
+        }
+        if let Some(snapshot) = &self.snapshot {
+            let dernier_seq = document.events.last().map(|event| event.seq).unwrap_or(0);
+            if snapshot.at_seq <= dernier_seq {
+                document.snapshot = Some(snapshot.clone());
+            }
+        }
+        container::write(&document)
+    }
+
     /// Charge un document depuis un conteneur ZIP, sans migrations
     /// déclarées (les événements restent à leur version d'origine).
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, DocError> {
@@ -313,20 +343,21 @@ impl Document {
     /// moitié écrit (ADR-0016 A2).
     #[cfg(feature = "native")]
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), DocError> {
-        let bytes = self.to_bytes()?;
-        let mut tmp = std::ffi::OsString::from(path.as_os_str());
-        tmp.push(".tmp");
-        let tmp = std::path::PathBuf::from(tmp);
-        let mut backup = std::ffi::OsString::from(path.as_os_str());
-        backup.push(".bak");
-        let backup = std::path::PathBuf::from(backup);
-        if let Err(erreur) = remplacer_sur_disque(path, &tmp, &backup, &bytes) {
-            // Aucune étape n'a déplacé le fichier courant : seul le
-            // temporaire incomplet peut rester, il est nettoyé.
-            let _ = std::fs::remove_file(&tmp);
-            return Err(erreur.into());
-        }
-        Ok(())
+        ecrire_atomiquement(path, &self.to_bytes()?)
+    }
+
+    /// Enregistre le préfixe appliqué du journal dans un fichier, de
+    /// manière atomique (feature `native`), **sans muter le
+    /// document** : les événements défaits ne figurent pas dans le
+    /// fichier — qui reste le journal linéaire visible (ADR-0008) —
+    /// et la pile redo survit à l'enregistrement (ADR-0016 C3).
+    #[cfg(feature = "native")]
+    pub fn save_to_path_prefix(
+        &self,
+        path: &std::path::Path,
+        applied: usize,
+    ) -> Result<(), DocError> {
+        ecrire_atomiquement(path, &self.to_bytes_prefix(applied)?)
     }
 
     /// Charge un document depuis un fichier (feature `native`).
@@ -347,6 +378,26 @@ impl Document {
     ) -> Result<Self, DocError> {
         Self::from_bytes_with(&std::fs::read(path)?, migrations)
     }
+}
+
+/// Écrit les octets au chemin donné, de manière atomique : temporaire
+/// synchronisé, sauvegarde `.bak`, puis remplacement (ADR-0016 A2) ;
+/// au moindre échec, seul le temporaire incomplet est nettoyé.
+#[cfg(feature = "native")]
+fn ecrire_atomiquement(path: &std::path::Path, bytes: &[u8]) -> Result<(), DocError> {
+    let mut tmp = std::ffi::OsString::from(path.as_os_str());
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    let mut backup = std::ffi::OsString::from(path.as_os_str());
+    backup.push(".bak");
+    let backup = std::path::PathBuf::from(backup);
+    if let Err(erreur) = remplacer_sur_disque(path, &tmp, &backup, bytes) {
+        // Aucune étape n'a déplacé le fichier courant : seul le
+        // temporaire incomplet peut rester, il est nettoyé.
+        let _ = std::fs::remove_file(&tmp);
+        return Err(erreur.into());
+    }
+    Ok(())
 }
 
 /// Écrit le conteneur dans le fichier temporaire, copie le projet
@@ -447,6 +498,38 @@ mod tests {
         assert!(
             document.snapshot().is_none(),
             "le snapshot portait sur des événements retirés"
+        );
+    }
+
+    /// to_bytes_prefix sérialise le journal appliqué sans muter le
+    /// document : les événements défaits et leurs blobs ne figurent
+    /// pas dans le fichier, et le document en mémoire garde sa pile
+    /// redo (ADR-0016 C3).
+    #[test]
+    fn to_bytes_prefix_relit_le_journal_applique() {
+        let mut document = Document::new();
+        document.append(NewEvent::new("t", 1, "tests", serde_json::json!({})));
+        document.append(NewEvent::new(
+            "t",
+            1,
+            "tests",
+            serde_json::json!({"blob": "geometry/traces"}),
+        ));
+        document
+            .set_blob("geometry/traces", vec![1, 2, 3])
+            .expect("blob valide");
+        let octets = document.to_bytes_prefix(1).expect("conteneur du préfixe");
+        let relu = Document::from_bytes(&octets).expect("relecture");
+        assert_eq!(relu.events().len(), 1, "seul le journal appliqué est écrit");
+        assert!(
+            relu.blob_names().is_empty(),
+            "le blob de l'événement défait n'embarque pas"
+        );
+        assert_eq!(document.events().len(), 2, "le document n'est pas muté");
+        assert_eq!(
+            document.blob_names().len(),
+            1,
+            "le blob survit en mémoire pour le redo"
         );
     }
 

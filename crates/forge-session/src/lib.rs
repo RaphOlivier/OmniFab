@@ -26,8 +26,9 @@
 //!   les commandes d'import déposent les octets d'origine en blobs, la
 //!   projection [`GeomProjection`] ne porte que références et compteurs ;
 //! - **sauvegarde** : le fichier contient le journal linéaire visible ;
-//!   enregistrer abandonne les événements en attente de redo et purge
-//!   les blobs orphelins.
+//!   la session n'est pas mutée — la pile redo survit à
+//!   l'enregistrement (ADR-0016 C3) — et les blobs orphelins du
+//!   préfixe appliqué ne figurent pas dans le fichier.
 
 mod command;
 mod error;
@@ -256,26 +257,22 @@ impl Session {
             .collect()
     }
 
-    /// Sérialise la session en conteneur ZIP (en mémoire). Les
-    /// événements défaisables sont **abandonnés** : le fichier contient
-    /// le journal linéaire visible (ADR-0008), sans les blobs orphelins
-    /// (ADR-0011).
-    pub fn save_to_bytes(&mut self) -> Result<Vec<u8>, DocError> {
-        self.truncate_pending();
-        let references = self.referenced_blobs();
-        self.gc_blobs(&references);
-        self.doc.to_bytes()
+    /// Sérialise la session en conteneur ZIP (en mémoire), **sans la
+    /// muter** : le fichier contient le journal linéaire visible
+    /// (ADR-0008) et la pile redo survit à l'enregistrement
+    /// (ADR-0016 C3) — les blobs orphelins du préfixe ne figurent
+    /// pas dans le fichier.
+    pub fn save_to_bytes(&self) -> Result<Vec<u8>, DocError> {
+        self.doc.to_bytes_prefix(self.applied)
     }
 
     /// Enregistre la session dans un fichier, de manière atomique
-    /// (feature `native`, cf. [`Document::save_to_path`]). Les
-    /// événements défaisables sont abandonnés.
+    /// (feature `native`, cf. [`Document::save_to_path`]) **sans
+    /// la muter** : la pile redo survit à l'enregistrement
+    /// (ADR-0016 C3).
     #[cfg(feature = "native")]
-    pub fn save_to_path(&mut self, path: &std::path::Path) -> Result<(), DocError> {
-        self.truncate_pending();
-        let references = self.referenced_blobs();
-        self.gc_blobs(&references);
-        self.doc.save_to_path(path)
+    pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), DocError> {
+        self.doc.save_to_path_prefix(path, self.applied)
     }
 
     /// Abandonne les événements défaisables : le journal devient le

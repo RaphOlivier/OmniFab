@@ -7,6 +7,7 @@
 # --- Fenêtre ---
 
 titre-fenetre = OmniFab — démonstrateur
+titre-fenetre-modifie = OmniFab — démonstrateur *
 
 # --- Barre du haut ---
 
@@ -88,6 +89,13 @@ info-import-traces = Import réussi : {$traces} tracés · {$sommets} sommets.
 info-import-maillage = Import réussi : {$triangles} triangles.
 info-export = Exporté dans « {$chemin} ».
 info-travail-en-cours = Traitement du fichier en cours…
+
+# --- Confirmation (protection du travail, ADR-0016 C3) ---
+
+confirmation-titre = Travail non enregistré
+confirmation-texte = Le projet comporte des modifications non enregistrées : continuer les perdra définitivement.
+confirmation-confirmer = Continuer
+confirmation-annuler = Annuler
 
 # --- Fenêtre d'aide ---
 
@@ -247,3 +255,8 @@ aide-geom-compteur =
     .titre = Compteur de géométrie importée
     .description = Compteurs de la géométrie courante : tracés et sommets pour le vectoriel (SVG/DXF), triangles pour le maillage STL — dessiné en wireframe dans les deux vues (projection de dessus en 2D), sans plafond d'affichage (phase C2).
     .exemple = Importez un SVG de deux rectangles : la ligne indique 2 tracés · 8 sommets importés.
+
+aide-confirmation-perte =
+    .titre = Travail non enregistré
+    .description = Confirmation demandée avant une action destructive (nouveau projet, ouverture, reprise) quand des modifications non enregistrées existent : les continuer abandonne définitivement — « Enregistrer sous… » les met à l'abri d'abord.
+    .exemple = Modifiez la largeur puis cliquez « Nouveau » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.

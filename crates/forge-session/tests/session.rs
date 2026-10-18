@@ -136,16 +136,18 @@ fn nouvelle_action_apres_undo_abandonne_le_redo() {
     assert!((largeur - 900.0).abs() < 1e-9);
 }
 
-/// La sauvegarde écrit le journal visible, sans les événements défaits.
+/// La sauvegarde écrit le journal appliqué sans casser le redo : le
+/// fichier reste le journal linéaire visible (ADR-0008) et la pile
+/// redo survit à l'enregistrement (ADR-0016 C3).
 #[test]
-fn sauvegarde_ecrit_le_journal_visible() {
+fn sauvegarde_ecrit_le_journal_applique_sans_casser_le_redo() {
     let mut session = rectangle();
     session.undo().expect("undo");
     let chemin = std::env::temp_dir().join("omnifab-tests-forge-session.omnifab");
     session.save_to_path(&chemin).expect("sauvegarde");
     assert!(
-        !session.can_redo(),
-        "enregistrer abandonne le redo en attente"
+        session.can_redo(),
+        "enregistrer préserve le redo en attente"
     );
     let document = Document::open_from_path(&chemin).expect("ouverture");
     assert_eq!(
@@ -153,9 +155,12 @@ fn sauvegarde_ecrit_le_journal_visible() {
         2,
         "le fichier ne contient pas les événements défaits"
     );
-    let mut session = Session::from_document("tests", document).expect("rejeu");
-    assert!(!session.can_redo());
-    assert!(session.graph_mut().value("width_mm").is_ok());
+    session.redo().expect("redo");
+    let diagonale = session
+        .graph_mut()
+        .value("diagonal")
+        .expect("diagonale rétablie");
+    assert!((diagonale - 1000.0).abs() < 1e-9);
     let _ = std::fs::remove_file(&chemin);
 }
 
@@ -163,7 +168,7 @@ fn sauvegarde_ecrit_le_journal_visible() {
 /// rejeu (verrous 1 et 2).
 #[test]
 fn aller_retour_en_memoire() {
-    let mut session = rectangle();
+    let session = rectangle();
     let octets = session.save_to_bytes().expect("octets");
     let document = Document::from_bytes(&octets).expect("document");
     let mut session = Session::from_document("tests", document).expect("rejeu");
