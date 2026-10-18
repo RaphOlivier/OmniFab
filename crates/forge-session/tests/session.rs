@@ -650,8 +650,7 @@ fn journal_v1_migre_le_maillage_en_v2() {
     ));
     let octets = document.to_bytes().expect("conteneur écrit");
     let registre = forge_session::registre_migrations_courant();
-    let document =
-        Document::from_bytes_with(&octets, registre).expect("journal migré");
+    let document = Document::from_bytes_with(&octets, registre).expect("journal migré");
     assert_eq!(document.events()[0].schema_version, 2, "migré au v2");
     let session = Session::from_document("tests", document).expect("rejeu");
     let maillage = session.geom().maillage().expect("maillage projeté");
