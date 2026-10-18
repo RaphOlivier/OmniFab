@@ -140,7 +140,7 @@ pub(crate) fn dessiner(
                             centre_mm.1 + rayon_mm * angle.sin(),
                         ));
                     }
-                    painter.add(egui::Shape::polyline(
+                    painter.add(egui::Shape::line(
                         points,
                         egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
                     ));

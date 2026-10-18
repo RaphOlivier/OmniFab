@@ -2021,7 +2021,7 @@ impl DemoApp {
                     &self.camera,
                     rect,
                     self.session.esquisse(),
-                    resolu,
+                    resolu.as_ref(),
                 );
                 // Cote du rectangle par le painter, après les
                 // callbacks GPU : elle reste lisible par-dessus les
