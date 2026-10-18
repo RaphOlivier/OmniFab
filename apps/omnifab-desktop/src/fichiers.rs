@@ -63,7 +63,9 @@ fn ajouter_suffixe(chemin: PathBuf, extensions: &[&str]) -> PathBuf {
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase());
     let extension_attendue = extension.as_deref().is_some_and(|extension| {
-        extensions.iter().any(|attendue| attendue.to_ascii_lowercase() == extension)
+        extensions
+            .iter()
+            .any(|attendue| attendue.to_ascii_lowercase() == extension)
     });
     if extension_attendue {
         return chemin;
