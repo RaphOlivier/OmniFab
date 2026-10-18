@@ -1949,7 +1949,9 @@ impl DemoApp {
             && let Some(curseur) = response.interact_pointer_pos()
         {
             let decalage = curseur - rect.center();
-            let (x, y) = self.camera.depuis_ecran((decalage.x as f64, decalage.y as f64));
+            let (x, y) = self
+                .camera
+                .depuis_ecran((decalage.x as f64, decalage.y as f64));
             if let Some(entite) = self
                 .outil
                 .entite_du_clic(Length::from_millimeters(x), Length::from_millimeters(y))
