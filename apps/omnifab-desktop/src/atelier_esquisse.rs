@@ -1,18 +1,21 @@
 //! Mode esquisse du viewport 2D (ADR-0018, jalon 2 phase D, lot 3c) :
-//! outils du croquis contraint et entités dessinées au painter.
+//! outils du croquis contraint, gestes multi-clics et entités
+//! dessinées au painter.
 //!
 //! Les commandes du croquis (`AddEntity`, `AddConstraint`,
 //! `MovePoint`) passent par la session : jamais de commande de
 //! résolution, jamais de position résolue sérialisée (ADR-0018 D3).
 //! L'affichage montre les positions résolues du cache quand il est
 //! frais, les graines du journal sinon — la vérité affichable
-//! (ADR-0018 D7).
+//! (ADR-0018 D7). Le point visé s'accroche à la grille et aux
+//! points existants, l'aperçu du geste n'écrit jamais au journal
+//! (lot 3c-2).
 
 use crate::DemoApp;
 use crate::aide::avec_aide;
 use eframe::egui;
-use forge_render::Camera2D;
-use forge_session::{CroquisResolu, EntiteEsquisse, EsquisseProjection};
+use forge_render::{Camera2D, pas_de_grille};
+use forge_session::{AddEntity, CroquisResolu, EntiteEsquisse, EsquisseProjection};
 use forge_units::{Angle, Length};
 
 /// Couleur des entités du croquis, distincte des tracés importés
@@ -24,6 +27,9 @@ const LARGEUR_ESQUISSE_PX: f32 = 1.5;
 const RAYON_POINT_PX: f32 = 3.0;
 /// Segments de la discrétisation des arcs au painter.
 const SEGMENTS_ARC: usize = 32;
+/// Couleur de l'aperçu du geste : la teinte des entités,
+/// translucide pour se lire au-dessus du croquis posé.
+const COULEUR_APERCU: egui::Color32 = egui::Color32::from_rgba_unmultiplied(255, 130, 30, 140);
 
 /// Outil actif du mode esquisse : un clic du viewport 2D
 /// s'interprète selon lui (ADR-0018, lot 3c).
@@ -33,6 +39,12 @@ pub(crate) enum OutilEsquisse {
     Selection,
     /// Point libre : un clic pose une entité à l'endroit visé.
     Point,
+    /// Ligne : deux clics, l'origine puis l'extrémité.
+    Ligne,
+    /// Cercle : deux clics, le centre puis le rayon.
+    Cercle,
+    /// Arc : trois clics, le centre, le début puis la fin.
+    Arc,
 }
 
 impl OutilEsquisse {
@@ -41,6 +53,9 @@ impl OutilEsquisse {
         match self {
             Self::Selection => "esquisse-outil-selection",
             Self::Point => "esquisse-outil-point",
+            Self::Ligne => "esquisse-outil-ligne",
+            Self::Cercle => "esquisse-outil-cercle",
+            Self::Arc => "esquisse-outil-arc",
         }
     }
 
@@ -49,17 +64,202 @@ impl OutilEsquisse {
         match self {
             Self::Selection => "aide-esquisse-outil-selection",
             Self::Point => "aide-esquisse-outil-point",
+            Self::Ligne => "aide-esquisse-outil-ligne",
+            Self::Cercle => "aide-esquisse-outil-cercle",
+            Self::Arc => "aide-esquisse-outil-arc",
         }
     }
 
-    /// Entité posée par un clic à la position monde donnée : `None`
-    /// quand l'outil n'écrit rien (sélection, caméra).
-    pub(crate) fn entite_du_clic(&self, x: Length, y: Length) -> Option<EntiteEsquisse> {
-        match self {
-            Self::Selection => None,
-            Self::Point => Some(EntiteEsquisse::Point { x, y }),
+}
+
+/// Geste en cours d'un outil de croquis multi-clics (ADR-0018,
+/// lot 3c-2) : l'origine posée attend la suite. État de l'app
+/// UI, jamais un événement — changer d'outil l'abandonne.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum GesteEsquisse {
+    /// Ligne : origine posée, extrémité attendue.
+    Ligne {
+        /// Point d'origine déjà posé.
+        origine: PointVise,
+    },
+    /// Cercle : centre posé, rayon attendu.
+    Cercle {
+        /// Point centre déjà posé.
+        centre: PointVise,
+    },
+    /// Arc : centre posé, point de début attendu.
+    ArcCentre {
+        /// Point centre déjà posé.
+        centre: PointVise,
+    },
+    /// Arc : début posé, point de fin attendu.
+    ArcDebut {
+        /// Point centre déjà posé.
+        centre: PointVise,
+        /// Point de début déjà posé.
+        debut: PointVise,
+    },
+}
+
+/// Point visé par un clic ou le curseur (ADR-0018, lot 3c-2) :
+/// l'accroche colle à la grille et aux points existants, et
+/// l'identifiant désigne le point repris ou le prochain posé.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct PointVise {
+    /// Identifiant du point : existant ou prévu par l'ajout.
+    pub(crate) id: u32,
+    /// Abscisse d'accroche.
+    pub(crate) x: Length,
+    /// Ordonnée d'accroche.
+    pub(crate) y: Length,
+}
+
+/// Point visé à la position monde donnée (ADR-0018, lot 3c-2) :
+/// le point existant le plus proche l'emporte sous le seuil d'un
+/// quart de pas, la grille sinon — l'identifiant prévu est
+/// `prochaine_id_entite()`.
+pub(crate) fn viser(
+    esquisse: &EsquisseProjection,
+    resolu: Option<&CroquisResolu>,
+    pas: f64,
+    x: f64,
+    y: f64,
+) -> PointVise {
+    let seuil = 0.25 * pas;
+    let mut le_plus_proche: Option<PointVise> = None;
+    let mut distance_min = seuil;
+    for (id, _) in esquisse.entites() {
+        if let Some((px, py)) = position_point(esquisse, resolu, *id) {
+            let distance = distance_mm((x, y), (px.millimeters(), py.millimeters()));
+            if distance < distance_min {
+                le_plus_proche = Some(PointVise {
+                    id: *id,
+                    x: px,
+                    y: py,
+                });
+                distance_min = distance;
+            }
         }
     }
+    if let Some(vise) = le_plus_proche {
+        return vise;
+    }
+    PointVise {
+        id: esquisse.prochaine_id_entite(),
+        x: Length::from_millimeters((x / pas).round() * pas),
+        y: Length::from_millimeters((y / pas).round() * pas),
+    }
+}
+
+/// Traite un clic du viewport 2D selon l'outil actif et le geste
+/// en cours (ADR-0018, lot 3c-2) : le clic vise la grille et les
+/// points existants, les entités partent à la session par
+/// `AddEntity` — jamais de commande de résolution, jamais de
+/// position résolue sérialisée (ADR-0018 D3).
+pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
+    let resolu = app
+        .croquis_resolu
+        .as_ref()
+        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
+        .and_then(|(_, resultat)| resultat.as_ref().ok());
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y);
+    match (app.outil, app.geste.take()) {
+        (OutilEsquisse::Selection, _) => {}
+        (OutilEsquisse::Point, _) => {
+            point_du_clic(app, vise);
+        }
+        (OutilEsquisse::Ligne, None) => {
+            point_du_clic(app, vise);
+            app.geste = Some(GesteEsquisse::Ligne { origine: vise });
+        }
+        (OutilEsquisse::Ligne, Some(GesteEsquisse::Ligne { origine })) => {
+            point_du_clic(app, vise);
+            poser(
+                app,
+                EntiteEsquisse::Ligne {
+                    p1: origine.id,
+                    p2: vise.id,
+                },
+            );
+        }
+        (OutilEsquisse::Cercle, None) => {
+            point_du_clic(app, vise);
+            app.geste = Some(GesteEsquisse::Cercle { centre: vise });
+        }
+        (OutilEsquisse::Cercle, Some(GesteEsquisse::Cercle { centre })) => {
+            let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            let vise_mm = (vise.x.millimeters(), vise.y.millimeters());
+            let rayon = Length::from_millimeters(distance_mm(centre_mm, vise_mm));
+            poser(
+                app,
+                EntiteEsquisse::Cercle {
+                    centre: centre.id,
+                    rayon,
+                },
+            );
+        }
+        (OutilEsquisse::Arc, None) => {
+            point_du_clic(app, vise);
+            app.geste = Some(GesteEsquisse::ArcCentre { centre: vise });
+        }
+        (OutilEsquisse::Arc, Some(GesteEsquisse::ArcCentre { centre })) => {
+            point_du_clic(app, vise);
+            app.geste = Some(GesteEsquisse::ArcDebut { centre, debut: vise });
+        }
+        (OutilEsquisse::Arc, Some(GesteEsquisse::ArcDebut { centre, debut })) => {
+            point_du_clic(app, vise);
+            let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            let debut_mm = (debut.x.millimeters(), debut.y.millimeters());
+            let fin_mm = (vise.x.millimeters(), vise.y.millimeters());
+            let rayon = Length::from_millimeters(distance_mm(centre_mm, debut_mm));
+            let angle_debut =
+                Angle::from_radians((debut_mm.1 - centre_mm.1).atan2(debut_mm.0 - centre_mm.0));
+            let angle_fin =
+                Angle::from_radians((fin_mm.1 - centre_mm.1).atan2(fin_mm.0 - centre_mm.0));
+            poser(
+                app,
+                EntiteEsquisse::Arc {
+                    centre: centre.id,
+                    debut: debut.id,
+                    fin: vise.id,
+                    rayon,
+                    angle_debut,
+                    angle_fin,
+                },
+            );
+        }
+        // Un geste résiduel d'un autre outil ne survit pas au
+        // changement d'outil (le panneau l'abandonne) : ce clic
+        // ne pose rien.
+        (_, Some(_)) => {}
+    }
+}
+
+/// Pose le point visé s'il n'existe pas encore : l'identifiant
+/// prévu est `prochaine_id_entite()` avant l'ajout, celui du
+/// point repris sinon (ADR-0018, lot 3c-2).
+fn point_du_clic(app: &mut DemoApp, vise: PointVise) {
+    if vise.id == app.session.esquisse().prochaine_id_entite() {
+        poser(
+            app,
+            EntiteEsquisse::Point {
+                x: vise.x,
+                y: vise.y,
+            },
+        );
+    }
+}
+
+/// Pose une entité du croquis par la commande de session : tout
+/// clic d'outil écrit au journal, jamais au croquis directement
+/// (ADR-0018 D3).
+fn poser(app: &mut DemoApp, entite: EntiteEsquisse) {
+    let _ = app.executer(&AddEntity { entite });
+}
+
+/// Distance monde entre deux positions (millimètres).
+fn distance_mm(debut: (f64, f64), fin: (f64, f64)) -> f64 {
+    ((fin.0 - debut.0).powi(2) + (fin.1 - debut.1).powi(2)).sqrt()
 }
 
 /// Panneau des outils du croquis, en vue 2D de l'atelier : chaque
@@ -68,11 +268,19 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
     let reponse = ui.heading(app.texte("esquisse-titre"));
     avec_aide(&reponse, "aide-esquisse-titre", &mut app.aide);
     ui.horizontal(|ui| {
-        for outil in [OutilEsquisse::Selection, OutilEsquisse::Point] {
+        for outil in [
+            OutilEsquisse::Selection,
+            OutilEsquisse::Point,
+            OutilEsquisse::Ligne,
+            OutilEsquisse::Cercle,
+            OutilEsquisse::Arc,
+        ] {
             let libelle = app.texte(outil.cle());
             let reponse = ui.selectable_label(app.outil == outil, libelle);
             if reponse.clicked() {
+                // Changer d'outil abandonne le geste en cours.
                 app.outil = outil;
+                app.geste = None;
             }
             avec_aide(&reponse, outil.aide(), &mut app.aide);
         }
@@ -148,6 +356,92 @@ pub(crate) fn dessiner(
             }
         }
     }
+}
+
+/// Aperçu du geste sous le curseur (ADR-0018, lot 3c-2) : le point
+/// visé s'accroche à la grille et aux points existants, la forme
+/// suit l'outil et le geste en cours — un état dérivé d'affichage,
+/// jamais sérialisé, qui n'écrit jamais au journal.
+pub(crate) fn dessiner_apercu(
+    painter: &egui::Painter,
+    app: &DemoApp,
+    rect: egui::Rect,
+    x: f64,
+    y: f64,
+) {
+    let resolu = app
+        .croquis_resolu
+        .as_ref()
+        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
+        .and_then(|(_, resultat)| resultat.as_ref().ok());
+    let pas = pas_de_grille(app.camera.echelle, crate::GRILLE_CIBLE_PX);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y);
+    let camera = &app.camera;
+    match app.geste.as_ref() {
+        None => {}
+        Some(GesteEsquisse::Ligne { origine }) => {
+            painter.line_segment(
+                [
+                    point_ecran(camera, rect, origine.x.millimeters(), origine.y.millimeters()),
+                    point_ecran(camera, rect, vise.x.millimeters(), vise.y.millimeters()),
+                ],
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+            );
+        }
+        Some(GesteEsquisse::Cercle { centre }) | Some(GesteEsquisse::ArcCentre { centre }) => {
+            let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            let vise_mm = (vise.x.millimeters(), vise.y.millimeters());
+            let rayon_mm = distance_mm(centre_mm, vise_mm);
+            painter.circle_stroke(
+                point_ecran(camera, rect, centre_mm.0, centre_mm.1),
+                (rayon_mm * camera.echelle) as f32,
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+            );
+        }
+        Some(GesteEsquisse::ArcDebut { centre, debut }) => {
+            let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            let debut_mm = (debut.x.millimeters(), debut.y.millimeters());
+            let vise_mm = (vise.x.millimeters(), vise.y.millimeters());
+            let rayon_mm = distance_mm(centre_mm, debut_mm);
+            let angle_debut = (debut_mm.1 - centre_mm.1).atan2(debut_mm.0 - centre_mm.0);
+            let angle_vise = (vise_mm.1 - centre_mm.1).atan2(vise_mm.0 - centre_mm.0);
+            let mut points = Vec::with_capacity(SEGMENTS_ARC + 1);
+            for angle in angles_arc(
+                Angle::from_radians(angle_debut),
+                Angle::from_radians(angle_vise),
+                SEGMENTS_ARC,
+            ) {
+                points.push(point_ecran(
+                    camera,
+                    rect,
+                    centre_mm.0 + rayon_mm * angle.cos(),
+                    centre_mm.1 + rayon_mm * angle.sin(),
+                ));
+            }
+            painter.add(egui::Shape::line(
+                points,
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+            ));
+        }
+    }
+    marqueur_apercu(painter, camera, rect, &vise);
+}
+
+/// Marqueur du point visé : un cercle vide là où le prochain clic
+/// se posera, par-dessus les entités du croquis (ADR-0018,
+/// lot 3c-2).
+fn marqueur_apercu(
+    painter: &egui::Painter,
+    camera: &Camera2D,
+    rect: egui::Rect,
+    vise: &PointVise,
+) {
+    let centre = point_ecran(camera, rect, vise.x.millimeters(), vise.y.millimeters());
+    painter.circle_stroke(
+        centre,
+        RAYON_POINT_PX + 1.5,
+        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+    );
 }
 
 /// Position d'affichage d'un point du croquis : résolue si le cache

@@ -80,6 +80,9 @@ viewport-vue-3d = Vue 3D
 esquisse-titre = Esquisse
 esquisse-outil-selection = Sélection
 esquisse-outil-point = Point
+esquisse-outil-ligne = Ligne
+esquisse-outil-cercle = Cercle
+esquisse-outil-arc = Arc
 
 # --- Compteurs de géométrie importée ---
 
@@ -303,3 +306,18 @@ aide-esquisse-outil-point =
     .titre = Outil Point
     .description = Pose un point libre du croquis contraint à l'endroit cliqué : la commande passe par la session (annulable), la position saisie sert de graine au solveur (ADR-0018).
     .exemple = Activez Point puis cliquez dans le viewport 2D : le point se pose ; annulez-le avec Ctrl+Z puis rétablissez-le avec Ctrl+Y.
+
+aide-esquisse-outil-ligne =
+    .titre = Outil Ligne
+    .description = Trace une ligne du croquis en deux clics : le premier pose le point d'origine, le second l'extrémité — chaque clic s'accroche à la grille et aux points existants, les commandes passent par la session (annulables, ADR-0018).
+    .exemple = Activez Ligne, cliquez près d'un point existant pour en partir, puis cliquez l'extrémité : la ligne se pose ; annulez avec Ctrl+Z, rétablissez avec Ctrl+Y.
+
+aide-esquisse-outil-cercle =
+    .titre = Outil Cercle
+    .description = Trace un cercle du croquis en deux clics : le premier pose le centre, le second donne le rayon — le second clic ne pose pas de point, la commande passe par la session (ADR-0018).
+    .exemple = Activez Cercle, cliquez le centre puis un point du viewport 2D : le cercle orange apparaît ; Ctrl+Z l'annule, Ctrl+Y le rétablit.
+
+aide-esquisse-outil-arc =
+    .titre = Outil Arc
+    .description = Trace un arc du croquis en trois clics : le centre, le point de début (qui fixe le rayon), puis le point de fin — les angles suivent le sens trigonométrique, les commandes passent par la session (ADR-0018).
+    .exemple = Activez Arc, cliquez le centre, un point du cercle, puis la fin : l'arc se dessine du début vers la fin ; Ctrl+Z annule le dernier ajout, Ctrl+Y le rétablit.

@@ -76,8 +76,8 @@ use forge_render::{
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
 };
 use forge_session::{
-    AddEntity, Command, CroquisResolu, EVENT_EXPRESSION_SET, EsquisseProjection, ImportMesh,
-    ImportTraces, Session, SetExpression, SetInput,
+    Command, CroquisResolu, EVENT_EXPRESSION_SET, EsquisseProjection, ImportMesh, ImportTraces,
+    Session, SetExpression, SetInput,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -627,6 +627,10 @@ struct DemoApp {
     /// Outil actif du mode esquisse (ADR-0018, lot 3c) : état de
     /// l’app UI, jamais un événement.
     outil: atelier_esquisse::OutilEsquisse,
+    /// Geste en cours de l'outil de croquis (ADR-0018, lot 3c-2) :
+    /// l'origine posée attend la suite — état de l'app UI,
+    /// jamais un événement, abandonné au changement d'outil.
+    geste: Option<atelier_esquisse::GesteEsquisse>,
 }
 
 impl DemoApp {
@@ -686,6 +690,7 @@ impl DemoApp {
             croquis_resolu: None,
             resolution_en_attente: None,
             outil: atelier_esquisse::OutilEsquisse::Selection,
+            geste: None,
         };
         app.reinitialiser();
         app
@@ -710,6 +715,7 @@ impl DemoApp {
         self.croquis_resolu = None;
         self.resolution_en_attente = None;
         self.outil = atelier_esquisse::OutilEsquisse::Selection;
+        self.geste = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -1876,11 +1882,11 @@ impl DemoApp {
             egui::Sense::click_and_drag(),
         );
         avec_aide(&response, "aide-viewport-camera", &mut self.aide);
-        // Mode esquisse (vue 2D) : un clic pose l'entité de l'outil
-        // actif à l'endroit visé — la commande passe par la session,
-        // la résolution part au fil de travail (ADR-0018 D3). Le
-        // clic s'exécute avant l'emprunt des tracés importés,
-        // qui vit jusqu'au dessin des scènes.
+        // Mode esquisse (vue 2D) : un clic poursuit le geste de
+        // l'outil actif à l'endroit visé — les commandes passent par
+        // la session, la résolution part au fil de travail
+        // (ADR-0018 D3). Le clic s'exécute avant l'emprunt des
+        // tracés importés, qui vit jusqu'au dessin des scènes.
         if response.clicked()
             && self.vue == Vue::DeuxD
             && let Some(curseur) = response.interact_pointer_pos()
@@ -1889,12 +1895,8 @@ impl DemoApp {
             let (x, y) = self
                 .camera
                 .depuis_ecran((decalage.x as f64, decalage.y as f64));
-            if let Some(entite) = self
-                .outil
-                .entite_du_clic(Length::from_millimeters(x), Length::from_millimeters(y))
-            {
-                let _ = self.executer(&AddEntity { entite });
-            }
+            let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
+            atelier_esquisse::traiter_clic(self, pas, x, y);
         }
         // Références des blobs tracés et maillage : la caméra se
         // réajuste quand l'une d'elles change (import, undo/redo,
@@ -2027,6 +2029,19 @@ impl DemoApp {
                     self.session.esquisse(),
                     resolu,
                 );
+                // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
+                // point visé suit le curseur, accroché à la grille
+                // et aux points existants — état dérivé d'affichage,
+                // jamais écrit au journal.
+                if self.outil != atelier_esquisse::OutilEsquisse::Selection
+                    && let Some(curseur) = response.hover_pos()
+                {
+                    let decalage = curseur - response.rect.center();
+                    let (x, y) = self
+                        .camera
+                        .depuis_ecran((decalage.x as f64, decalage.y as f64));
+                    atelier_esquisse::dessiner_apercu(&painter, self, rect, x, y);
+                }
                 // Cote du rectangle par le painter, après les
                 // callbacks GPU : elle reste lisible par-dessus les
                 // tracés (validation C2, round 5).
@@ -2916,28 +2931,131 @@ mod tests {
         assert!(x1.approx_eq(x2) && y1.approx_eq(y2), "points superposés");
     }
 
-    /// Le clic pose une entité selon l'outil actif : rien en
-    /// sélection, un point libre à la position cliquée
-    /// (ADR-0018, lot 3c).
+    /// Un clic de l'outil Point se colle au pas de grille le plus
+    /// proche (ADR-0018, lot 3c-2).
     #[test]
-    fn le_clic_pose_un_point_selon_l_outil() {
-        let outil = atelier_esquisse::OutilEsquisse::Point;
-        let clic = outil.entite_du_clic(
-            Length::from_millimeters(12.5),
-            Length::from_millimeters(-3.0),
-        );
-        if let Some(EntiteEsquisse::Point { x, y }) = clic {
-            assert_eq!(x.millimeters(), 12.5, "abscisse cliquée");
-            assert_eq!(y.millimeters(), -3.0, "ordonnée cliquée");
-        } else {
-            panic!("l'outil point pose une entité point");
-        }
+    fn le_clic_de_point_vise_la_grille() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Point;
+        atelier_esquisse::traiter_clic(&mut app, pas * 1.24, pas * 0.67);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 1, "un point posé");
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
+            panic!("l'entité posée est un point");
+        };
+        assert_eq!(x.millimeters(), pas, "abscisse collée au pas");
+        assert_eq!(y.millimeters(), pas, "ordonnée collée au pas");
+    }
+
+    /// Le clic reprend le point existant le plus proche sous le
+    /// seuil d'un quart de pas, et pose un point neuf collé à la
+    /// grille au-delà (ADR-0018, lot 3c-2).
+    #[test]
+    fn le_clic_s_accroche_aux_points_existants() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Point;
+        atelier_esquisse::traiter_clic(&mut app, pas * 0.24, pas * 0.1);
+        assert_eq!(app.session.esquisse().entites().len(), 1, "premier point posé");
+        atelier_esquisse::traiter_clic(&mut app, pas * 0.1, pas * 0.05);
+        assert_eq!(app.session.esquisse().entites().len(), 1, "point proche repris");
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 2, "un point neuf posé");
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[1].1 else {
+            panic!("l'entité posée est un point");
+        };
+        assert_eq!(x.millimeters(), pas, "abscisse au pas");
+        assert_eq!(y.millimeters(), 0.0, "ordonnée nulle");
+    }
+
+    /// L'outil Ligne pose l'origine au premier clic, l'extrémité
+    /// au second, et l'entité ligne les relie (ADR-0018,
+    /// lot 3c-2).
+    #[test]
+    fn l_outil_ligne_pose_deux_points_et_une_ligne() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Ligne;
+        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
+        assert!(app.geste.is_some(), "geste ouvert à l'origine");
+        atelier_esquisse::traiter_clic(&mut app, pas * 2.0, pas);
+        assert!(app.geste.is_none(), "geste clos à l'extrémité");
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 3, "deux points et une ligne");
+        let EntiteEsquisse::Ligne { p1, p2 } = esquisse.entites()[2].1 else {
+            panic!("l'entité posée est une ligne");
+        };
+        assert_eq!(p1, 0, "origine au premier clic");
+        assert_eq!(p2, 1, "extrémité au second clic");
+    }
+
+    /// L'outil Cercle pose le centre au premier clic, le rayon au
+    /// second — sans point d'extrémité (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_cercle_pose_le_centre_puis_le_rayon() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Cercle;
+        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, 0.0, pas * 2.0);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 2, "le centre et le cercle");
+        let EntiteEsquisse::Cercle { centre, rayon } = esquisse.entites()[1].1 else {
+            panic!("l'entité posée est un cercle");
+        };
+        assert_eq!(centre, 0, "centre au premier clic");
+        assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du centre au clic");
+    }
+
+    /// L'outil Arc pose le centre, le début puis la fin : trois
+    /// points et l'arc, angles au centre aux extrémités
+    /// (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_arc_pose_trois_points_et_un_arc() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Arc;
+        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas * 2.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, 0.0, pas * 2.0);
+        assert!(app.geste.is_none(), "geste clos à la fin de l'arc");
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 4, "trois points et un arc");
+        let EntiteEsquisse::Arc {
+            centre,
+            debut,
+            fin,
+            rayon,
+            angle_debut,
+            angle_fin,
+        } = esquisse.entites()[3].1
+        else {
+            panic!("l'entité posée est un arc");
+        };
+        assert_eq!(centre, 0, "centre au premier clic");
+        assert_eq!(debut, 1, "début au second clic");
+        assert_eq!(fin, 2, "fin au troisième clic");
+        assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du début");
+        assert_eq!(angle_debut.radians(), 0.0, "angle de début nul");
         assert!(
-            atelier_esquisse::OutilEsquisse::Selection
-                .entite_du_clic(Length::from_millimeters(0.0), Length::from_millimeters(0.0))
-                .is_none(),
-            "l'outil sélection ne pose rien"
+            (angle_fin.radians() - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "angle de fin droit"
         );
+    }
+
+    /// L'outil Sélection ne pose rien : aucun geste n'ouvre, le
+    /// journal reste vierge (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_selection_ne_pose_rien() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas);
+        assert_eq!(app.session.esquisse().entites().len(), 0, "aucune entité");
+        assert!(app.geste.is_none(), "aucun geste");
     }
 
     /// L'affichage du croquis préfère les positions résolues du
