@@ -75,6 +75,12 @@ viewport-wgpu-indisponible = Rendu wgpu indisponible : la grille, les tracés et
 viewport-vue-2d = Vue 2D
 viewport-vue-3d = Vue 3D
 
+# --- Esquisse (croquis contraint, ADR-0018) ---
+
+esquisse-titre = Esquisse
+esquisse-outil-selection = Sélection
+esquisse-outil-point = Point
+
 # --- Compteurs de géométrie importée ---
 
 geom-traces-compteur = {$traces} tracés · {$sommets} sommets importés
@@ -282,3 +288,18 @@ aide-echelle-annuler =
     .titre = Annuler l'import
     .description = Abandonne l'import : rien n'est écrit au journal, le projet et le fichier d'origine ne sont pas modifiés.
     .exemple = Changez d'avis dans le dialogue des unités : « Annuler l'import » ferme la fenêtre, aucun maillage n'est importé.
+
+aide-esquisse-titre =
+    .titre = Esquisse
+    .description = Outils du croquis contraint de la vue 2D (ADR-0018) : les entités posées vivent dans la session et se résolvent au fil de travail — les positions calculées ne sont jamais enregistrées dans le projet.
+    .exemple = Choisissez l'outil Point puis cliquez dans le viewport 2D : un point orange apparaît et le croquis se résout en arrière-plan.
+
+aide-esquisse-outil-selection =
+    .titre = Outil Sélection
+    .description = Outil par défaut : un clic dans le viewport ne pose rien, la molette zoome et un glissement déplace la vue — c'est l'outil de navigation du croquis.
+    .exemple = Après avoir posé un point avec l'outil Point, revenez à Sélection pour naviguer sans rien écrire au journal.
+
+aide-esquisse-outil-point =
+    .titre = Outil Point
+    .description = Pose un point libre du croquis contraint à l'endroit cliqué : la commande passe par la session (annulable), la position saisie sert de graine au solveur (ADR-0018).
+    .exemple = Activez Point puis cliquez dans le viewport 2D : le point se pose ; annulez-le avec Ctrl+Z puis rétablissez-le avec Ctrl+Y.

@@ -23,6 +23,9 @@
 //!   forge-session (frontière LGPL de l’ADR-0013) ; les positions
 //!   résolues restent un état dérivé en mémoire, jamais
 //!   sérialisées ;
+//! - **mode esquisse** (ADR-0018, lot 3c) : outils du croquis dans
+//!   le panneau de gauche (vue 2D), un clic pose une entité, le
+//!   croquis se dessine par-dessus la scène ;
 //! - **protection du travail** (ADR-0016 C3) : indicateur « non
 //!   enregistré » posé par toute commande effective et levé par la
 //!   sauvegarde — le titre de la fenêtre porte `*`, « Nouveau »,
@@ -55,6 +58,7 @@
 //!   sa page d'aide (convention jalon 1, ADR-0010).
 
 mod aide;
+mod atelier_esquisse;
 mod bibliotheque;
 mod esquisse;
 mod fichiers;
@@ -72,8 +76,8 @@ use forge_render::{
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
 };
 use forge_session::{
-    Command, CroquisResolu, EVENT_EXPRESSION_SET, EsquisseProjection, ImportMesh, ImportTraces,
-    Session, SetExpression, SetInput,
+    AddEntity, Command, CroquisResolu, EVENT_EXPRESSION_SET, EsquisseProjection, ImportMesh,
+    ImportTraces, Session, SetExpression, SetInput,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -620,6 +624,9 @@ struct DemoApp {
     /// Numéro d’édition en cours de résolution au fil de travail :
     /// une seule résolution en vol (ADR-0016 C1).
     resolution_en_attente: Option<u64>,
+    /// Outil actif du mode esquisse (ADR-0018, lot 3c) : état de
+    /// l’app UI, jamais un événement.
+    outil: atelier_esquisse::OutilEsquisse,
 }
 
 impl DemoApp {
@@ -678,6 +685,7 @@ impl DemoApp {
             demande_echelle: None,
             croquis_resolu: None,
             resolution_en_attente: None,
+            outil: atelier_esquisse::OutilEsquisse::Selection,
         };
         app.reinitialiser();
         app
@@ -701,6 +709,7 @@ impl DemoApp {
         self.demande_echelle = None;
         self.croquis_resolu = None;
         self.resolution_en_attente = None;
+        self.outil = atelier_esquisse::OutilEsquisse::Selection;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -1772,6 +1781,12 @@ impl DemoApp {
                 ui.label(egui::RichText::new(error.to_string()).color(egui::Color32::RED));
             }
         }
+        // Outils du mode esquisse (vue 2D) : le croquis contraint se
+        // pose dans le viewport (ADR-0018, lot 3c).
+        if self.vue == Vue::DeuxD {
+            ui.separator();
+            atelier_esquisse::panneau(ui, self);
+        }
     }
 
     fn journal_panel(&mut self, ui: &mut egui::Ui) {
@@ -1926,6 +1941,22 @@ impl DemoApp {
                 Vue::TroisD => self.camera3d.orbiter((delta.x as f64, delta.y as f64)),
             }
         }
+        // Mode esquisse (vue 2D) : un clic pose l'entité de l'outil
+        // actif à l'endroit visé — la commande passe par la session,
+        // la résolution part au fil de travail (ADR-0018 D3).
+        if response.clicked()
+            && self.vue == Vue::DeuxD
+            && let Some(curseur) = response.interact_pointer_pos()
+        {
+            let decalage = curseur - rect.center();
+            let (x, y) = self.camera.depuis_ecran((decalage.x as f64, decalage.y as f64));
+            if let Some(entite) = self
+                .outil
+                .entite_du_clic(Length::from_millimeters(x), Length::from_millimeters(y))
+            {
+                let _ = self.executer(&AddEntity { entite });
+            }
+        }
         // Vue 2D : rectangle paramétrique par le painter (remplissage
         // et contour, une seule entité), grille, tracés et wireframe
         // du maillage en projection de dessus par le GPU. Vue 3D :
@@ -1977,6 +2008,21 @@ impl DemoApp {
                             .color(egui::Color32::YELLOW),
                     );
                 }
+                // Entités du croquis contraint (ADR-0018, lot 3c) :
+                // positions résolues du cache si fraîches, graines du
+                // journal sinon — par-dessus la scène, sous la cote.
+                let resolu = self
+                    .croquis_resolu
+                    .as_ref()
+                    .filter(|(edition, _)| *edition == self.session.esquisse().edition())
+                    .and_then(|(_, resultat)| resultat.ok());
+                atelier_esquisse::dessiner(
+                    &painter,
+                    &self.camera,
+                    rect,
+                    self.session.esquisse(),
+                    resolu,
+                );
                 // Cote du rectangle par le painter, après les
                 // callbacks GPU : elle reste lisible par-dessus les
                 // tracés (validation C2, round 5).
@@ -2864,5 +2910,76 @@ mod tests {
         let (x1, y1) = resolu.position(0).expect("premier point résolu");
         let (x2, y2) = resolu.position(1).expect("second point résolu");
         assert!(x1.approx_eq(x2) && y1.approx_eq(y2), "points superposés");
+    }
+
+    /// Le clic pose une entité selon l'outil actif : rien en
+    /// sélection, un point libre à la position cliquée
+    /// (ADR-0018, lot 3c).
+    #[test]
+    fn le_clic_pose_un_point_selon_l_outil() {
+        let outil = atelier_esquisse::OutilEsquisse::Point;
+        let clic = outil.entite_du_clic(
+            Length::from_millimeters(12.5),
+            Length::from_millimeters(-3.0),
+        );
+        if let Some(EntiteEsquisse::Point { x, y }) = clic {
+            assert_eq!(x.millimeters(), 12.5, "abscisse cliquée");
+            assert_eq!(y.millimeters(), -3.0, "ordonnée cliquée");
+        } else {
+            panic!("l'outil point pose une entité point");
+        }
+        assert!(
+            atelier_esquisse::OutilEsquisse::Selection
+                .entite_du_clic(Length::from_millimeters(0.0), Length::from_millimeters(0.0))
+                .is_none(),
+            "l'outil sélection ne pose rien"
+        );
+    }
+
+    /// L'affichage du croquis préfère les positions résolues du
+    /// cache et retombe sur les graines du journal sans résolution
+    /// (ADR-0018 D7, lot 3c).
+    #[test]
+    fn l_affichage_prefere_les_positions_resolues() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(30.0),
+                y: Length::from_millimeters(40.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Coincidence { p1: 0, p2: 1 },
+        })
+        .expect("contrainte posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        let esquisse = app.session.esquisse();
+        // Sans résolution : les graines distinctes du journal.
+        let (x0, y0) = atelier_esquisse::position_point(esquisse, None, 0).expect("graine 0");
+        let (x1, y1) = atelier_esquisse::position_point(esquisse, None, 1).expect("graine 1");
+        assert!(
+            !x0.approx_eq(x1) || !y0.approx_eq(y1),
+            "les graines du journal restent distinctes"
+        );
+        // Avec la résolution : les points coïncident.
+        let (x0, y0) = atelier_esquisse::position_point(esquisse, Some(&resolu), 0)
+            .expect("position résolue du premier point");
+        let (x1, y1) = atelier_esquisse::position_point(esquisse, Some(&resolu), 1)
+            .expect("position résolue du second point");
+        assert!(
+            x0.approx_eq(x1) && y0.approx_eq(y1),
+            "les positions résolues coïncident"
+        );
     }
 }
