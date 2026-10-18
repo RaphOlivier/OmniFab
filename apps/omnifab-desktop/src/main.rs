@@ -2096,7 +2096,13 @@ mod tests {
 
     /// Modificateurs pour un test de raccourcis (ADR-0016 C2).
     fn modificateurs(ctrl: bool, command: bool, maj: bool) -> egui::Modifiers {
-        egui::Modifiers { alt: false, ctrl, shift: maj, mac_cmd: false, command }
+        egui::Modifiers {
+            alt: false,
+            ctrl,
+            shift: maj,
+            mac_cmd: false,
+            command,
+        }
     }
 
     /// Raccourcis globaux : Cmd annule, Cmd+Y ou Cmd+Maj+Z rétablit,
