@@ -152,10 +152,15 @@ impl Document {
     /// Utile lorsque le registre a été enrichi (`declare`/`register`) après
     /// le chargement du document, pour amener chaque événement à la version
     /// de schéma la plus récente connue (ADR-0001).
+    ///
+    /// La migration est tout-ou-rien : si une étape échoue, le journal
+    /// reste inchangé (ADR-0016 A6).
     pub fn migrate_events(&mut self) -> Result<(), DocError> {
-        for event in &mut self.events {
-            *event = self.migrations.migrate(event)?;
+        let mut migrated = Vec::with_capacity(self.events.len());
+        for event in &self.events {
+            migrated.push(self.migrations.migrate(event)?);
         }
+        self.events = migrated;
         Ok(())
     }
     /// Enregistre un objet binaire (maillage, image…), sous `objects/`.

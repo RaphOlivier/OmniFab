@@ -437,6 +437,44 @@ fn snapshot_au_dela_du_journal_refuse() {
 }
 
 #[test]
+fn migration_echouee_preserve_le_journal() {
+    // ADR-0016 A6 : la migration est tout-ou-rien — une étape qui
+    // échoue au milieu du journal laisse celui-ci entièrement à sa
+    // version d'origine, sans état partiellement migré.
+    fn v1_vers_v2(data: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+        if data["n"].as_u64() == Some(3) {
+            return Err(DocError::CorruptJournal {
+                line: 0,
+                reason: "troisième événement non migrable".to_string(),
+            });
+        }
+        match data {
+            serde_json::Value::Object(map) => {
+                let mut migrated = map.clone();
+                migrated.insert("facteur".to_string(), json!(2.0));
+                Ok(serde_json::Value::Object(migrated))
+            }
+            _ => Err(DocError::CorruptJournal {
+                line: 0,
+                reason: "données non objet".to_string(),
+            }),
+        }
+    }
+    let mut registry = MigrationRegistry::new();
+    registry.declare("demo.test", 2);
+    registry.register("demo.test", 1, v1_vers_v2);
+    let mut doc = Document::with_migrations(registry);
+    for n in 1..=3 {
+        doc.append(NewEvent::new("demo.test", 1, "test", json!({ "n": n })));
+    }
+    assert!(doc.migrate_events().is_err(), "la migration du troisième événement échoue");
+    for event in doc.events() {
+        assert_eq!(event.schema_version, 1, "aucun événement ne doit être migré");
+        assert!(event.data.get("facteur").is_none(), "les données doivent rester inchangées");
+    }
+}
+
+#[test]
 fn derniere_ligne_tronquee_toleree() {
     // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
     // est tolérée (et signalée) ; les événements précédents sont conservés.
