@@ -288,6 +288,8 @@ pub(crate) fn read(
         snapshot,
         migrations,
         clock: Box::new(crate::SystemClock),
+        uuid_derniere_ms: 0,
+        uuid_counter: 0,
     })
 }
 /// Cherche la fin du répertoire central (`PK\x05\x06`) en partant de la
