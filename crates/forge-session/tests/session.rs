@@ -591,3 +591,69 @@ fn txn_horodate_par_l_horloge_du_document() {
         "une session à horloge figée attribue un txn reproductible"
     );
 }
+/// L'échelle d'import vit dans l'événement `geom.mesh.imported`
+/// schéma v2 (ADR-0017) : elle survit à l'annulation et au
+/// rétablissement, le blob garde les octets bruts.
+#[test]
+fn import_maillage_porte_son_echelle() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&forge_session::ImportMesh {
+            format: "stl".into(),
+            octets: b"solid".to_vec(),
+            triangles: 4,
+            echelle: 1000.0,
+        })
+        .expect("commande d'import");
+    let maillage = session.geom().maillage().expect("maillage projeté");
+    assert_eq!(maillage.echelle, 1000.0, "échelle portée");
+    assert_eq!(
+        session.document().events()[0].schema_version,
+        2,
+        "schéma v2 à l'écriture"
+    );
+    session.undo().expect("undo");
+    assert!(session.geom().maillage().is_none(), "annulé");
+    session.redo().expect("redo");
+    let maillage = session.geom().maillage().expect("maillage rétabli");
+    assert_eq!(maillage.echelle, 1000.0, "échelle restaurée");
+}
+
+/// Une échelle non finie ou non positive est refusée au plan :
+/// rien n'atteint le journal (ADR-0017).
+#[test]
+fn import_maillage_echelle_invalide_refuse() {
+    let mut session = Session::new("tests");
+    for echelle in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+        let resultat = session.execute(&forge_session::ImportMesh {
+            format: "stl".into(),
+            octets: b"solid".to_vec(),
+            triangles: 1,
+            echelle,
+        });
+        assert!(resultat.is_err(), "l'échelle {echelle} est refusée");
+        assert!(session.document().events().is_empty());
+    }
+}
+
+/// Un journal v1 du maillage importé est migré à l'ouverture par
+/// le registre courant : l'échelle est posée à 1,0 et la
+/// projection lit le schéma v2 (ADR-0017).
+#[test]
+fn journal_v1_migre_le_maillage_en_v2() {
+    let mut document = Document::new();
+    document.append(NewEvent::new(
+        forge_session::EVENT_MESH_IMPORTED,
+        1,
+        "tests",
+        serde_json::json!({"format": "stl", "blob": "geometry/maillage", "triangles": 3}),
+    ));
+    let octets = document.to_bytes().expect("conteneur écrit");
+    let registre = forge_session::registre_migrations_courant();
+    let document =
+        Document::from_bytes_with(&octets, registre).expect("journal migré");
+    assert_eq!(document.events()[0].schema_version, 2, "migré au v2");
+    let session = Session::from_document("tests", document).expect("rejeu");
+    let maillage = session.geom().maillage().expect("maillage projeté");
+    assert_eq!(maillage.echelle, 1.0, "échelle de migration");
+}

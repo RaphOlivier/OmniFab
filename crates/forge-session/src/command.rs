@@ -13,8 +13,8 @@ pub const EVENT_EXPRESSION_SET: &str = "value.expression_set";
 /// Type d'événement : tracés importés (schéma v1 : `format`, `blob`,
 /// `traces`, `sommets`).
 pub const EVENT_TRACES_IMPORTED: &str = "geom.traces.imported";
-/// Type d'événement : maillage importé (schéma v1 : `format`, `blob`,
-/// `triangles`).
+/// Type d'événement : maillage importé (schéma v2 : `format`, `blob`,
+/// `triangles`, `echelle` — ADR-0017).
 pub const EVENT_MESH_IMPORTED: &str = "geom.mesh.imported";
 
 /// Production d'une commande : ses événements et les blobs à déposer.
@@ -183,6 +183,9 @@ impl Command for ImportTraces {
 
 /// Importe un maillage (STL) comme géométrie courante (ADR-0011) :
 /// octets d'origine dans un blob, référence et compteurs au journal.
+/// L'échelle d'import (ADR-0017) vit dans l'événement : le blob garde
+/// les octets bruts et la relecture les re-parse — le facteur doit
+/// survivre au rejeu.
 #[derive(Debug, Clone)]
 pub struct ImportMesh {
     /// Format d'origine : `stl`.
@@ -191,6 +194,9 @@ pub struct ImportMesh {
     pub octets: Vec<u8>,
     /// Nombre de triangles importés.
     pub triangles: usize,
+    /// Échelle d'import appliquée aux coordonnées (ADR-0017) :
+    /// 1,0 = millimètres, 1000,0 = mètres.
+    pub echelle: f64,
 }
 
 impl Command for ImportMesh {
@@ -200,16 +206,22 @@ impl Command for ImportMesh {
                 reason: format!("format de maillage non supporté : « {} »", self.format),
             });
         }
+        if !self.echelle.is_finite() || self.echelle <= 0.0 {
+            return Err(SessionError::CommandRejected {
+                reason: "l'échelle doit être finie et positive".to_string(),
+            });
+        }
         // Nom de blob unique par import, même logique que les tracés.
         let blob = format!("geometry/maillage-{}", uuid::Uuid::now_v7());
         let mut plan = CommandPlan::new(vec![NewEvent::new(
             EVENT_MESH_IMPORTED,
-            1,
+            2,
             "",
             serde_json::json!({
                 "format": self.format,
                 "blob": blob,
                 "triangles": self.triangles,
+                "echelle": self.echelle,
             }),
         )]);
         plan.blobs.push((blob, self.octets.clone()));

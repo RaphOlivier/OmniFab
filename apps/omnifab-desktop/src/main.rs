@@ -25,6 +25,11 @@
 //! - **messages d'état fidèles** (ADR-0016 C4) : une commande refusée
 //!   n'affiche jamais de succès, l'action suivante efface l'erreur —
 //!   plus de rouge persistant après correction ;
+//! - **unités du maillage STL** (ADR-0017) : un modèle dont la plus
+//!   grande dimension est sous 1 mm propose l'échelle mètres
+//!   (× 1000) à l'import — le facteur vit dans l'événement
+//!   `geom.mesh.imported` schéma v2, appliqué au rendu et à l'export
+//!   (toujours en mm) ;
 //! - **bibliothèque de projets** (ADR-0014) : écran d'accueil listant
 //!   les `.omnifab` du dossier `OmniFab/Projets` du dossier personnel,
 //!   « Enregistrer sous… » y propose par défaut ; le chemin courant
@@ -52,7 +57,7 @@ use aide::avec_aide;
 use bibliotheque::EntreeProjet;
 use eframe::egui;
 use forge_doc::Document;
-use forge_geom::{Mesh, Path2};
+use forge_geom::{Mesh, Path2, Point3};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
@@ -93,6 +98,14 @@ const COULEUR_GRILLE: Couleur = [0.35, 0.40, 0.47, 1.0];
 const COULEUR_GRILLE_2D: Couleur = [0.55, 0.62, 0.75, 1.0];
 /// Espacement visé entre deux lignes de grille, en pixels (ADR-0015).
 const GRILLE_CIBLE_PX: f64 = 80.0;
+/// Seuil de détection d'un export en mètres : un maillage dont la
+/// plus grande dimension est sous ce seuil (en millimètres) propose
+/// l'échelle × 1000 à l'import (ADR-0017).
+const SEUIL_METRES: f64 = 1.0;
+/// Échelle proposée pour un maillage exporté en mètres (Blender) :
+/// les coordonnées sont multipliées par 1000 pour revenir en
+/// millimètres (ADR-0017).
+const ECHELLE_METRES: f64 = 1000.0;
 /// Nombre d'événements posés par une session vierge : au-delà, la
 /// session est considérée « en cours » sur l'écran d'accueil.
 const EVENEMENTS_VIERGES: usize = 3;
@@ -128,6 +141,19 @@ enum ActionDestructrice {
     },
     /// Reprise de la session en cours depuis l'écran d'accueil.
     Reprendre,
+}
+
+/// Choix des unités d'un maillage minuscule demandé à l'import
+/// (ADR-0017) : le fil de travail a lu les octets et mesuré la plus
+/// grande dimension ; l'import attend la réponse de l'utilisateur.
+#[derive(Debug, Clone)]
+struct DemandeEchelle {
+    /// Octets d'origine du fichier importé.
+    octets: Vec<u8>,
+    /// Nombre de triangles du maillage.
+    triangles: usize,
+    /// Plus grande dimension du maillage, en millimètres.
+    dimension: f64,
 }
 
 /// Travail confié au fil de travail : lecture et parse d'un
@@ -169,6 +195,9 @@ enum Travail {
         generation: u64,
         /// Octets du blob d'origine.
         octets: Vec<u8>,
+        /// Échelle d'import appliquée avant la sérialisation : l'export
+        /// écrit toujours des millimètres (ADR-0017).
+        echelle: f64,
         /// Fichier de destination.
         chemin: PathBuf,
     },
@@ -216,10 +245,12 @@ impl Travail {
                 match stl::import(&octets, &stl::StlBudgets::default()) {
                     Ok(maillage) => {
                         let triangles = maillage.triangle_count();
+                        let dimension = plus_grande_dimension(&maillage);
                         Retour::ImportMaillage {
                             generation,
                             octets,
                             triangles,
+                            dimension,
                         }
                     }
                     Err(error) => erreur_de_travail(generation, error),
@@ -255,11 +286,16 @@ impl Travail {
             Travail::ExportMaillage {
                 generation,
                 octets,
+                echelle,
                 chemin,
             } => {
                 let maillage = match stl::import(&octets, &stl::StlBudgets::default()) {
                     Ok(maillage) => maillage,
                     Err(error) => return erreur_de_travail(generation, error),
+                };
+                let maillage = match maillage_echelle(maillage, echelle) {
+                    Ok(maillage) => maillage,
+                    Err(erreur) => return erreur_de_travail(generation, erreur),
                 };
                 let octets = match stl::export(&maillage) {
                     Ok(octets) => octets,
@@ -288,8 +324,8 @@ enum Retour {
         /// Nombre de sommets.
         sommets: usize,
     },
-    /// Maillage lu et parsé : octets d'origine et compte de
-    /// triangles.
+    /// Maillage lu et parsé : octets d'origine, compte de triangles
+    /// et plus grande dimension (ADR-0017).
     ImportMaillage {
         /// Génération de l'état au moment de l'envoi du travail.
         generation: u64,
@@ -297,6 +333,9 @@ enum Retour {
         octets: Vec<u8>,
         /// Nombre de triangles.
         triangles: usize,
+        /// Plus grande dimension du maillage, en millimètres
+        /// (ADR-0017).
+        dimension: f64,
     },
     /// Export écrit au chemin donné.
     Export {
@@ -333,6 +372,55 @@ fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Ret
     for travail in recepteur {
         let _ = emetteur.send(travail.executer());
     }
+}
+
+/// Plus grande dimension du maillage, en millimètres : le plus grand
+/// côté de la boîte englobante (ADR-0017). Un maillage vide mesure 0.
+fn plus_grande_dimension(maillage: &Mesh) -> f64 {
+    let mut min = [f64::INFINITY; 3];
+    let mut max = [f64::NEG_INFINITY; 3];
+    for point in maillage.vertices() {
+        let coordonnees = [
+            point.x().millimeters(),
+            point.y().millimeters(),
+            point.z().millimeters(),
+        ];
+        for axe in 0..3 {
+            min[axe] = min[axe].min(coordonnees[axe]);
+            max[axe] = max[axe].max(coordonnees[axe]);
+        }
+    }
+    let mut dimension = 0.0;
+    for axe in 0..3 {
+        dimension = dimension.max(max[axe] - min[axe]);
+    }
+    dimension
+}
+
+/// Un maillage dont la plus grande dimension est sous le seuil
+/// ressemble à un export en mètres (Blender exporte en mètres) :
+/// l'import propose l'échelle × 1000 (ADR-0017). Un maillage vide ou
+/// déjà grand ne déclenche rien.
+fn propose_echelle_metres(dimension: f64) -> bool {
+    (0.0..SEUIL_METRES).contains(&dimension)
+}
+
+/// Applique l'échelle d'import aux coordonnées du maillage (ADR-0017) :
+/// l'événement porte le facteur, le blob garde les octets bruts — le
+/// rendu et l'export travaillent sur le maillage mis à l'échelle.
+fn maillage_echelle(maillage: Mesh, echelle: f64) -> Result<Mesh, String> {
+    if echelle == 1.0 {
+        return Ok(maillage);
+    }
+    let triangles = maillage.triangles().to_vec();
+    let mut sommets = Vec::with_capacity(maillage.vertex_count());
+    for point in maillage.vertices() {
+        let x = Length::from_millimeters(point.x().millimeters() * echelle);
+        let y = Length::from_millimeters(point.y().millimeters() * echelle);
+        let z = Length::from_millimeters(point.z().millimeters() * echelle);
+        sommets.push(Point3::new(x, y, z).map_err(|erreur| erreur.to_string())?);
+    }
+    Mesh::from_parts(sommets, triangles).map_err(|erreur| erreur.to_string())
 }
 
 /// Ne garde que les retours de la génération courante : les travaux
@@ -474,6 +562,9 @@ struct DemoApp {
     /// Action destructive demandée, en attente de confirmation
     /// (ADR-0016 C3).
     demande: Option<ActionDestructrice>,
+    /// Choix des unités d'un maillage minuscule, en attente de la
+    /// réponse de l'utilisateur (ADR-0017).
+    demande_echelle: Option<DemandeEchelle>,
 }
 
 impl DemoApp {
@@ -529,6 +620,7 @@ impl DemoApp {
             dirty: false,
             titre_sale: false,
             demande: None,
+            demande_echelle: None,
         };
         app.reinitialiser();
         app
@@ -549,6 +641,7 @@ impl DemoApp {
         self.camera3d = Camera3D::nouvelle();
         self.vue = Vue::DeuxD;
         self.aide = None;
+        self.demande_echelle = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -806,6 +899,48 @@ impl DemoApp {
         }
     }
 
+    /// Fenêtre du choix des unités d'un maillage minuscule (ADR-0017) :
+    /// « Mètres » importe à l'échelle × 1000, « Millimètres » importe
+    /// tel quel, « Annuler » n'écrit rien.
+    fn fenetre_echelle(&mut self, ctx: &egui::Context) {
+        let Some(demande) = self.demande_echelle.clone() else {
+            return;
+        };
+        let mut decision: Option<f64> = None;
+        let mut annule = false;
+        let dimension = format!("{:.2}", demande.dimension);
+        egui::Window::new(self.texte("echelle-titre"))
+            .collapsible(false)
+            .show(ctx, |ui| {
+                ui.label(self.texte_avec(
+                    "echelle-texte",
+                    &[("dimension", Argument::from(dimension.as_str()))],
+                ));
+                ui.horizontal(|ui| {
+                    let reponse = ui.button(self.texte("echelle-metres"));
+                    avec_aide(&reponse, "aide-echelle-metres", &mut self.aide);
+                    if reponse.clicked() {
+                        decision = Some(ECHELLE_METRES);
+                    }
+                    let reponse = ui.button(self.texte("echelle-millimetres"));
+                    avec_aide(&reponse, "aide-echelle-millimetres", &mut self.aide);
+                    if reponse.clicked() {
+                        decision = Some(1.0);
+                    }
+                    let reponse = ui.button(self.texte("echelle-annuler"));
+                    avec_aide(&reponse, "aide-echelle-annuler", &mut self.aide);
+                    if reponse.clicked() {
+                        annule = true;
+                    }
+                });
+            });
+        if annule {
+            self.demande_echelle = None;
+        } else if let Some(echelle) = decision {
+            self.importer_maillage(demande.octets, demande.triangles, echelle);
+        }
+    }
+
     /// Lit puis importe le fichier de tracés choisi dans le sélecteur
     /// natif : lecture et parse partent au fil de travail, le format
     /// suit le bouton (ADR-0014, ADR-0016 C1).
@@ -874,19 +1009,22 @@ impl DemoApp {
                 }
             }
             Retour::ImportMaillage {
-                octets, triangles, ..
+                octets,
+                triangles,
+                dimension,
+                ..
             } => {
-                let resultat = self.executer(&ImportMesh {
-                    format: "stl".to_string(),
-                    octets,
-                    triangles,
-                });
-                if resultat.is_ok() {
-                    self.cache_maillage = None;
-                    self.info = Some(self.texte_avec(
-                        "info-import-maillage",
-                        &[("triangles", Argument::from(triangles))],
-                    ));
+                // Un maillage minuscule ressemble à un export en
+                // mètres : l'import attend le choix des unités
+                // (ADR-0017) ; rien n'est écrit avant la réponse.
+                if propose_echelle_metres(dimension) {
+                    self.demande_echelle = Some(DemandeEchelle {
+                        octets,
+                        triangles,
+                        dimension,
+                    });
+                } else {
+                    self.importer_maillage(octets, triangles, 1.0);
                 }
             }
             Retour::Export { chemin, .. } => {
@@ -898,6 +1036,25 @@ impl DemoApp {
             Retour::Erreur { message, .. } => {
                 self.error = Some(message);
             }
+        }
+    }
+    /// Importe le maillage à l'échelle donnée : commande tout-ou-rien,
+    /// le succès n'est affiché que si elle passe (ADR-0016 C4) ; une
+    /// demande d'échelle en attente est consommée (ADR-0017).
+    fn importer_maillage(&mut self, octets: Vec<u8>, triangles: usize, echelle: f64) {
+        self.demande_echelle = None;
+        let resultat = self.executer(&ImportMesh {
+            format: "stl".to_string(),
+            octets,
+            triangles,
+            echelle,
+        });
+        if resultat.is_ok() {
+            self.cache_maillage = None;
+            self.info = Some(self.texte_avec(
+                "info-import-maillage",
+                &[("triangles", Argument::from(triangles))],
+            ));
         }
     }
     /// Exporte les tracés courants au format demandé, vers le chemin
@@ -939,9 +1096,11 @@ impl DemoApp {
             self.error = Some(format!("blob absent du document : {blob}"));
             return;
         };
+        let echelle = reference.echelle;
         self.envoyer_travail(Travail::ExportMaillage {
             generation: self.generation,
             octets: octets.to_vec(),
+            echelle,
             chemin: chemin.to_path_buf(),
         });
     }
@@ -1191,9 +1350,12 @@ impl DemoApp {
         let Some(octets) = self.session.document().blob(&blob) else {
             return;
         };
+        let echelle = reference.echelle;
         let octets = octets.to_vec();
         let parse = move || {
-            stl::import(&octets, &stl::StlBudgets::default()).map_err(|erreur| erreur.to_string())
+            let brut = stl::import(&octets, &stl::StlBudgets::default());
+            let maillage = brut.map_err(|erreur| erreur.to_string())?;
+            maillage_echelle(maillage, echelle)
         };
         met_en_cache(&mut self.cache_maillage, blob, parse);
         if let Some((_, Err(erreur))) = &self.cache_maillage {
@@ -1828,6 +1990,7 @@ impl eframe::App for DemoApp {
             self.titre_sale = self.dirty;
         }
         self.fenetre_confirmation(ctx);
+        self.fenetre_echelle(ctx);
         aide::fenetre(ctx, &self.i18n, &mut self.aide);
     }
 }
@@ -2413,5 +2576,64 @@ mod tests {
             raccourcis_annulation(&modificateurs(true, false, false), true, false, false),
             (false, false)
         );
+    }
+    /// L'échelle mètres n'est proposée que pour un maillage
+    /// minuscule : une dimension nulle (maillage vide) ou déjà
+    /// millimétrique ne déclenche rien (ADR-0017).
+    #[test]
+    fn echelle_metres_proposee_sous_le_seuil() {
+        assert!(propose_echelle_metres(0.05));
+        assert!(!propose_echelle_metres(0.0));
+        assert!(!propose_echelle_metres(1.0));
+        assert!(!propose_echelle_metres(50.0));
+    }
+
+    /// La plus grande dimension est le plus grand côté de la boîte
+    /// englobante ; un maillage vide mesure 0 (ADR-0017).
+    #[test]
+    fn plus_grande_dimension_est_le_plus_grand_cote() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s1 = Point3::new(un, un, Length::ZERO).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        assert_eq!(plus_grande_dimension(&maillage), 1.0);
+        assert_eq!(plus_grande_dimension(&Mesh::new()), 0.0);
+    }
+
+    /// L'échelle d'import multiplie les coordonnées : × 1000 pour un
+    /// export en mètres, l'identité ne touche à rien (ADR-0017).
+    #[test]
+    fn maillage_echelle_multiplie_les_coordonnees() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let s2 = Point3::new(un, un, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let grossi = maillage_echelle(maillage, 1000.0).expect("échelle appliquée");
+        assert_eq!(grossi.vertices()[0].x().millimeters(), 0.0);
+        assert_eq!(grossi.vertices()[0].y().millimeters(), 1000.0);
+        let intact = maillage_echelle(grossi, 1.0).expect("identité");
+        assert_eq!(intact.vertices()[0].y().millimeters(), 1000.0);
+    }
+
+    /// Un import minuscule attend le choix des unités : rien n'est
+    /// écrit avant la réponse, et « Mètres » importe à l'échelle
+    /// × 1000 (ADR-0017).
+    #[test]
+    fn import_minuscule_attend_le_choix_des_unites() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::ImportMaillage {
+            generation: app.generation,
+            octets: b"solid minuscule".to_vec(),
+            triangles: 1,
+            dimension: 0.05,
+        });
+        assert!(app.demande_echelle.is_some(), "le choix des unités attend");
+        assert!(app.session.geom().maillage().is_none(), "rien au journal");
+        app.importer_maillage(b"solid minuscule".to_vec(), 1, 1000.0);
+        assert!(app.demande_echelle.is_none(), "demande consommée");
+        let maillage = app.session.geom().maillage().expect("maillage importé");
+        assert_eq!(maillage.echelle, 1000.0, "échelle mètres retenue");
     }
 }

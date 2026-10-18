@@ -48,7 +48,8 @@ use forge_values::ValueGraph;
 
 /// Registre de migrations courant de la session (ADR-0016 A3) : les
 /// quatre types d'événement connus, déclarés à leur version
-/// courante. À passer à l'ouverture d'un projet (Document::from_bytes_with,
+/// courante — le maillage importé migre du v1 au v2 (ADR-0017). À
+/// passer à l'ouverture d'un projet (Document::from_bytes_with,
 /// Document::open_from_path_with, feature native) : un journal écrit
 /// par une version plus récente est refusé par SchemaTooNew (ADR-0001)
 /// au lieu d'être lu comme du v1.
@@ -57,8 +58,20 @@ pub fn registre_migrations_courant() -> MigrationRegistry {
     registre.declare(EVENT_INPUT_SET, 1);
     registre.declare(EVENT_EXPRESSION_SET, 1);
     registre.declare(EVENT_TRACES_IMPORTED, 1);
-    registre.declare(EVENT_MESH_IMPORTED, 1);
+    registre.declare(EVENT_MESH_IMPORTED, 2);
+    registre.register(EVENT_MESH_IMPORTED, 1, migre_mesh_v1_v2);
     registre
+}
+
+/// Migration `geom.mesh.imported` v1 → v2 (ADR-0017) : le champ
+/// `echelle` est posé à 1,0 — les journaux v1 relisent leurs maillages
+/// en millimètres, sans changement de comportement.
+fn migre_mesh_v1_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+    let mut donnees = donnees.clone();
+    if let Some(objet) = donnees.as_object_mut() {
+        objet.insert("echelle".to_string(), serde_json::json!(1.0));
+    }
+    Ok(donnees)
 }
 
 /// Session de travail (ADR-0008) : possède le document forge-doc et les

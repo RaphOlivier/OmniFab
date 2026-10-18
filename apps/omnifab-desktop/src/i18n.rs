@@ -83,6 +83,11 @@ mod tests {
         "confirmation-texte",
         "confirmation-confirmer",
         "confirmation-annuler",
+        "echelle-titre",
+        "echelle-texte",
+        "echelle-metres",
+        "echelle-millimetres",
+        "echelle-annuler",
         aide::CLE_TITRE,
         aide::CLE_EXEMPLE,
         aide::CLE_INTROUVABLE,
@@ -122,6 +127,9 @@ mod tests {
         "aide-viewport-vue-3d",
         "aide-geom-compteur",
         "aide-confirmation-perte",
+        "aide-echelle-metres",
+        "aide-echelle-millimetres",
+        "aide-echelle-annuler",
     ];
 
     /// Chaque clé utilisée par l'interface existe dans le FTL.

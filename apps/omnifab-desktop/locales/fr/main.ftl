@@ -97,6 +97,13 @@ confirmation-texte = Le projet comporte des modifications non enregistrées : co
 confirmation-confirmer = Continuer
 confirmation-annuler = Annuler
 
+# --- Unités du maillage importé (ADR-0017) ---
+echelle-titre = Unités du modèle
+echelle-texte = La plus grande dimension du modèle mesure {$dimension} mm : il ressemble à un export en mètres (Blender, par exemple). Dans quelle unité l'importer ?
+echelle-metres = Mètres (× 1000)
+echelle-millimetres = Millimètres (tel quel)
+echelle-annuler = Annuler l'import
+
 # --- Fenêtre d'aide ---
 
 aide-titre-fenetre = Aide — {$titre}
@@ -260,3 +267,18 @@ aide-confirmation-perte =
     .titre = Travail non enregistré
     .description = Confirmation demandée avant une action destructive (nouveau projet, ouverture, reprise) quand des modifications non enregistrées existent : les continuer abandonne définitivement — « Enregistrer sous… » les met à l'abri d'abord.
     .exemple = Modifiez la largeur puis cliquez « Nouveau » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.
+
+aide-echelle-metres =
+    .titre = Mètres (× 1000)
+    .description = Les coordonnées du modèle sont multipliées par 1000 : un export en mètres (Blender, par exemple) retrouve sa taille en millimètres. Le facteur d'échelle est enregistré dans le projet avec l'import, et l'export STL écrit toujours des millimètres.
+    .exemple = Importez un STL Blender : si le modèle est minuscule, le dialogue des unités s'ouvre ; choisissez « Mètres (× 1000) » — le wireframe retrouve sa taille en vue 2D comme en vue 3D.
+
+aide-echelle-millimetres =
+    .titre = Millimètres (tel quel)
+    .description = Le modèle est importé sans changement d'échelle : ses coordonnées sont déjà en millimètres. Le facteur 1 est enregistré dans le projet avec l'import.
+    .exemple = Importez un STL FreeCAD : si le dialogue des unités s'ouvre à tort, choisissez « Millimètres (tel quel) » — le modèle garde exactement ses dimensions.
+
+aide-echelle-annuler =
+    .titre = Annuler l'import
+    .description = Abandonne l'import : rien n'est écrit au journal, le projet et le fichier d'origine ne sont pas modifiés.
+    .exemple = Changez d'avis dans le dialogue des unités : « Annuler l'import » ferme la fenêtre, aucun maillage n'est importé.

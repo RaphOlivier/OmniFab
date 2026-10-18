@@ -8,10 +8,14 @@ use crate::command::{
 use forge_doc::NewEvent;
 use forge_values::ValueGraph;
 
-/// Version de schéma courante des types d'événement connus de la
-/// session (ADR-0016 A3) : toute autre version d'un type connu est
-/// refusée, jamais lue comme du v1.
+/// Version de schéma courante des types d'événement v1 de la session
+/// (ADR-0016 A3) : toute autre version d'un type connu est refusée,
+/// jamais lue comme du v1.
 const VERSION_SCHEMA_CONNUE: u32 = 1;
+/// Version de schéma de `geom.mesh.imported` (ADR-0017) : le champ
+/// `echelle` est ajouté en v2 ; les événements v1 sont migrés à
+/// l'ouverture par le registre de migrations.
+const VERSION_SCHEMA_MESH: u32 = 2;
 
 /// Projection d'un domaine métier : l'état du domaine reconstruit par
 /// rejeu du journal. Les domaines futurs (esquisse, CAO, CAM…)
@@ -134,8 +138,8 @@ pub struct TracesImportees {
     pub sommets: usize,
 }
 
-/// Maillage importé courant (référence + compteurs).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+/// Maillage importé courant (référence + compteurs, échelle d'import).
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct MaillageImporte {
     /// Format d'origine (`stl`).
     pub format: String,
@@ -143,6 +147,9 @@ pub struct MaillageImporte {
     pub blob: String,
     /// Nombre de triangles.
     pub triangles: usize,
+    /// Échelle d'import appliquée aux coordonnées (ADR-0017) :
+    /// 1,0 = millimètres, 1000,0 = mètres.
+    pub echelle: f64,
 }
 
 /// Projection du domaine de la géométrie importée (ADR-0011) : portée par
@@ -215,7 +222,7 @@ impl Projection for GeomProjection {
                 Ok(())
             }
             EVENT_MESH_IMPORTED => {
-                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
+                verifie_schema(event, VERSION_SCHEMA_MESH)?;
                 let format = champ_str(event, "format")?;
                 if format != "stl" {
                     return Err(SessionError::InvalidEventData {
@@ -225,10 +232,12 @@ impl Projection for GeomProjection {
                 }
                 let blob = champ_str(event, "blob")?;
                 let triangles = champ_entier(event, "triangles")?;
+                let echelle = champ_nombre(event, "echelle")?;
                 self.maillage_courant = Some(MaillageImporte {
                     format: format.to_string(),
                     blob: blob.to_string(),
                     triangles,
+                    echelle,
                 });
                 Ok(())
             }
