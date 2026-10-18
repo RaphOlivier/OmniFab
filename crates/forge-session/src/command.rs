@@ -255,7 +255,7 @@ pub struct AddEntity {
 impl Command for AddEntity {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
         let esquisse = session.esquisse();
-        if let Some(raison) = esquisse.raison_refus_entite(&self.entite) {
+        if let Some(reason) = esquisse.raison_refus_entite(&self.entite) {
             return Err(SessionError::CommandRejected { reason });
         }
         let id = esquisse.prochaine_id_entite();
@@ -281,7 +281,7 @@ pub struct AddConstraint {
 impl Command for AddConstraint {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
         let esquisse = session.esquisse();
-        if let Some(raison) = esquisse.raison_refus_contrainte(&self.contrainte) {
+        if let Some(reason) = esquisse.raison_refus_contrainte(&self.contrainte) {
             return Err(SessionError::CommandRejected { reason });
         }
         let id = esquisse.prochaine_id_contrainte();
@@ -312,7 +312,7 @@ pub struct MovePoint {
 impl Command for MovePoint {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
         let esquisse = session.esquisse();
-        if let Some(raison) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
+        if let Some(reason) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
             return Err(SessionError::CommandRejected { reason });
         }
         Ok(CommandPlan::new(vec![NewEvent::new(

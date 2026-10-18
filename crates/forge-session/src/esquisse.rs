@@ -241,11 +241,7 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
             "id": id,
             "ligne": ligne,
         }),
-        ContrainteEsquisse::Distance {
-            p1,
-            p2,
-            valeur,
-        } => serde_json::json!({
+        ContrainteEsquisse::Distance { p1, p2, valeur } => serde_json::json!({
             "genre": "distance",
             "id": id,
             "p1": p1,
@@ -338,7 +334,7 @@ fn entite_de_journal(event: &NewEvent) -> Result<(u32, EntiteEsquisse), SessionE
             return Err(SessionError::InvalidEventData {
                 event_type: event.event_type.clone(),
                 reason: format!("genre d'entité inconnu : « {genre} »"),
-            })
+            });
         }
     };
     Ok((id, entite))
@@ -400,7 +396,7 @@ fn contrainte_de_journal(event: &NewEvent) -> Result<(u32, ContrainteEsquisse), 
             return Err(SessionError::InvalidEventData {
                 event_type: event.event_type.clone(),
                 reason: format!("genre de contrainte inconnu : « {genre} »"),
-            })
+            });
         }
     };
     Ok((id, contrainte))
@@ -637,19 +633,13 @@ impl EsquisseProjection {
             ContrainteEsquisse::Coincidence { p1, p2 } => {
                 self.raison_deux_points(*p1, *p2)?;
                 if p1 == p2 {
-                    return Some(
-                        "une coïncidence relie deux points distincts".to_string(),
-                    );
+                    return Some("une coïncidence relie deux points distincts".to_string());
                 }
                 None
             }
             ContrainteEsquisse::Horizontale { ligne } => self.raison_ligne(*ligne),
             ContrainteEsquisse::Verticale { ligne } => self.raison_ligne(*ligne),
-            ContrainteEsquisse::Distance {
-                p1,
-                p2,
-                valeur,
-            } => {
+            ContrainteEsquisse::Distance { p1, p2, valeur } => {
                 self.raison_deux_points(*p1, *p2)?;
                 if p1 == p2 {
                     return Some("une cote de distance relie deux points distincts".to_string());
@@ -690,9 +680,7 @@ impl EsquisseProjection {
             ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
                 self.raison_deux_lignes(*ligne1, *ligne2)?;
                 if ligne1 == ligne2 {
-                    return Some(
-                        "une perpendicularité relie deux lignes distinctes".to_string(),
-                    );
+                    return Some("une perpendicularité relie deux lignes distinctes".to_string());
                 }
                 None
             }
@@ -748,10 +736,8 @@ impl EsquisseProjection {
                     reconstruction.lignes.insert(*id, identifiant);
                 }
                 EntiteEsquisse::Cercle { centre, rayon } => {
-                    let identifiant = solveur.ajouter_cercle(
-                        reconstruction.id_point(*centre)?,
-                        *rayon,
-                    )?;
+                    let identifiant =
+                        solveur.ajouter_cercle(reconstruction.id_point(*centre)?, *rayon)?;
                     reconstruction.cercles.insert(*id, identifiant);
                 }
                 EntiteEsquisse::Arc {
@@ -888,11 +874,7 @@ fn applique_contrainte(
                 ligne: reconstruction.id_ligne(*ligne)?,
             })?;
         }
-        ContrainteEsquisse::Distance {
-            p1,
-            p2,
-            valeur,
-        } => {
+        ContrainteEsquisse::Distance { p1, p2, valeur } => {
             solveur.ajouter_contrainte(Contrainte::Distance {
                 p1: reconstruction.id_point(*p1)?,
                 p2: reconstruction.id_point(*p2)?,
@@ -979,7 +961,7 @@ impl Projection for EsquisseProjection {
                         reason: format!("identifiant d'entité {id} non séquentiel"),
                     });
                 }
-                if let Some(raison) = self.raison_refus_entite(&entite) {
+                if let Some(reason) = self.raison_refus_entite(&entite) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -998,7 +980,7 @@ impl Projection for EsquisseProjection {
                         reason: format!("identifiant de contrainte {id} non séquentiel"),
                     });
                 }
-                if let Some(raison) = self.raison_refus_contrainte(&contrainte) {
+                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -1013,7 +995,7 @@ impl Projection for EsquisseProjection {
                 let point = champ_id(event, "point")?;
                 let x = Length::from_millimeters(champ_nombre(event, "x")?);
                 let y = Length::from_millimeters(champ_nombre(event, "y")?);
-                if let Some(raison) = self.raison_refus_deplacement(point, x, y) {
+                if let Some(reason) = self.raison_refus_deplacement(point, x, y) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -1033,6 +1015,10 @@ impl Projection for EsquisseProjection {
     }
 
     fn types_connus(&self) -> &'static [&'static str] {
-        &[EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_POINT_MOVED]
+        &[
+            EVENT_SKETCH_ENTITY_ADDED,
+            EVENT_SKETCH_CONSTRAINT_ADDED,
+            EVENT_SKETCH_POINT_MOVED,
+        ]
     }
 }
