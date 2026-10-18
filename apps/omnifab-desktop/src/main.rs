@@ -2938,7 +2938,7 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Point;
-        atelier_esquisse::traiter_clic(&mut app, pas * 1.24, pas * 0.67);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.24, pas * 0.67);
         let esquisse = app.session.esquisse();
         assert_eq!(esquisse.entites().len(), 1, "un point posé");
         let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
@@ -2956,11 +2956,19 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Point;
-        atelier_esquisse::traiter_clic(&mut app, pas * 0.24, pas * 0.1);
-        assert_eq!(app.session.esquisse().entites().len(), 1, "premier point posé");
-        atelier_esquisse::traiter_clic(&mut app, pas * 0.1, pas * 0.05);
-        assert_eq!(app.session.esquisse().entites().len(), 1, "point proche repris");
-        atelier_esquisse::traiter_clic(&mut app, pas, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.24, pas * 0.1);
+        assert_eq!(
+            app.session.esquisse().entites().len(),
+            1,
+            "premier point posé"
+        );
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, pas * 0.05);
+        assert_eq!(
+            app.session.esquisse().entites().len(),
+            1,
+            "point proche repris"
+        );
+        atelier_esquisse::traiter_clic(&mut app, pas, pas, 0.0);
         let esquisse = app.session.esquisse();
         assert_eq!(esquisse.entites().len(), 2, "un point neuf posé");
         let EntiteEsquisse::Point { x, y } = esquisse.entites()[1].1 else {
@@ -2978,9 +2986,9 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Ligne;
-        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
         assert!(app.geste.is_some(), "geste ouvert à l'origine");
-        atelier_esquisse::traiter_clic(&mut app, pas * 2.0, pas);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, pas);
         assert!(app.geste.is_none(), "geste clos à l'extrémité");
         let esquisse = app.session.esquisse();
         assert_eq!(esquisse.entites().len(), 3, "deux points et une ligne");
@@ -2998,8 +3006,8 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Cercle;
-        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
-        atelier_esquisse::traiter_clic(&mut app, 0.0, pas * 2.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
         let esquisse = app.session.esquisse();
         assert_eq!(esquisse.entites().len(), 2, "le centre et le cercle");
         let EntiteEsquisse::Cercle { centre, rayon } = esquisse.entites()[1].1 else {
@@ -3017,9 +3025,9 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Arc;
-        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
-        atelier_esquisse::traiter_clic(&mut app, pas * 2.0, 0.0);
-        atelier_esquisse::traiter_clic(&mut app, 0.0, pas * 2.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
         assert!(app.geste.is_none(), "geste clos à la fin de l'arc");
         let esquisse = app.session.esquisse();
         assert_eq!(esquisse.entites().len(), 4, "trois points et un arc");
@@ -3052,8 +3060,8 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
         app.outil = atelier_esquisse::OutilEsquisse::Selection;
-        atelier_esquisse::traiter_clic(&mut app, 0.0, 0.0);
-        atelier_esquisse::traiter_clic(&mut app, pas, pas);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas, pas);
         assert_eq!(app.session.esquisse().entites().len(), 0, "aucune entité");
         assert!(app.geste.is_none(), "aucun geste");
     }

@@ -28,8 +28,12 @@ const RAYON_POINT_PX: f32 = 3.0;
 /// Segments de la discrétisation des arcs au painter.
 const SEGMENTS_ARC: usize = 32;
 /// Couleur de l'aperçu du geste : la teinte des entités,
-/// translucide pour se lire au-dessus du croquis posé.
-const COULEUR_APERCU: egui::Color32 = egui::Color32::from_rgba_unmultiplied(255, 130, 30, 140);
+/// translucide pour se lire au-dessus du croquis posé —
+/// `Color32::from_rgba_unmultiplied` n'est pas const (E0015) :
+/// une fonction la construit à chaque usage.
+fn couleur_apercu() -> egui::Color32 {
+    egui::Color32::from_rgba_unmultiplied(255, 130, 30, 140)
+}
 
 /// Outil actif du mode esquisse : un clic du viewport 2D
 /// s'interprète selon lui (ADR-0018, lot 3c).
@@ -69,7 +73,6 @@ impl OutilEsquisse {
             Self::Arc => "aide-esquisse-outil-arc",
         }
     }
-
 }
 
 /// Geste en cours d'un outil de croquis multi-clics (ADR-0018,
@@ -204,7 +207,10 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
         }
         (OutilEsquisse::Arc, Some(GesteEsquisse::ArcCentre { centre })) => {
             point_du_clic(app, vise);
-            app.geste = Some(GesteEsquisse::ArcDebut { centre, debut: vise });
+            app.geste = Some(GesteEsquisse::ArcDebut {
+                centre,
+                debut: vise,
+            });
         }
         (OutilEsquisse::Arc, Some(GesteEsquisse::ArcDebut { centre, debut })) => {
             point_du_clic(app, vise);
@@ -382,10 +388,15 @@ pub(crate) fn dessiner_apercu(
         Some(GesteEsquisse::Ligne { origine }) => {
             painter.line_segment(
                 [
-                    point_ecran(camera, rect, origine.x.millimeters(), origine.y.millimeters()),
+                    point_ecran(
+                        camera,
+                        rect,
+                        origine.x.millimeters(),
+                        origine.y.millimeters(),
+                    ),
                     point_ecran(camera, rect, vise.x.millimeters(), vise.y.millimeters()),
                 ],
-                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
             );
         }
         Some(GesteEsquisse::Cercle { centre }) | Some(GesteEsquisse::ArcCentre { centre }) => {
@@ -395,7 +406,7 @@ pub(crate) fn dessiner_apercu(
             painter.circle_stroke(
                 point_ecran(camera, rect, centre_mm.0, centre_mm.1),
                 (rayon_mm * camera.echelle) as f32,
-                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
             );
         }
         Some(GesteEsquisse::ArcDebut { centre, debut }) => {
@@ -420,7 +431,7 @@ pub(crate) fn dessiner_apercu(
             }
             painter.add(egui::Shape::line(
                 points,
-                egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+                egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
             ));
         }
     }
@@ -430,17 +441,12 @@ pub(crate) fn dessiner_apercu(
 /// Marqueur du point visé : un cercle vide là où le prochain clic
 /// se posera, par-dessus les entités du croquis (ADR-0018,
 /// lot 3c-2).
-fn marqueur_apercu(
-    painter: &egui::Painter,
-    camera: &Camera2D,
-    rect: egui::Rect,
-    vise: &PointVise,
-) {
+fn marqueur_apercu(painter: &egui::Painter, camera: &Camera2D, rect: egui::Rect, vise: &PointVise) {
     let centre = point_ecran(camera, rect, vise.x.millimeters(), vise.y.millimeters());
     painter.circle_stroke(
         centre,
         RAYON_POINT_PX + 1.5,
-        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_APERCU),
+        egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
     );
 }
 
