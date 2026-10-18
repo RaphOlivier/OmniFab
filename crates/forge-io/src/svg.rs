@@ -115,9 +115,9 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
     if min_x <= max_x {
         let largeur = max_x - min_x;
         let hauteur = max_y - min_y;
-        write!(
+        writeln!(
             sortie,
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">\n"
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">"
         )
         .expect("écriture en mémoire infaillible");
     } else {

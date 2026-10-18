@@ -260,11 +260,26 @@ fn export_declare_la_taille_physique() {
     let trace = Path2::from_points(vec![point(0.0, 0.0), point(20.0, 10.0)], false);
     let octets = svg::export(&[trace]).expect("export svg");
     let texte = String::from_utf8(octets).expect("svg en utf-8");
-    assert!(texte.contains("width=\"20mm\""), "largeur physique : {texte}");
-    assert!(texte.contains("height=\"10mm\""), "hauteur physique : {texte}");
-    assert!(texte.contains("viewBox=\"0 -10 20 10\""), "viewBox : {texte}");
-    assert!(texte.contains("fill=\"none\""), "sans remplissage : {texte}");
-    assert!(texte.contains("stroke-width=\"0.1\""), "trait fin : {texte}");
+    assert!(
+        texte.contains("width=\"20mm\""),
+        "largeur physique : {texte}"
+    );
+    assert!(
+        texte.contains("height=\"10mm\""),
+        "hauteur physique : {texte}"
+    );
+    assert!(
+        texte.contains("viewBox=\"0 -10 20 10\""),
+        "viewBox : {texte}"
+    );
+    assert!(
+        texte.contains("fill=\"none\""),
+        "sans remplissage : {texte}"
+    );
+    assert!(
+        texte.contains("stroke-width=\"0.1\""),
+        "trait fin : {texte}"
+    );
 }
 
 #[test]
