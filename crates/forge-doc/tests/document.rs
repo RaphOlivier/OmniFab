@@ -467,10 +467,19 @@ fn migration_echouee_preserve_le_journal() {
     for n in 1..=3 {
         doc.append(NewEvent::new("demo.test", 1, "test", json!({ "n": n })));
     }
-    assert!(doc.migrate_events().is_err(), "la migration du troisième événement échoue");
+    assert!(
+        doc.migrate_events().is_err(),
+        "la migration du troisième événement échoue"
+    );
     for event in doc.events() {
-        assert_eq!(event.schema_version, 1, "aucun événement ne doit être migré");
-        assert!(event.data.get("facteur").is_none(), "les données doivent rester inchangées");
+        assert_eq!(
+            event.schema_version, 1,
+            "aucun événement ne doit être migré"
+        );
+        assert!(
+            event.data.get("facteur").is_none(),
+            "les données doivent rester inchangées"
+        );
     }
 }
 
