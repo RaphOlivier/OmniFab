@@ -1363,7 +1363,9 @@ impl DemoApp {
                     avec_aide(&reponse, "aide-accueil-projet", &mut self.aide);
                     if reponse.clicked() {
                         let chemin = projet.chemin.clone();
-                        self.demander(ActionDestructrice::Ouvrir { chemin: Some(chemin) });
+                        self.demander(ActionDestructrice::Ouvrir {
+                            chemin: Some(chemin),
+                        });
                     }
                 });
             }

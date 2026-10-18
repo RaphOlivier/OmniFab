@@ -286,7 +286,9 @@ impl Document {
     pub fn to_bytes_prefix(&self, applied: usize) -> Result<Vec<u8>, DocError> {
         let applique = applied.min(self.events.len());
         let mut document = Document::new();
-        document.events.extend(self.events[..applique].iter().cloned());
+        document
+            .events
+            .extend(self.events[..applique].iter().cloned());
         let references: Vec<String> = document
             .events
             .iter()
