@@ -102,7 +102,8 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
                     .vertices()
                     .map(|v| (v.location.x, v.location.y, v.bulge))
                     .collect();
-                pousse_polyligne(&sommets, false, &mut points, &mut total, budgets)?;
+                ferme = polyligne.is_closed();
+                pousse_polyligne(&sommets, ferme, &mut points, &mut total, budgets)?;
                 true
             }
             EntityType::Circle(cercle) => {

@@ -22,6 +22,14 @@ const ARC: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nARC\n8\n0\n10\n0.0\n20\n0.0\n40
 /// sommets, 70 : 1) de (0, 0) à (10, 0).
 const LWPOLYLIGNE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\n0\n90\n2\n70\n1\n10\n0.0\n20\n0.0\n10\n10.0\n20\n0.0\n0\nENDSEC\n0\nEOF\n";
 
+/// SECTION ENTITIES contenant une `POLYLINE` fermée (R12 : 66
+/// suivi des sommets, 70 bit 1) de (0, 0) à (10, 0).
+const POLYLIGNE_FERMEE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nPOLYLINE\n8\n0\n66\n1\n70\n1\n0\nVERTEX\n8\n0\n10\n0.0\n20\n0.0\n0\nVERTEX\n8\n0\n10\n10.0\n20\n0.0\n0\nSEQEND\n0\nENDSEC\n0\nEOF\n";
+
+/// SECTION ENTITIES contenant une `POLYLINE` ouverte (70 : 0) de
+/// (0, 0) à (10, 0).
+const POLYLIGNE_OUVERTE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nPOLYLINE\n8\n0\n66\n1\n70\n0\n0\nVERTEX\n8\n0\n10\n0.0\n20\n0.0\n0\nVERTEX\n8\n0\n10\n10.0\n20\n0.0\n0\nSEQEND\n0\nENDSEC\n0\nEOF\n";
+
 /// SECTION ENTITIES contenant un `TEXT` (ignoré) puis une `LINE`.
 const TEXT_ET_LIGNE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nTEXT\n8\n0\n10\n0.0\n20\n0.0\n40\n5.0\n1\nbonjour\n0\nLINE\n8\n0\n10\n10.0\n20\n20.0\n11\n30.0\n21\n40.0\n0\nENDSEC\n0\nEOF\n";
 
@@ -65,6 +73,35 @@ fn importe_une_lwpolyline_fermee() {
     assert!(traces[0].is_closed());
     assert_eq!(traces[0].len(), 2);
     assert_eq!(traces[0].points()[1].x().millimeters(), 10.0);
+}
+
+#[test]
+fn importe_une_polyline_ferme_r12() {
+    let traces = dxf::import(POLYLIGNE_FERMEE, &DxfBudgets::default()).expect("dxf valide");
+    assert_eq!(traces.len(), 1);
+    assert!(traces[0].is_closed());
+    assert_eq!(traces[0].len(), 2);
+}
+
+#[test]
+fn polyline_ouverte_reste_ouverte() {
+    let traces = dxf::import(POLYLIGNE_OUVERTE, &DxfBudgets::default()).expect("dxf valide");
+    assert_eq!(traces.len(), 1);
+    assert!(!traces[0].is_closed());
+    assert_eq!(traces[0].len(), 2);
+}
+
+#[test]
+fn parite_polyline_lwpolyline() {
+    let polylignes = dxf::import(POLYLIGNE_FERMEE, &DxfBudgets::default()).expect("dxf valide");
+    let lwpolylignes = dxf::import(LWPOLYLIGNE, &DxfBudgets::default()).expect("dxf valide");
+    assert_eq!(polylignes.len(), lwpolylignes.len());
+    assert_eq!(polylignes[0].is_closed(), lwpolylignes[0].is_closed());
+    assert_eq!(polylignes[0].len(), lwpolylignes[0].len());
+    assert_eq!(
+        polylignes[0].points()[1].x().millimeters(),
+        lwpolylignes[0].points()[1].x().millimeters()
+    );
 }
 
 #[test]
