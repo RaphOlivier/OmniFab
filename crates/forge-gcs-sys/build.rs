@@ -47,6 +47,11 @@ fn main() {
     // 2) Compilation : CMake (planegcs + shim, liaison statique).
     let mut config = cmake::Config::new(&shim);
     config.define("CMAKE_BUILD_TYPE", "Release");
+    // Les générateurs multi-config (MSVC) ignorent CMAKE_BUILD_TYPE :
+    // sans profile, la crate cmake construit avec --config Debug, dont
+    // les objets /MDd sont refusés par link.exe face au fmt vcpkg en
+    // /MD (LNK2038). profile pilote --config sur tous les générateurs.
+    config.profile("Release");
     // Windows + vcpkg : toolchain et triplet depuis l'environnement CI.
     if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
         let triplet =

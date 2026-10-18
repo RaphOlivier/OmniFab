@@ -594,18 +594,24 @@ impl EsquisseProjection {
     pub fn raison_refus_entite(&self, entite: &EntiteEsquisse) -> Option<String> {
         match entite {
             EntiteEsquisse::Point { x, y } => {
-                Self::raison_finie(x.millimeters(), "l'abscisse du point")?;
+                if let Some(reason) = Self::raison_finie(x.millimeters(), "l'abscisse du point") {
+                    return Some(reason);
+                }
                 Self::raison_finie(y.millimeters(), "l'ordonnée du point")
             }
             EntiteEsquisse::Ligne { p1, p2 } => {
-                self.raison_deux_points(*p1, *p2)?;
+                if let Some(reason) = self.raison_deux_points(*p1, *p2) {
+                    return Some(reason);
+                }
                 if p1 == p2 {
                     return Some("une ligne relie deux points distincts".to_string());
                 }
                 None
             }
             EntiteEsquisse::Cercle { centre, rayon } => {
-                self.raison_point(*centre)?;
+                if let Some(reason) = self.raison_point(*centre) {
+                    return Some(reason);
+                }
                 Self::raison_positive(rayon.millimeters(), "le rayon du cercle")
             }
             EntiteEsquisse::Arc {
@@ -616,12 +622,22 @@ impl EsquisseProjection {
                 angle_debut,
                 angle_fin,
             } => {
-                self.raison_point(*centre)?;
-                self.raison_point(*debut)?;
-                self.raison_point(*fin)?;
-                Self::raison_positive(rayon.millimeters(), "le rayon de l'arc")?;
-                Self::raison_angle(angle_debut.radians())?;
-                Self::raison_angle(angle_fin.radians())
+                if let Some(reason) = self.raison_point(*centre) {
+                    return Some(reason);
+                }
+                if let Some(reason) = self.raison_point(*debut) {
+                    return Some(reason);
+                }
+                if let Some(reason) = self.raison_point(*fin) {
+                    return Some(reason);
+                }
+                if let Some(reason) = Self::raison_angle(angle_debut.radians()) {
+                    return Some(reason);
+                }
+                if let Some(reason) = Self::raison_angle(angle_fin.radians()) {
+                    return Some(reason);
+                }
+                Self::raison_positive(rayon.millimeters(), "le rayon de l'arc")
             }
         }
     }
@@ -631,7 +647,9 @@ impl EsquisseProjection {
     pub fn raison_refus_contrainte(&self, contrainte: &ContrainteEsquisse) -> Option<String> {
         match contrainte {
             ContrainteEsquisse::Coincidence { p1, p2 } => {
-                self.raison_deux_points(*p1, *p2)?;
+                if let Some(reason) = self.raison_deux_points(*p1, *p2) {
+                    return Some(reason);
+                }
                 if p1 == p2 {
                     return Some("une coïncidence relie deux points distincts".to_string());
                 }
@@ -640,7 +658,9 @@ impl EsquisseProjection {
             ContrainteEsquisse::Horizontale { ligne } => self.raison_ligne(*ligne),
             ContrainteEsquisse::Verticale { ligne } => self.raison_ligne(*ligne),
             ContrainteEsquisse::Distance { p1, p2, valeur } => {
-                self.raison_deux_points(*p1, *p2)?;
+                if let Some(reason) = self.raison_deux_points(*p1, *p2) {
+                    return Some(reason);
+                }
                 if p1 == p2 {
                     return Some("une cote de distance relie deux points distincts".to_string());
                 }
@@ -651,14 +671,18 @@ impl EsquisseProjection {
                 ligne2,
                 valeur,
             } => {
-                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if let Some(reason) = self.raison_deux_lignes(*ligne1, *ligne2) {
+                    return Some(reason);
+                }
                 if ligne1 == ligne2 {
                     return Some("une cote d'angle relie deux lignes distinctes".to_string());
                 }
                 Self::raison_angle(valeur.radians())
             }
             ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
-                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if let Some(reason) = self.raison_deux_lignes(*ligne1, *ligne2) {
+                    return Some(reason);
+                }
                 if ligne1 == ligne2 {
                     return Some(
                         "une égalité de longueur relie deux lignes distinctes".to_string(),
@@ -667,29 +691,39 @@ impl EsquisseProjection {
                 None
             }
             ContrainteEsquisse::PointSurLigne { point, ligne } => {
-                self.raison_point(*point)?;
+                if let Some(reason) = self.raison_point(*point) {
+                    return Some(reason);
+                }
                 self.raison_ligne(*ligne)
             }
             ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
-                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if let Some(reason) = self.raison_deux_lignes(*ligne1, *ligne2) {
+                    return Some(reason);
+                }
                 if ligne1 == ligne2 {
                     return Some("un parallélisme relie deux lignes distinctes".to_string());
                 }
                 None
             }
             ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
-                self.raison_deux_lignes(*ligne1, *ligne2)?;
+                if let Some(reason) = self.raison_deux_lignes(*ligne1, *ligne2) {
+                    return Some(reason);
+                }
                 if ligne1 == ligne2 {
                     return Some("une perpendicularité relie deux lignes distinctes".to_string());
                 }
                 None
             }
             ContrainteEsquisse::RayonCercle { cercle, valeur } => {
-                self.raison_cercle(*cercle)?;
+                if let Some(reason) = self.raison_cercle(*cercle) {
+                    return Some(reason);
+                }
                 Self::raison_positive(valeur.millimeters(), "le rayon")
             }
             ContrainteEsquisse::PointSurCercle { point, cercle } => {
-                self.raison_point(*point)?;
+                if let Some(reason) = self.raison_point(*point) {
+                    return Some(reason);
+                }
                 self.raison_cercle(*cercle)
             }
             ContrainteEsquisse::PointFixe { point } => self.raison_point(*point),
@@ -699,8 +733,12 @@ impl EsquisseProjection {
     /// Raison du refus d'un déplacement de point au plan (ADR-0018 D2),
     /// ou `None` si le point existe et les coordonnées sont finies.
     pub fn raison_refus_deplacement(&self, point: u32, x: Length, y: Length) -> Option<String> {
-        self.raison_point(point)?;
-        Self::raison_finie(x.millimeters(), "l'abscisse du point")?;
+        if let Some(reason) = self.raison_point(point) {
+            return Some(reason);
+        }
+        if let Some(reason) = Self::raison_finie(x.millimeters(), "l'abscisse du point") {
+            return Some(reason);
+        }
         Self::raison_finie(y.millimeters(), "l'ordonnée du point")
     }
 
