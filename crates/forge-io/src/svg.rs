@@ -155,7 +155,9 @@ fn parcourir(
 
 /// Collecte les segments d'un tracé : un sous-tracé par `MoveTo`,
 /// fermé par `Close`, courbes aplaties, tout sous la transformation
-/// donnée.
+/// donnée. Après un `Close`, le point courant revient au départ du
+/// sous-tracé (sémantique SVG) : les commandes suivantes reprennent
+/// depuis ce sommet, aucun segment n'est perdu.
 fn collecte(
     donnees: &usvg::tiny_skia_path::Path,
     transformation: &usvg::Transform,
@@ -165,12 +167,16 @@ fn collecte(
     let mut points: Vec<Point2> = Vec::new();
     let mut courant_x = 0.0;
     let mut courant_y = 0.0;
+    let mut depart_x = 0.0;
+    let mut depart_y = 0.0;
     for segment in donnees.segments() {
         match segment {
             PathSegment::MoveTo(point) => {
                 termine(&mut points, false, traces, etat)?;
                 courant_x = point.x;
                 courant_y = point.y;
+                depart_x = point.x;
+                depart_y = point.y;
                 ajoute(point.x, point.y, transformation, &mut points, etat)?;
             }
             PathSegment::LineTo(point) => {
@@ -205,6 +211,12 @@ fn collecte(
             }
             PathSegment::Close => {
                 termine(&mut points, true, traces, etat)?;
+                // Sémantique SVG : après `Z`, le point courant revient au
+                // départ du sous-tracé — le sous-tracé suivant repart
+                // de ce sommet.
+                courant_x = depart_x;
+                courant_y = depart_y;
+                ajoute(depart_x, depart_y, transformation, &mut points, etat)?;
             }
         }
     }

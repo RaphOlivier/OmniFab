@@ -27,6 +27,48 @@ fn importe_un_rectangle() {
 }
 
 #[test]
+fn reprend_apres_z_depuis_le_depart() {
+    // Sémantique SVG : après `Z`, le point courant revient au
+    // départ du sous-tracé — les commandes suivantes reprennent
+    // depuis ce sommet, aucun segment n'est perdu.
+    let source = b"<svg><path d=\"M 0 0 L 10 0 L 10 10 Z L 5 5 L 7 7\"/></svg>";
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 2);
+    assert!(traces[0].is_closed());
+    assert_eq!(traces[0].len(), 3);
+    let fermes = traces[0].points();
+    assert_eq!(fermes[0].x().millimeters(), 0.0);
+    assert_eq!(fermes[0].y().millimeters(), 0.0);
+    assert_eq!(fermes[2].x().millimeters(), 10.0);
+    assert_eq!(fermes[2].y().millimeters(), -10.0);
+    assert!(!traces[1].is_closed());
+    assert_eq!(traces[1].len(), 3);
+    let ouverts = traces[1].points();
+    assert_eq!(ouverts[0].x().millimeters(), 0.0);
+    assert_eq!(ouverts[0].y().millimeters(), 0.0);
+    assert_eq!(ouverts[1].x().millimeters(), 5.0);
+    assert_eq!(ouverts[1].y().millimeters(), -5.0);
+    assert_eq!(ouverts[2].x().millimeters(), 7.0);
+    assert_eq!(ouverts[2].y().millimeters(), -7.0);
+}
+
+#[test]
+fn courbe_apres_z_part_du_depart() {
+    // Une courbe après `Z` part du sommet de départ du
+    // sous-tracé, pas du dernier point avant la fermeture.
+    let source = b"<svg><path d=\"M 0 0 L 10 0 Z Q 0 5 0 10\"/></svg>";
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 2);
+    let points = traces[1].points();
+    assert_eq!(points.len(), 1 + svg::SEGMENTS_COURBE);
+    assert_eq!(points[0].x().millimeters(), 0.0);
+    assert_eq!(points[0].y().millimeters(), 0.0);
+    let dernier = points.last().expect("au moins un sommet");
+    assert_eq!(dernier.x().millimeters(), 0.0);
+    assert_eq!(dernier.y().millimeters(), -10.0);
+}
+
+#[test]
 fn aplatit_les_courbes() {
     let source = b"<svg><path d=\"M 0 0 Q 10 10 20 0\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
