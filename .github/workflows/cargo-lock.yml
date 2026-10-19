@@ -1,0 +1,85 @@
+name: Cargo.lock
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Cargo.toml"
+      - "**/Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/cargo-lock.yml"
+  workflow_dispatch:
+
+# Le GITHUB_TOKEN pousse avec contents:write ; les commits du bot
+# ne declenchent PAS les autres workflows (anti-boucle GitHub) : le
+# lock pousse par ce workflow sera verifie par le prochain push
+# humain ou par un run manuel de ci.yml.
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: cargo-lock
+  cancel-in-progress: false
+
+jobs:
+  regen-lock:
+    name: regeneration du Cargo.lock (si besoin)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolution des dependances
+        id: resolv
+        run: |
+          # cargo metadata resout le graphe SANS --locked : il complete
+          # le Cargo.lock au minimum (paquets manquants), sans monter
+          # les versions existantes (contrairement a cargo update).
+          # Aucune compilation, aucune dependance native requise.
+          if cargo metadata --format-version 1 > metadata.log 2>&1; then
+            echo "fail=0" >> "$GITHUB_OUTPUT"
+          else
+            echo "fail=1" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+      - name: Diff du lock
+        id: diff
+        if: steps.resolv.outputs.fail == '0'
+        run: |
+          if git diff --quiet Cargo.lock; then
+            echo "changed=0" >> "$GITHUB_OUTPUT"
+            echo "Cargo.lock deja a jour - rien a faire."
+          else
+            echo "changed=1" >> "$GITHUB_OUTPUT"
+            echo "Cargo.lock a completer :"
+            git diff --stat Cargo.lock
+          fi
+      - name: Commit + push du lock complete
+        if: steps.diff.outputs.changed == '1'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(ci) : completion automatique du Cargo.lock"
+          git push
+      - name: Rapport d'erreurs (issue)
+        if: steps.resolv.outputs.fail == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec de la resolution des dependances sur le job **regen-lock** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            echo ""
+            echo "### metadata.log (120 dernieres lignes)"
+            echo '```text'
+            tail -n 120 metadata.log
+            echo '```'
+          } > rapport.md
+          cat rapport.md
+          gh issue create --title "CI : echec regen Cargo.lock @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.resolv.outputs.fail == '1'
+        run: |
+          echo "La resolution a echoue - voir l'issue de rapport."
+          exit 1
