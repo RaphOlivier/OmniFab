@@ -502,7 +502,7 @@ fn selection_du_genre<'a>(
 ) -> impl Iterator<Item = u32> + 'a {
     app.selection
         .iter()
-        .filter(move |id| app.session.esquisse().genre_entite(*id) == Some(genre))
+        .filter(move |id| app.session.esquisse().genre_entite(**id) == Some(genre))
         .copied()
 }
 
