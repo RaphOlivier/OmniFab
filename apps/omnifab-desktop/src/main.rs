@@ -3351,8 +3351,16 @@ mod tests {
             &mut app,
             ContrainteEsquisse::Horizontale { ligne: 2 },
         );
-        assert_eq!(app.empreinte_journal().0, empreinte_avant.0 + 1, "un événement écrit");
-        assert_eq!(app.session.esquisse().contraintes().len(), 1, "la contrainte est posée");
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "un événement écrit"
+        );
+        assert_eq!(
+            app.session.esquisse().contraintes().len(),
+            1,
+            "la contrainte est posée"
+        );
         atelier_esquisse::ajouter_contrainte(
             &mut app,
             ContrainteEsquisse::Horizontale { ligne: 99 },
@@ -3374,7 +3382,12 @@ mod tests {
     fn le_rectangle_contraint_tombe_a_zero_dof() {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
-        for (x, y) in [(0.0, 0.0), (pas * 4.0, 0.0), (pas * 4.0, pas * 3.0), (0.0, pas * 3.0)] {
+        for (x, y) in [
+            (0.0, 0.0),
+            (pas * 4.0, 0.0),
+            (pas * 4.0, pas * 3.0),
+            (0.0, pas * 3.0),
+        ] {
             app.executer(&AddEntity {
                 entite: EntiteEsquisse::Point {
                     x: Length::from_millimeters(x),
@@ -3395,7 +3408,8 @@ mod tests {
             } else {
                 ContrainteEsquisse::Verticale { ligne }
             };
-            app.executer(&AddConstraint { contrainte }).expect("contrainte posée");
+            app.executer(&AddConstraint { contrainte })
+                .expect("contrainte posée");
         }
         app.executer(&AddConstraint {
             contrainte: ContrainteEsquisse::Distance {

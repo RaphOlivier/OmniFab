@@ -434,37 +434,57 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             ligne_selectionnee(app).is_some(),
             egui::Button::new(app.texte("esquisse-contrainte-horizontale")),
         );
-        if reponse.clicked() && let Some(ligne) = ligne_selectionnee(app) {
+        if reponse.clicked()
+            && let Some(ligne) = ligne_selectionnee(app)
+        {
             ajouter_contrainte(app, ContrainteEsquisse::Horizontale { ligne });
         }
-        avec_aide(&reponse, "aide-esquisse-contrainte-horizontale", &mut app.aide);
+        avec_aide(
+            &reponse,
+            "aide-esquisse-contrainte-horizontale",
+            &mut app.aide,
+        );
     }
     {
         let reponse = ui.add_enabled(
             ligne_selectionnee(app).is_some(),
             egui::Button::new(app.texte("esquisse-contrainte-verticale")),
         );
-        if reponse.clicked() && let Some(ligne) = ligne_selectionnee(app) {
+        if reponse.clicked()
+            && let Some(ligne) = ligne_selectionnee(app)
+        {
             ajouter_contrainte(app, ContrainteEsquisse::Verticale { ligne });
         }
-        avec_aide(&reponse, "aide-esquisse-contrainte-verticale", &mut app.aide);
+        avec_aide(
+            &reponse,
+            "aide-esquisse-contrainte-verticale",
+            &mut app.aide,
+        );
     }
     {
         let reponse = ui.add_enabled(
             point_selectionne(app).is_some(),
             egui::Button::new(app.texte("esquisse-contrainte-point-fixe")),
         );
-        if reponse.clicked() && let Some(point) = point_selectionne(app) {
+        if reponse.clicked()
+            && let Some(point) = point_selectionne(app)
+        {
             ajouter_contrainte(app, ContrainteEsquisse::PointFixe { point });
         }
-        avec_aide(&reponse, "aide-esquisse-contrainte-point-fixe", &mut app.aide);
+        avec_aide(
+            &reponse,
+            "aide-esquisse-contrainte-point-fixe",
+            &mut app.aide,
+        );
     }
     {
         let reponse = ui.add_enabled(
             deux_points_selectionnes(app).is_some(),
             egui::Button::new(app.texte("esquisse-contrainte-distance")),
         );
-        if reponse.clicked() && let Some((p1, p2)) = deux_points_selectionnes(app) {
+        if reponse.clicked()
+            && let Some((p1, p2)) = deux_points_selectionnes(app)
+        {
             let valeur = Length::from_millimeters(app.cote_distance);
             ajouter_contrainte(app, ContrainteEsquisse::Distance { p1, p2, valeur });
         }
@@ -496,10 +516,7 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
 
 /// Identifiants de la sélection du genre demandé, dans l'ordre de
 /// sélection (ADR-0018 D5, lot 3c-4).
-fn selection_du_genre<'a>(
-    app: &'a DemoApp,
-    genre: GenreEntite,
-) -> impl Iterator<Item = u32> + 'a {
+fn selection_du_genre<'a>(app: &'a DemoApp, genre: GenreEntite) -> impl Iterator<Item = u32> + 'a {
     app.selection
         .iter()
         .filter(move |id| app.session.esquisse().genre_entite(**id) == Some(genre))
@@ -583,7 +600,10 @@ fn distance_segment_mm(debut: (f64, f64), fin: (f64, f64), point: (f64, f64)) ->
     }
     let projection =
         (((point.0 - debut.0) * dx + (point.1 - debut.1) * dy) / longueur_carree).clamp(0.0, 1.0);
-    distance_mm((debut.0 + projection * dx, debut.1 + projection * dy), point)
+    distance_mm(
+        (debut.0 + projection * dx, debut.1 + projection * dy),
+        point,
+    )
 }
 
 /// Identifiants des contraintes du croquis signalées redondantes ou
