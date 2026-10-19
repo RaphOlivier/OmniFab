@@ -2336,12 +2336,13 @@ impl eframe::App for DemoApp {
 /// SVG de démonstration de la galerie de captures : sans
 /// `width`/`height`, usvg le lit à 25,4 dpi — une unité vaut
 /// exactement 1 mm (gouvernance 2026-10-19).
-const SVG_DEMO: &[u8] =
-    b"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">\n"
-    b"  <circle cx=\"30\" cy=\"40\" r=\"20\" fill=\"none\"/>\n"
-    b"  <rect x=\"55\" y=\"10\" width=\"40\" height=\"30\" fill=\"none\"/>\n"
-    b"  <path d=\"M10,80 C40,60 60,95 90,70\" fill=\"none\"/>\n"
-    b"</svg>\n";
+const SVG_DEMO: &[u8] = b"<?xml version=\"1.0\"?>
+<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">
+  <circle cx=\"30\" cy=\"40\" r=\"20\" fill=\"none\"/>
+  <rect x=\"55\" y=\"10\" width=\"40\" height=\"30\" fill=\"none\"/>
+  <path d=\"M10,80 C40,60 60,95 90,70\" fill=\"none\"/>
+</svg>
+";
 
 /// Maillage de démonstration de la galerie de captures : un
 /// tétraèdre STL binaire, quatre triangles écrits octet par
