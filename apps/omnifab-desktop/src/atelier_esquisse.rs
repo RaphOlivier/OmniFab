@@ -290,17 +290,14 @@ pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     };
     let resolu = resolu_frais(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
-    if let Some((_, EntiteEsquisse::Point { x, y })) = app
-        .session
-        .esquisse()
-        .entites()
-        .iter()
-        .find(|(i, _)| *i == id)
+    // La graine ne change pas : rien à écrire au journal
+    // (ADR-0011) — la comparaison porte sur la graine courante,
+    // pas sur les coordonnées d'origine de l'entité.
+    if let Some((x, y)) = app.session.esquisse().position_graine(id)
+        && x.approx_eq(vise.x)
+        && y.approx_eq(vise.y)
     {
-        // La graine ne change pas : rien à écrire au journal.
-        if x.approx_eq(vise.x) && y.approx_eq(vise.y) {
-            return;
-        }
+        return;
     }
     let _ = app.executer(&MovePoint {
         point: id,
@@ -581,7 +578,9 @@ fn position_affichee(
 }
 
 /// Position d'affichage d'un point du croquis : résolue si le cache
-/// en tient une fraîche, graine du journal sinon (ADR-0018 D7).
+/// en tient une fraîche, la graine du journal sinon — dernière
+/// graine posée par `MovePoint`, coordonnées d'origine de
+/// l'entité sinon (ADR-0018 D7).
 pub(crate) fn position_point(
     esquisse: &EsquisseProjection,
     resolu: Option<&CroquisResolu>,
@@ -590,12 +589,7 @@ pub(crate) fn position_point(
     if let Some(position) = resolu.and_then(|croquis| croquis.position(id)) {
         return Some(position);
     }
-    if let Some((_, EntiteEsquisse::Point { x, y })) =
-        esquisse.entites().iter().find(|(i, _)| *i == id)
-    {
-        return Some((*x, *y));
-    }
-    None
+    esquisse.position_graine(id)
 }
 
 /// Angles de la discrétisation d'un arc (radians), sens

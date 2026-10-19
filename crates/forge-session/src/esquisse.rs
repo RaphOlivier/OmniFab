@@ -577,6 +577,24 @@ impl EsquisseProjection {
             .map(|(_, entite)| genre_de(entite))
     }
 
+    /// Position de départ d'un point du croquis (ADR-0018 D7) : la
+    /// dernière graine posée par un déplacement `MovePoint`, les
+    /// coordonnées d'origine de l'entité sinon — la vérité
+    /// affichable quand aucune résolution n'est disponible.
+    /// `None` si l'identifiant n'est pas un point du croquis.
+    pub fn position_graine(&self, id: u32) -> Option<(Length, Length)> {
+        if let Some((x, y)) = self.graines.get(&id) {
+            return Some((*x, *y));
+        }
+        self.entites
+            .iter()
+            .find(|(identifiant, _)| *identifiant == id)
+            .and_then(|(_, entite)| match entite {
+                EntiteEsquisse::Point { x, y } => Some((*x, *y)),
+                _ => None,
+            })
+    }
+
     /// Prochain identifiant d'entité (séquentiel : l'ordre d'ajout
     /// au journal fait foi, ADR-0018 D1).
     pub fn prochaine_id_entite(&self) -> u32 {

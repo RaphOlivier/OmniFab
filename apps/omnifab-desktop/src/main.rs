@@ -3212,10 +3212,11 @@ mod tests {
             empreinte_avant.0 + 1,
             "un événement écrit au relâchement"
         );
-        let esquisse = app.session.esquisse();
-        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
-            panic!("l'entité déplacée est un point");
-        };
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point déplacé");
         assert_eq!(x.millimeters(), pas * 2.0, "graine à l'abscisse visée");
         assert_eq!(y.millimeters(), pas, "graine à l'ordonnée visée");
     }
@@ -3245,10 +3246,11 @@ mod tests {
         // Relâchement près du second point : la graine du point
         // saisi s'accroche à lui, jamais à elle-même.
         atelier_esquisse::relacher_poignee(&mut app, pas, pas * 1.1, pas);
-        let esquisse = app.session.esquisse();
-        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
-            panic!("l'entité 0 est un point");
-        };
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point déplacé");
         assert_eq!(x.millimeters(), pas, "graine collée au second point");
         assert_eq!(y.millimeters(), pas, "graine collée au second point");
     }
