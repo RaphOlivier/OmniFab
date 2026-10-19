@@ -1,0 +1,102 @@
+name: Galerie de captures
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/omnifab-desktop/**"
+      - ".github/workflows/galerie.yml"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: never
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: galerie
+  cancel-in-progress: false
+
+jobs:
+  captures:
+    name: captures Xvfb (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Dependances natives (planegcs + bindgen + Xvfb + captures)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libeigen3-dev libfmt-dev libboost-dev libclang-dev \
+            xvfb imagemagick mesa-vulkan-drivers libgl1
+      - name: Compilation du demonstrateur
+        run: cargo build -p omnifab-desktop --locked
+      - name: Captures des scenarios
+        id: captures
+        run: |
+          set -u
+          mkdir -p galerie
+          cat > galerie-captures.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          scenario="$1"
+          OMNIFAB_DEMO="$scenario" ./target/debug/omnifab-desktop > "galerie/app-$scenario.log" 2>&1 &
+          PID=$!
+          sleep 15
+          import -window root "galerie/$scenario.png"
+          RC=$?
+          kill "$PID" 2>/dev/null || true
+          exit "$RC"
+          SCRIPT
+          chmod +x galerie-captures.sh
+          FAIL=0
+          for scenario in accueil atelier-2d atelier-3d; do
+            echo "::group::capture $scenario"
+            if xvfb-run -a -s "-screen 0 1280x800x24" ./galerie-captures.sh "$scenario"; then
+              echo "capture $scenario : OK"
+            else
+              echo "capture $scenario : ECHEC (code $?)"
+              FAIL=1
+            fi
+            echo "::endgroup::"
+          done
+          ls -l galerie/ || true
+          echo "fail=$FAIL" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Artefact galerie-captures
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: galerie-captures
+          path: galerie/
+          if-no-files-found: warn
+      - name: Rapport d'erreurs (issue)
+        if: steps.captures.outputs.fail == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHORT=$(git rev-parse --short HEAD)
+          {
+            echo "Echec de la galerie de captures sur le job **captures** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
+            for f in galerie/*.log; do
+              [ -s "$f" ] || continue
+              echo ""
+              echo "### $f (120 dernieres lignes)"
+              echo '```text'
+              tail -n 120 "$f"
+              echo '```'
+            done
+          } > rapport.md
+          head -c 55000 rapport.md > rapport2.md
+          cat rapport2.md
+          gh issue create --title "CI : echec galerie de captures @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport2.md || echo "Impossible de creer l'issue de rapport"
+      - name: Marquer le job en echec
+        if: steps.captures.outputs.fail == '1'
+        run: |
+          echo "La galerie de captures a echoue - voir l'issue de rapport."
+          exit 1
