@@ -631,14 +631,28 @@ struct DemoApp {
     /// l'origine posée attend la suite — état de l'app UI,
     /// jamais un événement, abandonné au changement d'outil.
     geste: Option<atelier_esquisse::GesteEsquisse>,
-    /// Point du croquis sélectionné au clic ou à la saisie
-    /// (ADR-0018, lot 3c-3) : sa poignée porte le marqueur
-    /// distinct — état de l'app UI, jamais un événement.
-    selection: Option<u32>,
+    /// Entités du croquis sélectionnées au clic (ADR-0018 D5,
+    /// lot 3c-4) : au plus deux — les contraintes relient au plus
+    /// deux entités ; la poignée au glissement garde la sélection
+    /// — état de l'app UI, jamais un événement.
+    selection: Vec<u32>,
     /// Point saisi par le glissement d'une poignée (ADR-0018 D4) :
     /// l'aperçu local le suit sans écrire, le relâchement pose sa
     /// graine — état de l'app UI, jamais un événement.
     saisie: Option<u32>,
+    /// Identifiants des contraintes redondantes ou partiellement
+    /// redondantes affichées (ADR-0018 D5, lot 3c-4) : le diagnostic
+    /// du solveur est instable (FPA #106) — l'affichage exige le
+    /// même diagnostic sur deux résolutions consécutives
+    /// (hystérésis). État dérivé d'affichage, jamais sérialisé.
+    redondances_affichees: Option<Vec<u32>>,
+    /// Redondances de la résolution précédente, pour l'hystérésis
+    /// (ADR-0018 D5, lot 3c-4) : jamais affichées telles quelles.
+    redondances_precedentes: Option<Vec<u32>>,
+    /// Valeur en millimètres de la cote de distance en cours de
+    /// saisie (ADR-0018 D5, lot 3c-4) : état de l'app UI, jamais un
+    /// événement — la commande AddConstraint l'emporte au journal.
+    cote_distance: f64,
 }
 
 impl DemoApp {
@@ -699,8 +713,11 @@ impl DemoApp {
             resolution_en_attente: None,
             outil: atelier_esquisse::OutilEsquisse::Selection,
             geste: None,
-            selection: None,
+            selection: Vec::new(),
             saisie: None,
+            redondances_affichees: None,
+            redondances_precedentes: None,
+            cote_distance: 100.0,
         };
         app.reinitialiser();
         app
@@ -726,8 +743,10 @@ impl DemoApp {
         self.resolution_en_attente = None;
         self.outil = atelier_esquisse::OutilEsquisse::Selection;
         self.geste = None;
-        self.selection = None;
+        self.selection = Vec::new();
         self.saisie = None;
+        self.redondances_affichees = None;
+        self.redondances_precedentes = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -866,6 +885,8 @@ impl DemoApp {
         self.camera3d = Camera3D::nouvelle();
         self.croquis_resolu = None;
         self.resolution_en_attente = None;
+        self.redondances_affichees = None;
+        self.redondances_precedentes = None;
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
         self.expr_buf = self.expression_courante();
@@ -1129,6 +1150,27 @@ impl DemoApp {
             } => {
                 if self.resolution_en_attente == Some(edition) {
                     self.resolution_en_attente = None;
+                }
+                // Redondances du diagnostic (ADR-0018 D5, lot 3c-4) :
+                // l'hystérésis n'affiche que le diagnostic stable sur
+                // deux résolutions consécutives (FPA #106) ; un échec
+                // remet l'hystérésis à zéro.
+                match &resultat {
+                    Ok(croquis) => {
+                        let esquisse = self.session.esquisse();
+                        let courantes =
+                            atelier_esquisse::contraintes_redondantes(croquis, esquisse);
+                        let stables = atelier_esquisse::redondances_stables(
+                            self.redondances_precedentes.as_deref(),
+                            &courantes,
+                        );
+                        self.redondances_affichees = stables;
+                        self.redondances_precedentes = Some(courantes);
+                    }
+                    Err(_) => {
+                        self.redondances_affichees = None;
+                        self.redondances_precedentes = None;
+                    }
                 }
                 // L’échec est mémorisé à sa clé (ADR-0018 D7) : le
                 // journal est intact, les graines du croquis restent
@@ -3169,9 +3211,9 @@ mod tests {
         .expect("point posé");
         app.outil = atelier_esquisse::OutilEsquisse::Selection;
         atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, 0.0);
-        assert_eq!(app.selection, Some(0), "le point proche est sélectionné");
+        assert_eq!(app.selection, vec![0], "le point proche est sélectionné");
         atelier_esquisse::traiter_clic(&mut app, pas, pas * 4.0, 0.0);
-        assert_eq!(app.selection, None, "un clic loin vide la sélection");
+        assert!(app.selection.is_empty(), "un clic loin vide la sélection");
     }
 
     /// Le relâchement d'une poignée pose la graine par `MovePoint`
@@ -3253,5 +3295,153 @@ mod tests {
             .expect("graine du point déplacé");
         assert_eq!(x.millimeters(), pas, "graine collée au second point");
         assert_eq!(y.millimeters(), pas, "graine collée au second point");
+    }
+
+    /// La sélection garde au plus deux entités et retire celle
+    /// re-cliquée (ADR-0018 D5, lot 3c-4) : les contraintes
+    /// relient au plus deux entités, la plus ancienne cède sa
+    /// place à la nouvelle.
+    #[test]
+    fn la_selection_borne_deux_entites() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [(0.0, 0.0), (pas, 0.0), (pas * 2.0, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.1, 0.0);
+        assert_eq!(app.selection, vec![0, 1], "deux entités sélectionnées");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.1, 0.0);
+        assert_eq!(app.selection, vec![1, 2], "la plus ancienne cède sa place");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.1, 0.0);
+        assert_eq!(app.selection, vec![2], "le re-clic retire de la sélection");
+    }
+
+    /// Une contrainte posée depuis l'atelier passe par la session
+    /// (ADR-0018 D2, lot 3c-4) : un événement de plus au journal,
+    /// la contrainte visible ; un refus n'écrit rien et le message
+    /// d'état porte l'erreur (ADR-0016 C4).
+    #[test]
+    fn la_contrainte_de_l_atelier_passe_par_la_session() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [(0.0, 0.0), (pas, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.selection = vec![2];
+        let empreinte_avant = app.empreinte_journal();
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 2 },
+        );
+        assert_eq!(app.empreinte_journal().0, empreinte_avant.0 + 1, "un événement écrit");
+        assert_eq!(app.session.esquisse().contraintes().len(), 1, "la contrainte est posée");
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 99 },
+        );
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "le refus n'écrit rien au journal"
+        );
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+    }
+
+    /// Le rectangle contraint tombe à zéro degré de liberté
+    /// (ADR-0018 D5, lot 3c-4) : quatre points partagés, quatre
+    /// lignes, quatre contraintes horizontale et verticale, deux
+    /// cotes de distance, un coin fixé — le DoF lu sur le cache
+    /// résolu tombe à zéro.
+    #[test]
+    fn le_rectangle_contraint_tombe_a_zero_dof() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [(0.0, 0.0), (pas * 4.0, 0.0), (pas * 4.0, pas * 3.0), (0.0, pas * 3.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin posé");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté posé");
+        }
+        for (ligne, horizontale) in [(4, true), (5, false), (6, true), (7, false)] {
+            let contrainte = if horizontale {
+                ContrainteEsquisse::Horizontale { ligne }
+            } else {
+                ContrainteEsquisse::Verticale { ligne }
+            };
+            app.executer(&AddConstraint { contrainte }).expect("contrainte posée");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: Length::from_millimeters(pas * 4.0),
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: Length::from_millimeters(pas * 3.0),
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("coin fixé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
+    }
+
+    /// L'hystérésis des redondances (ADR-0018 D5, lot 3c-4) : le
+    /// diagnostic ne s'affiche que stable sur deux résolutions
+    /// consécutives — jamais de faux conflit clignotant
+    /// (FPA #106).
+    #[test]
+    fn les_redondances_demandent_deux_resolutions() {
+        assert!(
+            atelier_esquisse::redondances_stables(None, &[1]).is_none(),
+            "une première résolution ne s'affiche pas"
+        );
+        assert_eq!(
+            atelier_esquisse::redondances_stables(Some(&[1]), &[1]),
+            Some(vec![1]),
+            "le diagnostic stable s'affiche"
+        );
+        assert!(
+            atelier_esquisse::redondances_stables(Some(&[1]), &[2]).is_none(),
+            "un diagnostic qui change ne s'affiche pas"
+        );
     }
 }

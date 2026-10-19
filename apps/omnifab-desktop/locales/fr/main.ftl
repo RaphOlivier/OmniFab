@@ -83,6 +83,14 @@ esquisse-outil-point = Point
 esquisse-outil-ligne = Ligne
 esquisse-outil-cercle = Cercle
 esquisse-outil-arc = Arc
+esquisse-contraintes = Contraintes
+esquisse-contrainte-horizontale = Horizontale
+esquisse-contrainte-verticale = Verticale
+esquisse-contrainte-point-fixe = Fixer le point
+esquisse-contrainte-distance = Distance
+esquisse-cote-distance = Cote de distance (mm) :
+esquisse-dof = Degrés de liberté : {$n}
+esquisse-redondances = Contraintes redondantes : {$n}
 
 # --- Compteurs de géométrie importée ---
 
@@ -321,3 +329,33 @@ aide-esquisse-outil-arc =
     .titre = Outil Arc
     .description = Trace un arc du croquis en trois clics : le centre, le point de début (qui fixe le rayon), puis le point de fin — les angles suivent le sens trigonométrique, les commandes passent par la session (ADR-0018).
     .exemple = Activez Arc, cliquez le centre, un point du cercle, puis la fin : l'arc se dessine du début vers la fin ; Ctrl+Z annule le dernier ajout, Ctrl+Y le rétablit.
+
+aide-esquisse-contraintes =
+    .titre = Contraintes
+    .description = Contraintes du croquis (ADR-0018) : posez une contrainte sur la sélection courante — une ligne pour Horizontale ou Verticale, un point pour Fixer, deux points pour Distance. Chaque contrainte devient un événement du journal (annulable), le solveur recalcule au fil de travail.
+    .exemple = Sélectionnez une ligne puis cliquez Horizontale : elle s'aligne au prochain recalcul ; Ctrl+Z annule la contrainte.
+
+aide-esquisse-contrainte-horizontale =
+    .titre = Contrainte Horizontale
+    .description = Force la ligne sélectionnée à l'horizontale. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne avec l'outil Ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient horizontale au prochain recalcul.
+
+aide-esquisse-contrainte-verticale =
+    .titre = Contrainte Verticale
+    .description = Force la ligne sélectionnée à la verticale. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient verticale au prochain recalcul.
+
+aide-esquisse-contrainte-point-fixe =
+    .titre = Fixer le point
+    .description = Ancre le point sélectionné à sa position courante : le croquis gagne sa référence au monde (ADR-0018). Le bouton est actif seulement avec un point en sélection.
+    .exemple = Posez un point, sélectionnez-le, cliquez : un rectangle contraint fixé à ce coin tombe à zéro degré de liberté.
+
+aide-esquisse-contrainte-distance =
+    .titre = Contrainte Distance
+    .description = Pose une cote de distance entre les deux points sélectionnés, à la valeur réglée (ADR-0018) : la cote devient pilotable par expression en phase E. Le bouton est actif seulement avec deux points en sélection.
+    .exemple = Sélectionnez deux points du croquis, réglez la cote puis cliquez : la distance entre eux s'impose au prochain recalcul.
+
+aide-esquisse-cote-distance =
+    .titre = Cote de distance
+    .description = Valeur en millimètres de la prochaine contrainte Distance, préremplie avec la distance courante entre les deux points sélectionnés.
+    .exemple = Sélectionnez deux points à 30 mm : la cote propose 30 ; changez-la à 50 puis posez la contrainte Distance.

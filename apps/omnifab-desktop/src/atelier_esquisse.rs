@@ -12,13 +12,20 @@
 //! (lot 3c-2). La sélection et le déplacement d'un point au
 //! glissement complètent le lot 3c-3 : aperçu local pendant le
 //! geste sans écrire au journal, commande MovePoint au relâchement
-//! (ADR-0018 D4/D5).
+//! (ADR-0018 D4/D5). Les contraintes du lot 3c-4 partent de la
+//! sélection : le panneau affiche les degrés de liberté et le
+//! diagnostic de redondance n'apparaît que stable sur deux
+//! résolutions consécutives (ADR-0018 D5).
 
 use crate::DemoApp;
 use crate::aide::avec_aide;
 use eframe::egui;
+use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};
-use forge_session::{AddEntity, CroquisResolu, EntiteEsquisse, EsquisseProjection, MovePoint};
+use forge_session::{
+    AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
+    EsquisseProjection, GenreEntite, MovePoint,
+};
 use forge_units::{Angle, Length};
 
 /// Couleur des entités du croquis, distincte des tracés importés
@@ -30,6 +37,10 @@ const LARGEUR_ESQUISSE_PX: f32 = 1.5;
 const RAYON_POINT_PX: f32 = 3.0;
 /// Segments de la discrétisation des arcs au painter.
 const SEGMENTS_ARC: usize = 32;
+/// Taille maximale de la sélection (ADR-0018 D5, lot 3c-4) : les
+/// contraintes relient au plus deux entités — la plus ancienne
+/// cède sa place à la nouvelle.
+const SELECTION_MAX: usize = 2;
 /// Couleur de l'aperçu du geste : la teinte des entités,
 /// translucide pour se lire au-dessus du croquis posé —
 /// `Color32::from_rgba_unmultiplied` n'est pas const (E0015) :
@@ -185,11 +196,46 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     match (app.outil, app.geste.take()) {
         (OutilEsquisse::Selection, _) => {
-            // Sélection au clic (ADR-0018 D5, lot 3c-3) : le point
-            // visé devient la sélection — poignée au glissement ;
-            // un clic ailleurs la vide.
-            let existant = vise.id != app.session.esquisse().prochaine_id_entite();
-            app.selection = existant.then_some(vise.id);
+            // Sélection au clic (ADR-0018 D5, lot 3c-3/3c-4) : le
+            // point visé prime, la ligne visée sinon ; un clic sur
+            // une entité déjà sélectionnée la retire, un clic
+            // ailleurs vide la sélection. Au plus deux entités
+            // restent sélectionnées : les contraintes du lot 3c-4
+            // relient au plus deux entités.
+            let cible = if vise.id != app.session.esquisse().prochaine_id_entite() {
+                Some(vise.id)
+            } else {
+                let resolu = resolu_frais(app);
+                ligne_visee(app.session.esquisse(), resolu, pas, x, y)
+            };
+            match cible {
+                Some(id) => {
+                    if let Some(position) = app.selection.iter().position(|&saisi| saisi == id) {
+                        app.selection.remove(position);
+                    } else {
+                        app.selection.push(id);
+                        if app.selection.len() > SELECTION_MAX {
+                            app.selection.remove(0);
+                        }
+                    }
+                }
+                None => app.selection.clear(),
+            }
+            // La cote de distance suit la sélection : deux points
+            // sélectionnés démarrent à leur distance affichable
+            // courante (graine ou position résolue).
+            if let Some((p1, p2)) = deux_points_selectionnes(app) {
+                let resolu = resolu_frais(app);
+                if let (Some((x1, y1)), Some((x2, y2))) = (
+                    position_point(app.session.esquisse(), resolu, p1),
+                    position_point(app.session.esquisse(), resolu, p2),
+                ) {
+                    app.cote_distance = distance_mm(
+                        (x1.millimeters(), y1.millimeters()),
+                        (x2.millimeters(), y2.millimeters()),
+                    );
+                }
+            }
         }
         (OutilEsquisse::Point, _) => {
             point_du_clic(app, vise);
@@ -274,7 +320,7 @@ pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     if vise.id != app.session.esquisse().prochaine_id_entite() {
         app.saisie = Some(vise.id);
-        app.selection = Some(vise.id);
+        app.selection = vec![vise.id];
     }
 }
 
@@ -374,6 +420,206 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             avec_aide(&reponse, outil.aide(), &mut app.aide);
         }
     });
+    // Contraintes du croquis (ADR-0018 D5, lot 3c-4) : la sélection
+    // courante active les boutons — une ligne pour Horizontale et
+    // Verticale, un point pour l'ancrage, deux points pour la cote
+    // de distance. Un refus de la commande n'écrit rien au journal
+    // et le message d'état reste fidèle (ADR-0016 C4).
+    {
+        let reponse = ui.heading(app.texte("esquisse-contraintes"));
+        avec_aide(&reponse, "aide-esquisse-contraintes", &mut app.aide);
+    }
+    {
+        let reponse = ui.add_enabled(
+            ligne_selectionnee(app).is_some(),
+            egui::Button::new(app.texte("esquisse-contrainte-horizontale")),
+        );
+        if reponse.clicked() && let Some(ligne) = ligne_selectionnee(app) {
+            ajouter_contrainte(app, ContrainteEsquisse::Horizontale { ligne });
+        }
+        avec_aide(&reponse, "aide-esquisse-contrainte-horizontale", &mut app.aide);
+    }
+    {
+        let reponse = ui.add_enabled(
+            ligne_selectionnee(app).is_some(),
+            egui::Button::new(app.texte("esquisse-contrainte-verticale")),
+        );
+        if reponse.clicked() && let Some(ligne) = ligne_selectionnee(app) {
+            ajouter_contrainte(app, ContrainteEsquisse::Verticale { ligne });
+        }
+        avec_aide(&reponse, "aide-esquisse-contrainte-verticale", &mut app.aide);
+    }
+    {
+        let reponse = ui.add_enabled(
+            point_selectionne(app).is_some(),
+            egui::Button::new(app.texte("esquisse-contrainte-point-fixe")),
+        );
+        if reponse.clicked() && let Some(point) = point_selectionne(app) {
+            ajouter_contrainte(app, ContrainteEsquisse::PointFixe { point });
+        }
+        avec_aide(&reponse, "aide-esquisse-contrainte-point-fixe", &mut app.aide);
+    }
+    {
+        let reponse = ui.add_enabled(
+            deux_points_selectionnes(app).is_some(),
+            egui::Button::new(app.texte("esquisse-contrainte-distance")),
+        );
+        if reponse.clicked() && let Some((p1, p2)) = deux_points_selectionnes(app) {
+            let valeur = Length::from_millimeters(app.cote_distance);
+            ajouter_contrainte(app, ContrainteEsquisse::Distance { p1, p2, valeur });
+        }
+        avec_aide(&reponse, "aide-esquisse-contrainte-distance", &mut app.aide);
+    }
+    // La cote de distance se règle avant de poser la contrainte :
+    // la valeur de départ suit la sélection (traiter_clic).
+    if deux_points_selectionnes(app).is_some() {
+        ui.label(app.texte("esquisse-cote-distance"));
+        let reponse = ui.add(egui::DragValue::new(&mut app.cote_distance).speed(1.0));
+        avec_aide(&reponse, "aide-esquisse-cote-distance", &mut app.aide);
+    }
+    // Degrés de liberté (ADR-0018 D5) : lus sur le cache résolu
+    // frais — rien pendant une résolution en vol, la valeur
+    // affichée reste celle d'un croquis cohérent avec le journal.
+    if let Some(croquis) = resolu_frais(app) {
+        ui.label(app.texte_avec("esquisse-dof", &[("n", Argument::from(croquis.dof()))]));
+    }
+    // Redondances (ADR-0018 D5) : l'hystérésis ne montre le
+    // diagnostic que stable sur deux résolutions consécutives —
+    // jamais de faux conflit clignotant (FPA #106).
+    if let Some(redondances) = app.redondances_affichees.as_ref().filter(|r| !r.is_empty()) {
+        ui.label(app.texte_avec(
+            "esquisse-redondances",
+            &[("n", Argument::from(redondances.len()))],
+        ));
+    }
+}
+
+/// Identifiants de la sélection du genre demandé, dans l'ordre de
+/// sélection (ADR-0018 D5, lot 3c-4).
+fn selection_du_genre<'a>(
+    app: &'a DemoApp,
+    genre: GenreEntite,
+) -> impl Iterator<Item = u32> + 'a {
+    app.selection
+        .iter()
+        .filter(move |id| app.session.esquisse().genre_entite(*id) == Some(genre))
+        .copied()
+}
+
+/// La seule ligne de la sélection (ADR-0018 D5, lot 3c-4) : les
+/// contraintes Horizontale et Verticale portent sur une ligne.
+/// `None` sans ligne sélectionnée, ou avec plusieurs.
+fn ligne_selectionnee(app: &DemoApp) -> Option<u32> {
+    let mut lignes = selection_du_genre(app, GenreEntite::Ligne);
+    let ligne = lignes.next()?;
+    lignes.next().is_none().then_some(ligne)
+}
+
+/// Le seul point de la sélection (ADR-0018 D5, lot 3c-4) : `None`
+/// sans point sélectionné, ou avec plusieurs.
+fn point_selectionne(app: &DemoApp) -> Option<u32> {
+    let mut points = selection_du_genre(app, GenreEntite::Point);
+    let point = points.next()?;
+    points.next().is_none().then_some(point)
+}
+
+/// Les deux points de la sélection, dans l'ordre (ADR-0018 D5,
+/// lot 3c-4) : `None` sans eux, ou en nombre différent de deux.
+fn deux_points_selectionnes(app: &DemoApp) -> Option<(u32, u32)> {
+    let mut points = selection_du_genre(app, GenreEntite::Point);
+    let p1 = points.next()?;
+    let p2 = points.next()?;
+    points.next().is_none().then_some((p1, p2))
+}
+
+/// Ajoute une contrainte au croquis (ADR-0018 D2, lot 3c-4) : la
+/// commande `AddConstraint` passe par la session — un refus n'écrit
+/// rien au journal et le message d'état reste fidèle (ADR-0016 C4).
+pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquisse) {
+    let _ = app.executer(&AddConstraint { contrainte });
+}
+
+/// Ligne du croquis visée par un clic (ADR-0018 D5, lot 3c-4) : la
+/// plus proche sous le seuil d'un quart de pas, distance portée au
+/// segment affiché — positions résolues du cache frais, graines
+/// sinon. `None` sans ligne à portée.
+fn ligne_visee(
+    esquisse: &EsquisseProjection,
+    resolu: Option<&CroquisResolu>,
+    pas: f64,
+    x: f64,
+    y: f64,
+) -> Option<u32> {
+    esquisse
+        .entites()
+        .iter()
+        .filter_map(|(id, entite)| match entite {
+            EntiteEsquisse::Ligne { p1, p2 } => Some((*id, *p1, *p2)),
+            _ => None,
+        })
+        .filter_map(|(id, p1, p2)| {
+            let debut = position_affichee(esquisse, resolu, None, p1)?;
+            let fin = position_affichee(esquisse, resolu, None, p2)?;
+            let distance = distance_segment_mm(
+                (debut.0.millimeters(), debut.1.millimeters()),
+                (fin.0.millimeters(), fin.1.millimeters()),
+                (x, y),
+            );
+            (distance <= 0.25 * pas).then_some((id, distance))
+        })
+        .min_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(id, _)| id)
+}
+
+/// Distance d'un point à un segment en millimètres (lot 3c-4) :
+/// projection orthogonale bornée aux extrémités du segment — le
+/// segment dégénéré retombe sur la distance aux extrémités.
+fn distance_segment_mm(debut: (f64, f64), fin: (f64, f64), point: (f64, f64)) -> f64 {
+    let dx = fin.0 - debut.0;
+    let dy = fin.1 - debut.1;
+    let longueur_carree = dx * dx + dy * dy;
+    if longueur_carree == 0.0 {
+        return distance_mm(debut, point);
+    }
+    let projection =
+        (((point.0 - debut.0) * dx + (point.1 - debut.1) * dy) / longueur_carree).clamp(0.0, 1.0);
+    distance_mm((debut.0 + projection * dx, debut.1 + projection * dy), point)
+}
+
+/// Identifiants des contraintes du croquis signalées redondantes ou
+/// partiellement redondantes par le diagnostic du solveur
+/// (ADR-0018 D5, lot 3c-4) : le diagnostic parle en tags, la
+/// sélection parle en identifiants du croquis.
+pub(crate) fn contraintes_redondantes(
+    croquis: &CroquisResolu,
+    esquisse: &EsquisseProjection,
+) -> Vec<u32> {
+    esquisse
+        .contraintes()
+        .iter()
+        .map(|(id, _)| *id)
+        .filter(|id| est_redondante(croquis, *id))
+        .collect()
+}
+
+/// La contrainte du croquis est-elle signalée redondante ou
+/// partiellement redondante par le diagnostic du solveur ? L'ancrage
+/// `PointFixe` n'a pas de tag solveur : jamais redondant.
+fn est_redondante(croquis: &CroquisResolu, id: u32) -> bool {
+    let Some(tag) = croquis.tag(id) else {
+        return false;
+    };
+    croquis.redondantes().contains(&tag) || croquis.partiellement_redondantes().contains(&tag)
+}
+
+/// Diagnostic de redondance stable sur deux résolutions
+/// consécutives (ADR-0018 D5, hystérésis FPA #106) : le diagnostic
+/// courant ne sort que s'il ne diffère pas du précédent.
+pub(crate) fn redondances_stables(
+    precedentes: Option<&[u32]>,
+    courantes: &[u32],
+) -> Option<Vec<u32>> {
+    (precedentes == Some(courantes)).then(|| courantes.to_vec())
 }
 
 /// Dessine les entités du croquis dans le viewport 2D : positions
@@ -466,7 +712,7 @@ pub(crate) fn dessiner(
                     RAYON_POINT_PX + 1.5,
                     egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
                 );
-                if app.selection == Some(*id) {
+                if app.selection.contains(id) {
                     painter.circle_stroke(
                         centre,
                         RAYON_POINT_PX + 3.0,
