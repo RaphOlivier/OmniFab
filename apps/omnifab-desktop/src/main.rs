@@ -2349,7 +2349,7 @@ const SVG_DEMO: &[u8] = b"<?xml version=\"1.0\"?>
 /// octet en petit-boutiste (gouvernance 2026-10-19).
 fn octets_stl_demo() -> Vec<u8> {
     let sommets = [
-        (0.0f32, 0.0, 0.0),
+        (0.0f32, 0.0f32, 0.0f32),
         (30.0, 0.0, 0.0),
         (0.0, 40.0, 0.0),
         (0.0, 0.0, 25.0),
