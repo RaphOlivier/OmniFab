@@ -631,6 +631,14 @@ struct DemoApp {
     /// l'origine posée attend la suite — état de l'app UI,
     /// jamais un événement, abandonné au changement d'outil.
     geste: Option<atelier_esquisse::GesteEsquisse>,
+    /// Point du croquis sélectionné au clic ou à la saisie
+    /// (ADR-0018, lot 3c-3) : sa poignée porte le marqueur
+    /// distinct — état de l'app UI, jamais un événement.
+    selection: Option<u32>,
+    /// Point saisi par le glissement d'une poignée (ADR-0018 D4) :
+    /// l'aperçu local le suit sans écrire, le relâchement pose sa
+    /// graine — état de l'app UI, jamais un événement.
+    saisie: Option<u32>,
 }
 
 impl DemoApp {
@@ -691,6 +699,8 @@ impl DemoApp {
             resolution_en_attente: None,
             outil: atelier_esquisse::OutilEsquisse::Selection,
             geste: None,
+            selection: None,
+            saisie: None,
         };
         app.reinitialiser();
         app
@@ -716,6 +726,8 @@ impl DemoApp {
         self.resolution_en_attente = None;
         self.outil = atelier_esquisse::OutilEsquisse::Selection;
         self.geste = None;
+        self.selection = None;
+        self.saisie = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
@@ -1898,6 +1910,28 @@ impl DemoApp {
             let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
             atelier_esquisse::traiter_clic(self, pas, x, y);
         }
+        // Glissement d'une poignée du croquis (ADR-0018 D4/D5, lot
+        // 3c-3) : en vue 2D avec l'outil Sélection, un glissement
+        // qui démarre sur un point le saisit — l'aperçu local le
+        // suit sans écrire au journal, le relâchement pose sa
+        // graine par `MovePoint`, la résolution repart au fil de
+        // travail.
+        if self.vue == Vue::DeuxD
+            && self.outil == atelier_esquisse::OutilEsquisse::Selection
+            && let Some(curseur) = response.interact_pointer_pos()
+        {
+            let decalage = curseur - response.rect.center();
+            let (x, y) = self
+                .camera
+                .depuis_ecran((decalage.x as f64, decalage.y as f64));
+            let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
+            if response.drag_started() {
+                atelier_esquisse::saisir_poignee(self, pas, x, y);
+            }
+            if response.drag_stopped() {
+                atelier_esquisse::relacher_poignee(self, pas, x, y);
+            }
+        }
         // Références des blobs tracés et maillage : la caméra se
         // réajuste quand l'une d'elles change (import, undo/redo,
         // ouverture — ADR-0015).
@@ -1956,7 +1990,9 @@ impl DemoApp {
                 }
             }
         }
-        if response.dragged() {
+        // Le pan cède à la poignée saisie : seul le glissement du
+        // fond déplace la vue (ADR-0018 D4, lot 3c-3).
+        if response.dragged() && self.saisie.is_none() {
             let delta = response.drag_delta();
             match self.vue {
                 Vue::DeuxD => self.camera.deplacer((delta.x as f64, delta.y as f64)),
@@ -2017,18 +2053,22 @@ impl DemoApp {
                 // Entités du croquis contraint (ADR-0018, lot 3c) :
                 // positions résolues du cache si fraîches, graines du
                 // journal sinon — par-dessus la scène, sous la cote.
-                let resolu = self
-                    .croquis_resolu
-                    .as_ref()
-                    .filter(|(edition, _)| *edition == self.session.esquisse().edition())
-                    .and_then(|(_, resultat)| resultat.as_ref().ok());
-                atelier_esquisse::dessiner(
-                    &painter,
-                    &self.camera,
-                    rect,
-                    self.session.esquisse(),
-                    resolu,
-                );
+                // Surcharge locale du glissement (ADR-0018 D4, lot
+                // 3c-3) : le point saisi s'affiche à la position
+                // visée du curseur, les entités liées suivent —
+                // état dérivé d'affichage, jamais écrit au journal.
+                let mut surcharge_drag = None;
+                if self.saisie.is_some()
+                    && let Some(curseur) = response.interact_pointer_pos()
+                {
+                    let decalage = curseur - response.rect.center();
+                    let (x, y) = self
+                        .camera
+                        .depuis_ecran((decalage.x as f64, decalage.y as f64));
+                    let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
+                    surcharge_drag = atelier_esquisse::surcharge_du_drag(self, pas, x, y);
+                }
+                atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag);
                 // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
                 // point visé suit le curseur, accroché à la grille
                 // et aux points existants — état dérivé d'affichage,
@@ -3111,5 +3151,105 @@ mod tests {
             x0.approx_eq(x1) && y0.approx_eq(y1),
             "les positions résolues coïncident"
         );
+    }
+
+    /// L'outil Sélection vise le point le plus proche au clic et
+    /// vide la sélection ailleurs (ADR-0018 D5, lot 3c-3) : aucun
+    /// geste n'ouvre, le journal ne grandit pas.
+    #[test]
+    fn la_selection_vise_le_point_le_plus_proche() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, 0.0);
+        assert_eq!(app.selection, Some(0), "le point proche est sélectionné");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 4.0, 0.0);
+        assert_eq!(app.selection, None, "un clic loin vide la sélection");
+    }
+
+    /// Le relâchement d'une poignée pose la graine par `MovePoint`
+    /// (ADR-0018 D4, lot 3c-3) : l'aperçu du glissement déplace le
+    /// point saisi sans écrire au journal, le relâchement écrit un
+    /// événement et la projection porte la nouvelle graine.
+    #[test]
+    fn le_relachement_deplace_le_point_par_move_point() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        app.saisie = Some(0);
+        let empreinte_avant = app.empreinte_journal();
+        // Aperçu du glissement : le point saisi suit le curseur,
+        // la graine du journal ne bouge pas.
+        let (id, x, y) = atelier_esquisse::surcharge_du_drag(&app, pas, pas * 2.0, pas)
+            .expect("surcharge du point saisi");
+        assert_eq!(id, 0, "le point saisi");
+        assert_eq!(x.millimeters(), pas * 2.0, "abscisse visée en aperçu");
+        assert_eq!(y.millimeters(), pas, "ordonnée visée en aperçu");
+        assert_eq!(
+            app.empreinte_journal(),
+            empreinte_avant,
+            "l'aperçu n'écrit rien au journal"
+        );
+        // Relâchement : la graine part à la position visée, un
+        // événement de plus au journal.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "un événement écrit au relâchement"
+        );
+        let esquisse = app.session.esquisse();
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
+            panic!("l'entité déplacée est un point");
+        };
+        assert_eq!(x.millimeters(), pas * 2.0, "graine à l'abscisse visée");
+        assert_eq!(y.millimeters(), pas, "graine à l'ordonnée visée");
+    }
+
+    /// Le relâchement s'accroche aux autres points, jamais au
+    /// point saisi lui-même (ADR-0018 D4, lot 3c-3) : la graine du
+    /// point déplacé colle au point visé.
+    #[test]
+    fn le_relachement_s_accroche_aux_autres_points() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas),
+                y: Length::from_millimeters(pas),
+            },
+        })
+        .expect("second point");
+        app.saisie = Some(0);
+        // Relâchement près du second point : la graine du point
+        // saisi s'accroche à lui, jamais à elle-même.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 1.1, pas);
+        let esquisse = app.session.esquisse();
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
+            panic!("l'entité 0 est un point");
+        };
+        assert_eq!(x.millimeters(), pas, "graine collée au second point");
+        assert_eq!(y.millimeters(), pas, "graine collée au second point");
     }
 }

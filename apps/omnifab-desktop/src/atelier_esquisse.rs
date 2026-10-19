@@ -9,13 +9,16 @@
 //! frais, les graines du journal sinon — la vérité affichable
 //! (ADR-0018 D7). Le point visé s'accroche à la grille et aux
 //! points existants, l'aperçu du geste n'écrit jamais au journal
-//! (lot 3c-2).
+//! (lot 3c-2). La sélection et le déplacement d'un point au
+//! glissement complètent le lot 3c-3 : aperçu local pendant le
+//! geste sans écrire au journal, commande MovePoint au relâchement
+//! (ADR-0018 D4/D5).
 
 use crate::DemoApp;
 use crate::aide::avec_aide;
 use eframe::egui;
 use forge_render::{Camera2D, pas_de_grille};
-use forge_session::{AddEntity, CroquisResolu, EntiteEsquisse, EsquisseProjection};
+use forge_session::{AddEntity, CroquisResolu, EntiteEsquisse, EsquisseProjection, MovePoint};
 use forge_units::{Angle, Length};
 
 /// Couleur des entités du croquis, distincte des tracés importés
@@ -39,7 +42,8 @@ fn couleur_apercu() -> egui::Color32 {
 /// s'interprète selon lui (ADR-0018, lot 3c).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OutilEsquisse {
-    /// Sélection et caméra : un clic ne pose rien.
+    /// Sélection et caméra : un clic sélectionne le point visé,
+    /// un glissement de poignée le déplace (ADR-0018 D4/D5).
     Selection,
     /// Point libre : un clic pose une entité à l'endroit visé.
     Point,
@@ -120,18 +124,25 @@ pub(crate) struct PointVise {
 /// Point visé à la position monde donnée (ADR-0018, lot 3c-2) :
 /// le point existant le plus proche l'emporte sous le seuil d'un
 /// quart de pas, la grille sinon — l'identifiant prévu est
-/// `prochaine_id_entite()`.
+/// `prochaine_id_entite()` ; le point exclu par le glissement
+/// d'une poignée n'est pas candidat à l'accroche (lot 3c-3).
 pub(crate) fn viser(
     esquisse: &EsquisseProjection,
     resolu: Option<&CroquisResolu>,
     pas: f64,
     x: f64,
     y: f64,
+    exclu: Option<u32>,
 ) -> PointVise {
     let seuil = 0.25 * pas;
     let mut le_plus_proche: Option<PointVise> = None;
     let mut distance_min = seuil;
     for (id, _) in esquisse.entites() {
+        // Le point exclu n'est pas candidat : le glissement d'une
+        // poignée ne vise pas le point saisi lui-même (lot 3c-3).
+        if exclu == Some(*id) {
+            continue;
+        }
         if let Some((px, py)) = position_point(esquisse, resolu, *id) {
             let distance = distance_mm((x, y), (px.millimeters(), py.millimeters()));
             if distance < distance_min {
@@ -154,20 +165,32 @@ pub(crate) fn viser(
     }
 }
 
+/// Résolution fraîche du cache pour l'affichage ou l'accroche
+/// (ADR-0018 D7) : celle de l'édition courante du croquis, aucune
+/// sinon — les positions retombent sur les graines du journal.
+fn resolu_frais(app: &DemoApp) -> Option<&CroquisResolu> {
+    app.croquis_resolu
+        .as_ref()
+        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
+        .and_then(|(_, resultat)| resultat.as_ref().ok())
+}
+
 /// Traite un clic du viewport 2D selon l'outil actif et le geste
 /// en cours (ADR-0018, lot 3c-2) : le clic vise la grille et les
 /// points existants, les entités partent à la session par
 /// `AddEntity` — jamais de commande de résolution, jamais de
 /// position résolue sérialisée (ADR-0018 D3).
 pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
-    let resolu = app
-        .croquis_resolu
-        .as_ref()
-        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
-        .and_then(|(_, resultat)| resultat.as_ref().ok());
-    let vise = viser(app.session.esquisse(), resolu, pas, x, y);
+    let resolu = resolu_frais(app);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     match (app.outil, app.geste.take()) {
-        (OutilEsquisse::Selection, _) => {}
+        (OutilEsquisse::Selection, _) => {
+            // Sélection au clic (ADR-0018 D5, lot 3c-3) : le point
+            // visé devient la sélection — poignée au glissement ;
+            // un clic ailleurs la vide.
+            let existant = vise.id != app.session.esquisse().prochaine_id_entite();
+            app.selection = existant.then_some(vise.id);
+        }
         (OutilEsquisse::Point, _) => {
             point_du_clic(app, vise);
         }
@@ -241,6 +264,67 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     }
 }
 
+/// Saisit la poignée sous le curseur au démarrage d'un glissement
+/// (ADR-0018 D4/D5, lot 3c-3) : le point le plus proche sous le
+/// seuil d'un quart de pas devient le point saisi et la sélection —
+/// états de l'app UI, jamais des événements. Sans point visé, rien
+/// ne se passe : le glissement déplace la vue.
+pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
+    let resolu = resolu_frais(app);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
+    if vise.id != app.session.esquisse().prochaine_id_entite() {
+        app.saisie = Some(vise.id);
+        app.selection = Some(vise.id);
+    }
+}
+
+/// Relâche le point saisi (ADR-0018 D4, lot 3c-3) : la position
+/// visée — accrochée à la grille et aux points existants, le point
+/// saisi exclu de l'accroche — devient sa graine par `MovePoint`,
+/// la résolution repart au fil de travail. Un relâchement sans
+/// changement effectif de la graine n'écrit rien au journal
+/// (ADR-0011) ; sans point saisi, rien ne se passe.
+pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
+    let Some(id) = app.saisie.take() else {
+        return;
+    };
+    let resolu = resolu_frais(app);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
+    if let Some((_, EntiteEsquisse::Point { x, y })) = app
+        .session
+        .esquisse()
+        .entites()
+        .iter()
+        .find(|(i, _)| *i == id)
+    {
+        // La graine ne change pas : rien à écrire au journal.
+        if x.approx_eq(vise.x) && y.approx_eq(vise.y) {
+            return;
+        }
+    }
+    let _ = app.executer(&MovePoint {
+        point: id,
+        x: vise.x,
+        y: vise.y,
+    });
+}
+
+/// Surcharge d'affichage du point saisi pendant le glissement
+/// (ADR-0018 D4, lot 3c-3) : le point se dessine à la position
+/// visée du curseur, les entités liées suivent — état dérivé
+/// d'affichage, jamais écrit au journal. Sans point saisi, `None`.
+pub(crate) fn surcharge_du_drag(
+    app: &DemoApp,
+    pas: f64,
+    x: f64,
+    y: f64,
+) -> Option<(u32, Length, Length)> {
+    let id = app.saisie?;
+    let resolu = resolu_frais(app);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
+    Some((id, vise.x, vise.y))
+}
+
 /// Pose le point visé s'il n'existe pas encore : l'identifiant
 /// prévu est `prochaine_id_entite()` avant l'ajout, celui du
 /// point repris sinon (ADR-0018, lot 3c-2).
@@ -284,9 +368,11 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             let libelle = app.texte(outil.cle());
             let reponse = ui.selectable_label(app.outil == outil, libelle);
             if reponse.clicked() {
-                // Changer d'outil abandonne le geste en cours.
+                // Changer d'outil abandonne le geste et la saisie
+                // de poignée en cours.
                 app.outil = outil;
                 app.geste = None;
+                app.saisie = None;
             }
             avec_aide(&reponse, outil.aide(), &mut app.aide);
         }
@@ -296,24 +382,29 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
 /// Dessine les entités du croquis dans le viewport 2D : positions
 /// résolues du cache quand il est frais, graines du journal sinon
 /// (ADR-0018 D7) — état dérivé d'affichage, jamais sérialisé.
+/// L'outil Sélection montre les poignées des points et le marqueur
+/// de la sélection (ADR-0018 D5) ; la surcharge du glissement
+/// déplace localement le point saisi, sans écrire (D4).
 pub(crate) fn dessiner(
     painter: &egui::Painter,
-    camera: &Camera2D,
+    app: &DemoApp,
     rect: egui::Rect,
-    esquisse: &EsquisseProjection,
-    resolu: Option<&CroquisResolu>,
+    surcharge: Option<(u32, Length, Length)>,
 ) {
+    let resolu = resolu_frais(app);
+    let esquisse = app.session.esquisse();
+    let camera = &app.camera;
     for (id, entite) in esquisse.entites() {
         match entite {
             EntiteEsquisse::Point { .. } => {
-                if let Some((x, y)) = position_point(esquisse, resolu, *id) {
+                if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *id) {
                     let centre = point_ecran(camera, rect, x.millimeters(), y.millimeters());
                     painter.circle_filled(centre, RAYON_POINT_PX, COULEUR_ESQUISSE);
                 }
             }
             EntiteEsquisse::Ligne { p1, p2 } => {
-                let debut = position_point(esquisse, resolu, *p1);
-                let fin = position_point(esquisse, resolu, *p2);
+                let debut = position_affichee(esquisse, resolu, surcharge, *p1);
+                let fin = position_affichee(esquisse, resolu, surcharge, *p2);
                 if let (Some((x1, y1)), Some((x2, y2))) = (debut, fin) {
                     painter.line_segment(
                         [
@@ -325,7 +416,7 @@ pub(crate) fn dessiner(
                 }
             }
             EntiteEsquisse::Cercle { centre, rayon } => {
-                if let Some((x, y)) = position_point(esquisse, resolu, *centre) {
+                if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *centre) {
                     let centre_ecran = point_ecran(camera, rect, x.millimeters(), y.millimeters());
                     let rayon_px = (rayon.millimeters() * camera.echelle) as f32;
                     painter.circle_stroke(
@@ -342,7 +433,7 @@ pub(crate) fn dessiner(
                 angle_fin,
                 ..
             } => {
-                if let Some((x, y)) = position_point(esquisse, resolu, *centre) {
+                if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *centre) {
                     let centre_mm = (x.millimeters(), y.millimeters());
                     let rayon_mm = rayon.millimeters();
                     let mut points = Vec::with_capacity(SEGMENTS_ARC + 1);
@@ -362,6 +453,29 @@ pub(crate) fn dessiner(
             }
         }
     }
+    // Poignées de l'outil Sélection (ADR-0018 D5, lot 3c-3) : un
+    // anneau par point du croquis, un marqueur distinct sur le
+    // point sélectionné — états dérivés d'affichage, jamais
+    // sérialisés.
+    if app.outil == OutilEsquisse::Selection {
+        for (id, EntiteEsquisse::Point { .. }) in esquisse.entites() {
+            if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *id) {
+                let centre = point_ecran(camera, rect, x.millimeters(), y.millimeters());
+                painter.circle_stroke(
+                    centre,
+                    RAYON_POINT_PX + 1.5,
+                    egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
+                );
+                if app.selection == Some(*id) {
+                    painter.circle_stroke(
+                        centre,
+                        RAYON_POINT_PX + 3.0,
+                        egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// Aperçu du geste sous le curseur (ADR-0018, lot 3c-2) : le point
@@ -375,13 +489,9 @@ pub(crate) fn dessiner_apercu(
     x: f64,
     y: f64,
 ) {
-    let resolu = app
-        .croquis_resolu
-        .as_ref()
-        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
-        .and_then(|(_, resultat)| resultat.as_ref().ok());
+    let resolu = resolu_frais(app);
     let pas = pas_de_grille(app.camera.echelle, crate::GRILLE_CIBLE_PX);
-    let vise = viser(app.session.esquisse(), resolu, pas, x, y);
+    let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     let camera = &app.camera;
     match app.geste.as_ref() {
         None => {}
@@ -448,6 +558,23 @@ fn marqueur_apercu(painter: &egui::Painter, camera: &Camera2D, rect: egui::Rect,
         RAYON_POINT_PX + 1.5,
         egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
     );
+}
+
+/// Position d'affichage avec surcharge du glissement (ADR-0018
+/// D4, lot 3c-3) : le point saisi s'affiche à la position visée,
+/// les autres suivent [`position_point`].
+fn position_affichee(
+    esquisse: &EsquisseProjection,
+    resolu: Option<&CroquisResolu>,
+    surcharge: Option<(u32, Length, Length)>,
+    id: u32,
+) -> Option<(Length, Length)> {
+    if let Some((id_saisi, x, y)) = surcharge
+        && id_saisi == id
+    {
+        return Some((x, y));
+    }
+    position_point(esquisse, resolu, id)
 }
 
 /// Position d'affichage d'un point du croquis : résolue si le cache

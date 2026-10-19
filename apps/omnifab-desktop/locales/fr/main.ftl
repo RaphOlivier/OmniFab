@@ -249,17 +249,17 @@ aide-journal-titre =
 
 aide-viewport-titre =
     .titre = Viewport
-    .description = Zone d'affichage à deux vues (ADR-0015, phase C2). Vue 2D : le rectangle de démonstration aux dimensions saisies, la grille de fond, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan ; la molette zoome vers le curseur, un glissement déplace la vue. Vue 3D : rectangle et tracés posés sur le plan z = 0, maillage STL en wireframe cyan ; la molette zoome, un glissement fait orbiter la caméra. Les messages d'erreur et de confirmation s'affichent ici.
+    .description = Zone d'affichage à deux vues (ADR-0015, phase C2). Vue 2D : le rectangle de démonstration aux dimensions saisies, la grille de fond, les tracés importés (SVG/DXF) en jaune et le maillage STL en wireframe cyan ; la molette zoome vers le curseur, un glissement déplace la vue — sauf sur une poignée du croquis en mode esquisse, où il déplace le point (ADR-0018 D4). Vue 3D : rectangle et tracés posés sur le plan z = 0, maillage STL en wireframe cyan ; la molette zoome, un glissement fait orbiter la caméra. Les messages d'erreur et de confirmation s'affichent ici.
     .exemple = Importez un SVG puis un petit STL : le triangle jaune et le wireframe cyan se dessinent en vue 2D, le wireframe en volume en vue 3D, avec les compteurs dessous.
 
 aide-viewport-camera =
     .titre = Caméra du viewport
-    .description = Vue 2D : la molette zoome sur le point du dessin sous le curseur, un glissement (bouton maintenu) déplace la vue. Vue 3D : la molette zoome vers la cible, un glissement fait orbiter la caméra (azimut et élévation). La caméra se réajuste automatiquement quand la géométrie change : import, annulation, rétablissement ou ouverture d'un projet.
+    .description = Vue 2D : la molette zoome sur le point du dessin sous le curseur, un glissement (bouton maintenu) déplace la vue — sauf sur une poignée du croquis en mode esquisse, où il déplace le point en aperçu (ADR-0018 D4). Vue 3D : la molette zoome vers la cible, un glissement fait orbiter la caméra (azimut et élévation). La caméra se réajuste automatiquement quand la géométrie change : import, annulation, rétablissement ou ouverture d'un projet.
     .exemple = Importez un SVG, éloignez la vue à la molette, puis annulez l'import : la vue se réajuste pour réafficher le rectangle de démonstration.
 
 aide-viewport-vue-2d =
     .titre = Vue 2D
-    .description = Vue de dessus du plan de travail : grille de fond, rectangle de démonstration, tracés importés (SVG/DXF) en jaune et maillage STL en wireframe cyan. La molette zoome sur le point du dessin sous le curseur, un glissement déplace la vue (ADR-0015).
+    .description = Vue de dessus du plan de travail : grille de fond, rectangle de démonstration, tracés importés (SVG/DXF) en jaune et maillage STL en wireframe cyan. La molette zoome sur le point du dessin sous le curseur, un glissement déplace la vue (ADR-0015) — sauf sur une poignée du croquis en mode esquisse, où il déplace le point (ADR-0018 D4).
     .exemple = Importez un SVG : le triangle jaune se dessine sur la grille ; zoomez à la molette, déplacez la vue en glissant.
 
 aide-viewport-vue-3d =
@@ -299,8 +299,8 @@ aide-esquisse-titre =
 
 aide-esquisse-outil-selection =
     .titre = Outil Sélection
-    .description = Outil par défaut : un clic dans le viewport ne pose rien, la molette zoome et un glissement déplace la vue — c'est l'outil de navigation du croquis.
-    .exemple = Après avoir posé un point avec l'outil Point, revenez à Sélection pour naviguer sans rien écrire au journal.
+    .description = Outil par défaut : un clic sélectionne le point du croquis le plus proche (sa poignée passe au marqueur distinct), un clic ailleurs vide la sélection. Un glissement depuis une poignée déplace le point : l'aperçu suit le curseur sans rien écrire au journal et la commande MovePoint pose la graine au relâchement (ADR-0018 D4). Un glissement du fond déplace la vue, la molette zoome.
+    .exemple = Posez un point avec l'outil Point, revenez à Sélection et cliquez-le : la poignée se dessine. Glissez-la : le point suit le curseur, se pose au relâchement et le croquis se résout en arrière-plan.
 
 aide-esquisse-outil-point =
     .titre = Outil Point
