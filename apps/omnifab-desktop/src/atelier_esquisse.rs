@@ -458,7 +458,10 @@ pub(crate) fn dessiner(
     // point sélectionné — états dérivés d'affichage, jamais
     // sérialisés.
     if app.outil == OutilEsquisse::Selection {
-        for (id, EntiteEsquisse::Point { .. }) in esquisse.entites() {
+        for (id, entite) in esquisse.entites() {
+            let EntiteEsquisse::Point { .. } = entite else {
+                continue;
+            };
             if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *id) {
                 let centre = point_ecran(camera, rect, x.millimeters(), y.millimeters());
                 painter.circle_stroke(
