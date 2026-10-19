@@ -34,7 +34,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libeigen3-dev libfmt-dev libboost-dev libclang-dev \
-            xvfb imagemagick mesa-vulkan-drivers libgl1
+            xvfb imagemagick mesa-vulkan-drivers libgl1 x11-utils
       - name: Compilation du demonstrateur
         run: cargo build -p omnifab-desktop --locked
       - name: Captures des scenarios
@@ -48,10 +48,33 @@ jobs:
           OMNIFAB_DEMO="$scenario" ./target/debug/omnifab-desktop > "galerie/app-$scenario.log" 2>&1 &
           PID=$!
           sleep 15
+          echo "--- fenetres X ---"
+          xwininfo -root -tree 2>&1 | head -n 30
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "ECHEC : l'application est morte avant la capture"
+            tail -n 60 "galerie/app-$scenario.log" 2>/dev/null || true
+            exit 1
+          fi
           import -window root "galerie/$scenario.png"
           RC=$?
           kill "$PID" 2>/dev/null || true
-          exit "$RC"
+          echo "--- log de l'application (30 dernieres lignes) ---"
+          tail -n 30 "galerie/app-$scenario.log" 2>/dev/null || true
+          if [ "$RC" -ne 0 ]; then
+            echo "ECHEC : import a echoue (code $RC)"
+            exit "$RC"
+          fi
+          if [ ! -f "galerie/$scenario.png" ]; then
+            echo "ECHEC : capture absente"
+            exit 1
+          fi
+          mean=$(identify -format '%[fx:mean]' "galerie/$scenario.png")
+          echo "luminosite moyenne de la capture : $mean"
+          noire=$(awk -v m="$mean" 'BEGIN { print (m + 0 < 0.02) ? 1 : 0 }')
+          if [ "$noire" = "1" ]; then
+            echo "ECHEC : capture noire (mean $mean)"
+            exit 1
+          fi
           SCRIPT
           chmod +x galerie-captures.sh
           FAIL=0
