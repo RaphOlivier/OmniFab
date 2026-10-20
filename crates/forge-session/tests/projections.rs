@@ -50,7 +50,7 @@ fn schema_recent_refuse_par_la_projection() {
     let mut values = ValuesProjection::new();
     let event = NewEvent::new(
         EVENT_INPUT_SET,
-        2,
+        3,
         "tests",
         json!({"name": "w", "value": 1.0}),
     );
@@ -93,7 +93,7 @@ fn journal_plus_recent_refuse_a_l_ouverture() {
     let mut document = Document::new();
     document.append(NewEvent::new(
         EVENT_EXPRESSION_SET,
-        2,
+        3,
         "tests",
         json!({"name": "w", "expression": "1"}),
     ));

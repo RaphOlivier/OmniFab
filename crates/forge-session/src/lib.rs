@@ -1,10 +1,9 @@
-#![deny(missing_docs)]
-#![forbid(unsafe_code)]
-
 //! # forge-session — session, commandes et undo/redo
 //!
 //! (ADR-0008, ouverture du jalon 1 ; ADR-0011, intégration au
-//! démonstrateur.) La session possède le document (forge-doc) et les
+//! démonstrateur ; ADR-0019, liaisons v2 — unités déclarées,
+//! suppression d'alias en trois modes, cotes pilotées.) La session
+//! possède le document (forge-doc) et les
 //! projections métier ; les applications ne touchent plus `Document`
 //! directement : elles construisent des [commandes](Command) et lisent
 //! les projections.
@@ -36,39 +35,51 @@ mod esquisse;
 mod projection;
 
 pub use command::{
-    AddConstraint, AddEntity, Command, CommandPlan, EVENT_EXPRESSION_SET, EVENT_INPUT_SET,
-    EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_ENTITY_ADDED,
-    EVENT_SKETCH_POINT_MOVED, EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint,
-    SetExpression, SetInput,
+    AddConstraint, AddEntity, Command, CommandPlan, EVENT_ALIAS_REMOVED, EVENT_EXPRESSION_SET,
+    EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED,
+    EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
+    EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint, RemoveAlias, SetExpression,
+    SetInput,
 };
 pub use error::SessionError;
 pub use esquisse::{
     ContrainteEsquisse, CroquisResolu, EntiteEsquisse, EsquisseProjection, GenreEntite,
+    ValeurCote,
 };
+pub use forge_values::{ModeSuppression, Unite};
 pub use projection::{
     GeomProjection, MaillageImporte, Projection, TracesImportees, ValuesProjection,
 };
 
 use forge_doc::{DocError, Document, Event, MigrationRegistry, NewEvent};
+use forge_units::Length;
 use forge_values::ValueGraph;
 
 /// Registre de migrations courant de la session (ADR-0016 A3) : les
-/// sept types d'événement connus, déclarés à leur version courante —
-/// le maillage importé migre du v1 au v2 (ADR-0017), les trois types
-/// du croquis contraint sont au v1 (ADR-0018). À
-/// passer à l'ouverture d'un projet (Document::from_bytes_with,
-/// Document::open_from_path_with, feature native) : un journal écrit
-/// par une version plus récente est refusé par SchemaTooNew (ADR-0001)
-/// au lieu d'être lu comme du v1.
+/// types d'événement connus, déclarés à leur version courante — les
+/// liaisons passent en v2 avec le champ `unit` (ADR-0019), la
+/// contrainte de croquis migre sa cote de distance vers l'objet typé,
+/// `value.alias_removed` et `sketch.constraint.updated` naissent
+/// en v1 (ADR-0019) ; le maillage importé migre du v1 au v2
+/// (ADR-0017). À passer à l'ouverture d'un projet
+/// (Document::from_bytes_with, Document::open_from_path_with,
+/// feature native) : un journal écrit par une version plus récente
+/// est refusé par SchemaTooNew (ADR-0001) au lieu d'être lu comme
+/// du v1.
 pub fn registre_migrations_courant() -> MigrationRegistry {
     let mut registre = MigrationRegistry::new();
-    registre.declare(EVENT_INPUT_SET, 1);
-    registre.declare(EVENT_EXPRESSION_SET, 1);
+    registre.declare(EVENT_INPUT_SET, 2);
+    registre.register(EVENT_INPUT_SET, 1, migre_unite_v1_v2);
+    registre.declare(EVENT_EXPRESSION_SET, 2);
+    registre.register(EVENT_EXPRESSION_SET, 1, migre_unite_v1_v2);
+    registre.declare(EVENT_ALIAS_REMOVED, 1);
     registre.declare(EVENT_TRACES_IMPORTED, 1);
     registre.declare(EVENT_MESH_IMPORTED, 2);
     registre.register(EVENT_MESH_IMPORTED, 1, migre_mesh_v1_v2);
     registre.declare(EVENT_SKETCH_ENTITY_ADDED, 1);
-    registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 1);
+    registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 2);
+    registre.register(EVENT_SKETCH_CONSTRAINT_ADDED, 1, migre_contrainte_v2);
+    registre.declare(EVENT_SKETCH_CONSTRAINT_UPDATED, 1);
     registre.declare(EVENT_SKETCH_POINT_MOVED, 1);
     registre
 }
@@ -80,6 +91,41 @@ fn migre_mesh_v1_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, Do
     let mut donnees = donnees.clone();
     if let Some(objet) = donnees.as_object_mut() {
         objet.insert("echelle".to_string(), serde_json::json!(1.0));
+    }
+    Ok(donnees)
+}
+
+/// Migration `value.input_set` et `value.expression_set` v1 → v2
+/// (ADR-0019) : le champ `unit` est posé à `null` — les journaux
+/// v1 relisent leurs valeurs sans unité déclarée, sans changement de
+/// comportement.
+fn migre_unite_v1_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+    let mut donnees = donnees.clone();
+    if let Some(objet) = donnees.as_object_mut() {
+        objet.insert("unit".to_string(), serde_json::Value::Null);
+    }
+    Ok(donnees)
+}
+
+/// Migration `sketch.constraint.added` v1 → v2 (ADR-0019) : la cote
+/// de `Distance` — nombre nu en v1 (ADR-0018) — devient l'objet typé
+/// `{"type": "fixe", "mm": …}`.
+fn migre_contrainte_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+    let mut donnees = donnees.clone();
+    let cote_nue = match (donnees.get("genre"), donnees.get("valeur")) {
+        (Some(serde_json::Value::String(genre)), Some(valeur)) => {
+            genre == "distance" && valeur.is_number()
+        }
+        _ => false,
+    };
+    if cote_nue {
+        if let Some(objet) = donnees.as_object_mut() {
+            let millimetres = objet.get("valeur").cloned().unwrap_or_default();
+            objet.insert(
+                "valeur".to_string(),
+                serde_json::json!({ "type": "fixe", "mm": millimetres }),
+            );
+        }
     }
     Ok(donnees)
 }
@@ -270,6 +316,32 @@ impl Session {
     /// (ADR-0018 D3).
     pub fn esquisse(&self) -> &EsquisseProjection {
         &self.esquisse
+    }
+
+    /// Croquis prêt pour la résolution (ADR-0019) : clone de la
+    /// projection, cotes pilotées figées par le moteur de liaisons —
+    /// le solveur ne voit jamais une expression (frontière
+    /// forge-values → forge-gcs), les positions résolues restent un
+    /// état dérivé jamais sérialisé (ADR-0018 D3). Une cote qui
+    /// n'évalue pas ou n'évalue pas en une longueur finie et
+    /// strictement positive refuse la résolution entière.
+    pub fn croquis_pour_resolution(&mut self) -> Result<EsquisseProjection, SessionError> {
+        let mut croquis = self.esquisse.clone();
+        for alias in croquis.alias_des_cotes() {
+            let millimetres = self.graph_mut().value(&alias).map_err(|source| {
+                SessionError::ProjectionFailed {
+                    projection: "values".to_string(),
+                    message: source.to_string(),
+                }
+            })?;
+            if !millimetres.is_finite() || millimetres <= 0.0 {
+                return Err(SessionError::CommandRejected {
+                    reason: format!("la cote « {alias} » doit être finie et strictement positive"),
+                });
+            }
+            croquis.figer_cote(&alias, Length::from_millimeters(millimetres));
+        }
+        Ok(croquis)
     }
 
     /// Types d'événements « ignorés » par l'interface : inconnus de

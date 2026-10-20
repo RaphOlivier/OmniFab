@@ -2,11 +2,14 @@
 //! par curseur, abandon des événements défaisables, imports de géométrie
 //! et purge des blobs orphelins, sauvegarde du journal visible.
 //! Croquis contraint (ADR-0018) : entités, contraintes, graines et
-//! résolution dérivée par rejeu.
+//! résolution dérivée par rejeu. Phase E (ADR-0019) : unités déclarées
+//! sur les valeurs, cotes de distance fixées en `ValeurCote`.
 
 use forge_doc::{Document, FixedClock, NewEvent};
 use forge_gcs::Systeme2D;
-use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
+use forge_session::{
+    AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint, ValeurCote,
+};
 use forge_session::{
     Command, CommandPlan, EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection,
     Session, SessionError, SetExpression, SetInput,
@@ -20,18 +23,21 @@ fn rectangle() -> Session {
         .execute(&SetInput {
             name: "width_mm".into(),
             value: 800.0,
+            unite: None,
         })
         .expect("largeur");
     session
         .execute(&SetInput {
             name: "height_mm".into(),
             value: 600.0,
+            unite: None,
         })
         .expect("hauteur");
     session
         .execute(&SetExpression {
             name: "diagonal".into(),
             expression: "sqrt(width_mm * width_mm + height_mm * height_mm)".into(),
+            unite: None,
         })
         .expect("diagonale");
     session
@@ -56,6 +62,7 @@ fn commande_refusee_n_ecrit_rien_au_journal() {
         .execute(&SetExpression {
             name: "diagonal".into(),
             expression: "inconnu + 1".into(),
+            unite: None,
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0002");
@@ -63,6 +70,7 @@ fn commande_refusee_n_ecrit_rien_au_journal() {
         .execute(&SetInput {
             name: "  ".into(),
             value: 1.0,
+            unite: None,
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
@@ -70,6 +78,7 @@ fn commande_refusee_n_ecrit_rien_au_journal() {
         .execute(&SetInput {
             name: "x".into(),
             value: f64::NAN,
+            unite: None,
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
@@ -129,6 +138,7 @@ fn nouvelle_action_apres_undo_abandonne_le_redo() {
         .execute(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
+            unite: None,
         })
         .expect("largeur");
     assert!(!session.can_redo(), "la nouvelle action vide la pile redo");
@@ -272,6 +282,7 @@ fn refus_d_une_projection_supplementaire() {
         .execute(&SetInput {
             name: "a".into(),
             value: 1.0,
+            unite: None,
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0002");
@@ -291,6 +302,7 @@ fn acteur_et_transaction_attribues() {
         .execute(&SetInput {
             name: "a".into(),
             value: 1.0,
+            unite: None,
         })
         .expect("commande");
     let dernier = session.document().events().last().expect("un événement");
@@ -476,6 +488,7 @@ fn commande_refusee_apres_undo_preserve_le_redo() {
         .execute(&SetExpression {
             name: "diagonal".into(),
             expression: "inconnu + 1".into(),
+            unite: None,
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0002");
@@ -546,6 +559,7 @@ fn nom_non_referencable_refuse_au_plan() {
             .execute(&SetInput {
                 name: name.into(),
                 value: 1.0,
+                unite: None,
             })
             .unwrap_err();
         assert_eq!(erreur.code(), "OF-SES-0001");
@@ -553,6 +567,7 @@ fn nom_non_referencable_refuse_au_plan() {
             .execute(&SetExpression {
                 name: name.into(),
                 expression: "1".into(),
+                unite: None,
             })
             .unwrap_err();
         assert_eq!(erreur.code(), "OF-SES-0001");
@@ -566,6 +581,7 @@ fn nom_non_referencable_refuse_au_plan() {
         .execute(&SetInput {
             name: "_x1".into(),
             value: 1.0,
+            unite: None,
         })
         .expect("tiret bas initial et chiffres : identifiant valide");
     assert_eq!(session.document().events().len(), 1);
@@ -583,6 +599,7 @@ fn txn_horodate_par_l_horloge_du_document() {
             .execute(&SetInput {
                 name: "width_mm".into(),
                 value: 800.0,
+                unite: None,
             })
             .expect("commande");
         session.document().events()[0]
@@ -694,12 +711,16 @@ fn croquis_rectangle() -> Session {
         ContrainteEsquisse::Distance {
             p1: 0,
             p2: 1,
-            valeur: Length::from_millimeters(100.0),
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
         },
         ContrainteEsquisse::Distance {
             p1: 1,
             p2: 2,
-            valeur: Length::from_millimeters(50.0),
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
         },
     ];
     for contrainte in contraintes {
@@ -914,7 +935,9 @@ fn les_entites_invalides_sont_refusees() {
         ContrainteEsquisse::Distance {
             p1: 0,
             p2: 9,
-            valeur: Length::from_millimeters(10.0),
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(10.0),
+            },
         },
         ContrainteEsquisse::RayonCercle {
             cercle: 0,

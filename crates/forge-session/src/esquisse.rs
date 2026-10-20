@@ -2,8 +2,9 @@
 //! entités, contraintes et graines de position au journal, positions
 //! résolues comme état dérivé jamais sérialisé.
 //!
-//! - **journal** : trois types d'événements (`sketch.entity.added`,
-//!   `sketch.constraint.added`, `sketch.point.moved`), identifiants
+//! - **journal** : quatre types d'événements (`sketch.entity.added`,
+//!   `sketch.constraint.added`, `sketch.constraint.updated`,
+//!   `sketch.point.moved`), identifiants
 //!   séquentiels émis par la commande — l'ordre d'ajout est figé au
 //!   journal et fait foi pour la reproductibilité du rejeu ;
 //! - **graines** : positions de départ des points, posées par les
@@ -18,9 +19,12 @@
 
 use crate::SessionError;
 use crate::command::{
-    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
+    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_ENTITY_ADDED,
+    EVENT_SKETCH_POINT_MOVED,
 };
-use crate::projection::{Projection, champ_entier, champ_nombre, champ_str, verifie_schema};
+use crate::projection::{
+    Projection, champ_entier, champ_nombre, champ_str, verifie_schema, verifie_schema_parmi,
+};
 use forge_doc::NewEvent;
 use forge_gcs::{
     Algorithme, Contrainte, GcsError, IdCercle, IdLigne, IdPoint, Solveur2D, TagContrainte,
@@ -28,8 +32,24 @@ use forge_gcs::{
 use forge_units::{Angle, Length};
 use std::collections::BTreeMap;
 
-/// Version de schéma des trois types d'événement du croquis (ADR-0018).
+/// Version de schéma des événements `sketch.entity.added` et
+/// `sketch.point.moved` (ADR-0018).
 const VERSION_SCHEMA_ESQUISSE: u32 = 1;
+
+/// Version de schéma courante de `sketch.constraint.added` : la v2
+/// (ADR-0019) encode la cote de `Distance` comme objet typé — fixe
+/// ou expression pilotée —, la v1 reste lisible (nombre nu) pour les
+/// journaux non migrés.
+const VERSION_SCHEMA_CONTRAINTE: u32 = 2;
+
+/// Versions acceptées à la relecture d'une contrainte (ADR-0019 §1) :
+/// les journaux v1 non migrés rejouent, le registre les aligne en v2.
+const VERSIONS_CONTRAINTE: &[u32] = &[1, 2];
+
+/// Version de schéma de `sketch.constraint.updated` : type nouveau de
+/// la phase E, né en v1 — son champ `valeur` suit le schéma des
+/// contraintes (objet typé en pratique, jamais un nombre nu émis).
+const VERSION_SCHEMA_MISE_A_JOUR: u32 = 1;
 
 /// Genre d'une entité du croquis (sélection et affichage).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,6 +107,38 @@ pub enum EntiteEsquisse {
     },
 }
 
+/// Valeur d'une cote de `Distance` (ADR-0019, cotes pilotées) : une
+/// longueur fixe ou une expression du moteur de liaisons — le nœud
+/// `esquisse.<alias>` du graphe des valeurs porte l'expression, la
+/// contrainte n'en est que la vitrine au croquis.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ValeurCote {
+    /// Longueur fixe.
+    Fixe {
+        /// Longueur de la cote (millimètres).
+        mm: Length,
+    },
+    /// Expression pilotée du moteur de liaisons.
+    Expression {
+        /// Texte de l'expression (sous-ensemble déterministe).
+        texte: String,
+        /// Nom du nœud portant l'expression, sous `esquisse.`.
+        alias: String,
+    },
+}
+
+impl ValeurCote {
+    /// Longueur fixe de la cote, ou `None` si elle est pilotée par
+    /// une expression : la résolution exige alors de la figer d'abord
+    /// ([`crate::Session::croquis_pour_resolution`]).
+    pub fn mm(&self) -> Option<Length> {
+        match self {
+            ValeurCote::Fixe { mm } => Some(*mm),
+            ValeurCote::Expression { .. } => None,
+        }
+    }
+}
+
 /// Contrainte géométrique du croquis (ADR-0018 D1) : les onze genres du
 /// trait `forge_gcs::Contrainte` plus l'ancrage `PointFixe` (pont vers
 /// `Solveur2D::fixer_point`). Les cotes sont des newtypes.
@@ -115,8 +167,8 @@ pub enum ContrainteEsquisse {
         p1: u32,
         /// Second point.
         p2: u32,
-        /// Valeur de la cote.
-        valeur: Length,
+        /// Valeur de la cote : fixe ou expression pilotée (ADR-0019).
+        valeur: ValeurCote,
     },
     /// Angle entre deux lignes (cote, pilotable en phase E).
     Angle {
@@ -220,9 +272,11 @@ pub(crate) fn entite_en_json(id: u32, entite: &EntiteEsquisse) -> serde_json::Va
     }
 }
 
-/// Sérialise une contrainte pour l'événement `sketch.constraint.added` :
-/// schéma plat v1 — `genre`, `id`, puis les champs de la contrainte
-/// (cotes en millimètres, angles en radians).
+/// Sérialise une contrainte pour les événements `sketch.constraint.added`
+/// et `sketch.constraint.updated` : schéma plat — `genre`, `id`, puis
+/// les champs de la contrainte (cotes en millimètres, angles en
+/// radians) ; la cote de `Distance` est un objet typé depuis la v2
+/// (ADR-0019).
 pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> serde_json::Value {
     match contrainte {
         ContrainteEsquisse::Coincidence { p1, p2 } => serde_json::json!({
@@ -246,7 +300,7 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
             "id": id,
             "p1": p1,
             "p2": p2,
-            "valeur": valeur.millimeters(),
+            "valeur": valeur_cote_en_json(valeur),
         }),
         ContrainteEsquisse::Angle {
             ligne1,
@@ -300,6 +354,100 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
             "id": id,
             "point": point,
         }),
+    }
+}
+
+/// Sérialise une cote de distance (schéma v2, ADR-0019) : fixe
+/// (`{"type": "fixe", "mm": …}`) ou expression pilotée
+/// (`{"type": "expression", "texte": …, "alias": …}`).
+fn valeur_cote_en_json(valeur: &ValeurCote) -> serde_json::Value {
+    match valeur {
+        ValeurCote::Fixe { mm } => serde_json::json!({
+            "type": "fixe",
+            "mm": mm.millimeters(),
+        }),
+        ValeurCote::Expression { texte, alias } => serde_json::json!({
+            "type": "expression",
+            "texte": texte,
+            "alias": alias,
+        }),
+    }
+}
+
+/// Relit une cote de distance : nombre nu du schéma v1 (ADR-0018,
+/// cote fixe) ou objet typé du schéma v2 — fixe ou expression
+/// pilotée (ADR-0019).
+fn valeur_cote_de_journal(event: &NewEvent) -> Result<ValeurCote, SessionError> {
+    match event.data.get("valeur") {
+        None => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « valeur » (cote) absent".to_string(),
+        }),
+        Some(serde_json::Value::Number(_)) => Ok(ValeurCote::Fixe {
+            mm: Length::from_millimeters(champ_nombre(event, "valeur")?),
+        }),
+        Some(serde_json::Value::Object(objet)) => match objet.get("type") {
+            Some(serde_json::Value::String(type_cote)) => match type_cote.as_str() {
+                "fixe" => Ok(ValeurCote::Fixe {
+                    mm: Length::from_millimeters(nombre_cote(event, objet, "mm")?),
+                }),
+                "expression" => Ok(ValeurCote::Expression {
+                    texte: texte_cote(event, objet, "texte")?.to_string(),
+                    alias: texte_cote(event, objet, "alias")?.to_string(),
+                }),
+                autre => Err(SessionError::InvalidEventData {
+                    event_type: event.event_type.clone(),
+                    reason: format!("type de cote inconnu : « {autre} »"),
+                }),
+            },
+            _ => Err(SessionError::InvalidEventData {
+                event_type: event.event_type.clone(),
+                reason: "type de cote absent".to_string(),
+            }),
+        },
+        Some(_) => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « valeur » ni nombre nu ni objet typé".to_string(),
+        }),
+    }
+}
+
+/// Lit un champ nombre d'un objet cote typé (schéma v2).
+fn nombre_cote(
+    event: &NewEvent,
+    objet: &serde_json::Map<String, serde_json::Value>,
+    champ: &str,
+) -> Result<f64, SessionError> {
+    objet
+        .get(champ)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("champ « {champ} » (nombre) absent de la cote"),
+        })
+}
+
+/// Lit un champ texte d'un objet cote typé (schéma v2) : l'emprunt vit
+/// sur l'objet, pas sur l'événement.
+fn texte_cote<'a>(
+    event: &NewEvent,
+    objet: &'a serde_json::Map<String, serde_json::Value>,
+    champ: &str,
+) -> Result<&'a str, SessionError> {
+    objet
+        .get(champ)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("champ « {champ} » (texte) absent de la cote"),
+        })
+}
+
+/// Alias d'une cote pilotée, chaîne vide pour une cote fixe.
+fn alias_de_cote(valeur: &ValeurCote) -> &str {
+    match valeur {
+        ValeurCote::Fixe { .. } => "",
+        ValeurCote::Expression { alias, .. } => alias,
     }
 }
 
@@ -358,7 +506,7 @@ fn contrainte_de_journal(event: &NewEvent) -> Result<(u32, ContrainteEsquisse), 
         "distance" => ContrainteEsquisse::Distance {
             p1: champ_id(event, "p1")?,
             p2: champ_id(event, "p2")?,
-            valeur: Length::from_millimeters(champ_nombre(event, "valeur")?),
+            valeur: valeur_cote_de_journal(event)?,
         },
         "angle" => ContrainteEsquisse::Angle {
             ligne1: champ_id(event, "ligne1")?,
@@ -606,6 +754,56 @@ impl EsquisseProjection {
         self.contraintes.len() as u32
     }
 
+    /// Alias des cotes pilotées du croquis (contraintes `Distance` en
+    /// expression), dans l'ordre d'ajout (ADR-0019).
+    pub fn alias_des_cotes(&self) -> Vec<String> {
+        self.contraintes
+            .iter()
+            .filter_map(|(_, contrainte)| match contrainte {
+                ContrainteEsquisse::Distance {
+                    valeur: ValeurCote::Expression { alias, .. },
+                    ..
+                } => Some(alias.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Contrainte portant la cote pilotée de l'alias donné, avec son
+    /// identifiant, ou `None` si aucune cote ne porte cet alias
+    /// (ADR-0019) : la substitution d'alias réécrit la contrainte à
+    /// identifiant conservé.
+    pub fn contrainte_de_cote(&self, alias: &str) -> Option<(u32, ContrainteEsquisse)> {
+        self.contraintes
+            .iter()
+            .find(|(_, contrainte)| {
+                matches!(
+                    contrainte,
+                    ContrainteEsquisse::Distance {
+                        valeur: ValeurCote::Expression { alias: a, .. },
+                        ..
+                    } if a.as_str() == alias
+                )
+            })
+            .map(|(id, contrainte)| (*id, contrainte.clone()))
+    }
+
+    /// Fige une cote pilotée : son expression devient la longueur
+    /// donnée, évaluée par le moteur de liaisons côté session — la
+    /// résolution ne voit jamais une expression (frontière
+    /// forge-values → forge-gcs, ADR-0019).
+    pub fn figer_cote(&mut self, alias: &str, mm: Length) {
+        for (_, contrainte) in &mut self.contraintes {
+            if let ContrainteEsquisse::Distance { valeur, .. } = contrainte {
+                if let ValeurCote::Expression { alias: a, .. } = valeur {
+                    if a.as_str() == alias {
+                        *valeur = ValeurCote::Fixe { mm };
+                    }
+                }
+            }
+        }
+    }
+
     /// Numéro d'édition du croquis : croît à chaque événement appliqué
     /// et n'est jamais remis à zéro — deux contenus différents du
     /// croquis portent toujours des éditions différentes.
@@ -693,7 +891,7 @@ impl EsquisseProjection {
                 if p1 == p2 {
                     return Some("une cote de distance relie deux points distincts".to_string());
                 }
-                Self::raison_positive(valeur.millimeters(), "la distance")
+                Self::raison_cote(valeur)
             }
             ContrainteEsquisse::Angle {
                 ligne1,
@@ -912,6 +1110,21 @@ impl EsquisseProjection {
         }
     }
 
+    /// Raison du refus d'une cote de distance (ADR-0019) : fixe
+    /// invalide ou expression vide.
+    fn raison_cote(valeur: &ValeurCote) -> Option<String> {
+        match valeur {
+            ValeurCote::Fixe { mm } => Self::raison_positive(mm.millimeters(), "la distance"),
+            ValeurCote::Expression { texte, .. } => {
+                if texte.trim().is_empty() {
+                    Some("l'expression de la cote ne peut pas être vide".to_string())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     /// Raison pour laquelle un angle n'est pas fini.
     fn raison_angle(valeur: f64) -> Option<String> {
         if valeur.is_finite() {
@@ -953,10 +1166,21 @@ fn applique_contrainte(
             Ok(Some(tag))
         }
         ContrainteEsquisse::Distance { p1, p2, valeur } => {
+            // Frontière forge-values → forge-gcs (ADR-0019) : le
+            // solveur ne voit jamais une expression — la session fige
+            // les cotes pilotées avant de résoudre.
+            let ValeurCote::Fixe { mm } = valeur else {
+                return Err(GcsError::AbiInvalide {
+                    contexte: format!(
+                        "la cote pilotée « {} » doit être figée avant la résolution",
+                        alias_de_cote(valeur)
+                    ),
+                });
+            };
             let tag = solveur.ajouter_contrainte(Contrainte::Distance {
                 p1: reconstruction.id_point(*p1)?,
                 p2: reconstruction.id_point(*p2)?,
-                valeur: *valeur,
+                valeur: *mm,
             })?;
             Ok(Some(tag))
         }
@@ -1058,7 +1282,7 @@ impl Projection for EsquisseProjection {
                 Ok(())
             }
             EVENT_SKETCH_CONSTRAINT_ADDED => {
-                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                verifie_schema_parmi(event, VERSIONS_CONTRAINTE)?;
                 let (id, contrainte) = contrainte_de_journal(event)?;
                 if id != self.contraintes.len() as u32 {
                     return Err(SessionError::InvalidEventData {
@@ -1073,6 +1297,31 @@ impl Projection for EsquisseProjection {
                     });
                 }
                 self.contraintes.push((id, contrainte));
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_CONSTRAINT_UPDATED => {
+                verifie_schema(event, VERSION_SCHEMA_MISE_A_JOUR)?;
+                let (id, contrainte) = contrainte_de_journal(event)?;
+                let Some(position) = self
+                    .contraintes
+                    .iter()
+                    .position(|(identifiant, _)| *identifiant == id)
+                else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("contrainte {id} inconnue au croquis"),
+                    });
+                };
+                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                // Identifiant conservé : seule la contrainte change,
+                // l'ordre d'ajout au journal fait foi (ADR-0019 §1).
+                self.contraintes[position].1 = contrainte;
                 self.edition += 1;
                 Ok(())
             }
@@ -1104,6 +1353,7 @@ impl Projection for EsquisseProjection {
         &[
             EVENT_SKETCH_ENTITY_ADDED,
             EVENT_SKETCH_CONSTRAINT_ADDED,
+            EVENT_SKETCH_CONSTRAINT_UPDATED,
             EVENT_SKETCH_POINT_MOVED,
         ]
     }

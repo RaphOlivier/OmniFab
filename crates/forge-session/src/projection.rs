@@ -3,19 +3,29 @@
 
 use crate::SessionError;
 use crate::command::{
-    EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_TRACES_IMPORTED,
+    EVENT_ALIAS_REMOVED, EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED,
+    EVENT_TRACES_IMPORTED,
 };
 use forge_doc::NewEvent;
-use forge_values::ValueGraph;
+use forge_values::{Origine, PREFIXES_RESERVES, Unite, ValueGraph};
 
-/// Version de schéma courante des types d'événement v1 de la session
-/// (ADR-0016 A3) : toute autre version d'un type connu est refusée,
+/// Version de schéma des événements restés en v1 —
+/// `geom.traces.imported` (ADR-0016 A3), `value.alias_removed`
+/// (ADR-0019) : toute autre version d'un type connu est refusée,
 /// jamais lue comme du v1.
 const VERSION_SCHEMA_CONNUE: u32 = 1;
 /// Version de schéma de `geom.mesh.imported` (ADR-0017) : le champ
 /// `echelle` est ajouté en v2 ; les événements v1 sont migrés à
 /// l'ouverture par le registre de migrations.
 const VERSION_SCHEMA_MESH: u32 = 2;
+/// Version de schéma courante des événements de liaisons
+/// `value.input_set` et `value.expression_set` (ADR-0019) : la v2
+/// ajoute le champ `unit` (ADR-0007 phase 1).
+const VERSION_SCHEMA_VALEURS: u32 = 2;
+/// Versions acceptées à la relecture des événements de liaisons
+/// (ADR-0019 §1) : les journaux v1 non migrés rejouent sans unité,
+/// le registre les aligne en v2 à l'ouverture.
+const VERSIONS_VALEURS: &[u32] = &[1, VERSION_SCHEMA_VALEURS];
 
 /// Projection d'un domaine métier : l'état du domaine reconstruit par
 /// rejeu du journal. Les domaines futurs (esquisse, CAO, CAM…)
@@ -90,26 +100,39 @@ impl Projection for ValuesProjection {
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         match event.event_type.as_str() {
             EVENT_INPUT_SET => {
-                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
+                verifie_schema_parmi(event, VERSIONS_VALEURS)?;
                 let name = champ_str(event, "name")?;
                 let value = champ_nombre(event, "value")?;
+                let unite = lit_unite(event)?;
                 self.graph
-                    .set_input(name, value)
-                    .map_err(|source| SessionError::ProjectionFailed {
-                        projection: "values".to_string(),
-                        message: source.to_string(),
-                    })
+                    .set_input_unite(name, value, unite, origine_de(name))
+                    .map_err(projection_values)?;
+                Ok(())
             }
             EVENT_EXPRESSION_SET => {
-                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
+                verifie_schema_parmi(event, VERSIONS_VALEURS)?;
                 let name = champ_str(event, "name")?;
                 let expression = champ_str(event, "expression")?;
+                let unite = lit_unite(event)?;
                 self.graph
-                    .set_expression(name, expression)
-                    .map_err(|source| SessionError::ProjectionFailed {
-                        projection: "values".to_string(),
-                        message: source.to_string(),
-                    })
+                    .set_expression_unite(name, expression, unite, origine_de(name))
+                    .map_err(projection_values)?;
+                Ok(())
+            }
+            EVENT_ALIAS_REMOVED => {
+                verifie_schema(event, VERSION_SCHEMA_CONNUE)?;
+                let name = champ_str(event, "name")?;
+                if self.graph.noeud(name).is_none() {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("alias « {name} » absent du graphe des liaisons"),
+                    });
+                }
+                // Le plan a validé (références, nœuds système) : le
+                // journal fait foi, la projection retire sans revérifier
+                // (ADR-0019 §1).
+                self.graph.retirer_noeud(name);
+                Ok(())
             }
             _ => {
                 if !self.unknown.contains(&event.event_type) {
@@ -121,7 +144,7 @@ impl Projection for ValuesProjection {
     }
 
     fn types_connus(&self) -> &'static [&'static str] {
-        &[EVENT_INPUT_SET, EVENT_EXPRESSION_SET]
+        &[EVENT_INPUT_SET, EVENT_EXPRESSION_SET, EVENT_ALIAS_REMOVED]
     }
 }
 
@@ -305,6 +328,68 @@ pub(crate) fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), Sessi
         });
     }
     Ok(())
+}
+
+/// Vérifie la version de schéma d'un événement acceptant plusieurs
+/// versions : les journaux plus anciens rejouent s'ils sont listés,
+/// toute version absente de la liste est refusée — jamais lue en
+/// devinant (ADR-0019 §1).
+pub(crate) fn verifie_schema_parmi(
+    event: &NewEvent,
+    versions: &[u32],
+) -> Result<(), SessionError> {
+    if versions.contains(&event.schema_version) {
+        return Ok(());
+    }
+    Err(SessionError::InvalidEventData {
+        event_type: event.event_type.clone(),
+        reason: format!(
+            "version de schéma {} non supportée pour ce type",
+            event.schema_version
+        ),
+    })
+}
+
+/// Lit le champ `unit` d'un événement de liaisons v2 : absent, `null`
+/// ou code inconnu refusé, un code connu = l'unité déclarée, sinon
+/// `None` = sans unité (ADR-0007 phase 1, ADR-0019).
+fn lit_unite(event: &NewEvent) -> Result<Option<Unite>, SessionError> {
+    match event.data.get("unit") {
+        None => Ok(None),
+        Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::String(code)) => match Unite::from_code(code) {
+            Some(unite) => Ok(Some(unite)),
+            None => Err(SessionError::InvalidEventData {
+                event_type: event.event_type.clone(),
+                reason: format!("unité inconnue : « {code} »"),
+            }),
+        },
+        Some(_) => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « unit » ni null ni code d'unité".to_string(),
+        }),
+    }
+}
+
+/// Origine du nœud porté par un événement de liaisons : les noms sous
+/// un préfixe réservé sont toujours système (ADR-0019) — le plan des
+/// commandes refuse déjà leur création par l'utilisateur, le journal
+/// fait foi.
+fn origine_de(name: &str) -> Origine {
+    if PREFIXES_RESERVES.iter().any(|p| name.starts_with(p)) {
+        Origine::Systeme
+    } else {
+        Origine::Utilisateur
+    }
+}
+
+/// Traduit un refus du moteur de liaisons en échec de projection :
+/// le message d'origine (codes OF-VAL-*) traverse tel quel.
+fn projection_values(source: forge_values::ValuesError) -> SessionError {
+    SessionError::ProjectionFailed {
+        projection: "values".to_string(),
+        message: source.to_string(),
+    }
 }
 
 /// Lit un champ entier non négatif du schéma v1 : les nombres

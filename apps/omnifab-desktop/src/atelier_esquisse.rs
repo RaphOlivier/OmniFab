@@ -24,7 +24,7 @@ use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};
 use forge_session::{
     AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
-    EsquisseProjection, GenreEntite, MovePoint,
+    EsquisseProjection, GenreEntite, MovePoint, ValeurCote,
 };
 use forge_units::{Angle, Length};
 
@@ -488,8 +488,14 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         if reponse.clicked()
             && let Some((p1, p2)) = deux_points_selectionnes(app)
         {
-            let valeur = Length::from_millimeters(app.cote_distance);
-            ajouter_contrainte(app, ContrainteEsquisse::Distance { p1, p2, valeur });
+            let contrainte = ContrainteEsquisse::Distance {
+                p1,
+                p2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(app.cote_distance),
+                },
+            };
+            ajouter_contrainte(app, contrainte);
         }
         avec_aide_sur_calque(
             ui,

@@ -78,6 +78,7 @@ use forge_render::{
 use forge_session::{
     AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_EXPRESSION_SET,
     EntiteEsquisse, EsquisseProjection, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
+    ValeurCote,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -751,14 +752,17 @@ impl DemoApp {
         let _ = self.executer(&SetInput {
             name: "width_mm".into(),
             value: 800.0,
+            unite: None,
         });
         let _ = self.executer(&SetInput {
             name: "height_mm".into(),
             value: 600.0,
+            unite: None,
         });
         let _ = self.executer(&SetExpression {
             name: "diagonal".into(),
             expression: DEFAULT_DIAGONAL_EXPR.into(),
+            unite: None,
         });
         // La session posée est à jour : rien à perdre (ADR-0016 C3).
         self.dirty = false;
@@ -1209,10 +1213,20 @@ impl DemoApp {
         let Some(emetteur) = &self.travaux else {
             return;
         };
+        // Cotes pilotées figées par le moteur de liaisons (ADR-0019) :
+        // le fil de travail ne voit jamais une expression, la
+        // frontière forge-values → forge-gcs reste intacte.
+        let croquis = match self.session.croquis_pour_resolution() {
+            Ok(croquis) => croquis,
+            Err(erreur) => {
+                self.error = Some(erreur.to_string());
+                return;
+            }
+        };
         let travail = Travail::ResoudreEsquisse {
             generation: self.generation,
             edition,
-            croquis: self.session.esquisse().clone(),
+            croquis,
         };
         if emetteur.send(travail).is_ok() {
             self.resolution_en_attente = Some(edition);
@@ -1276,7 +1290,9 @@ impl DemoApp {
             contrainte: ContrainteEsquisse::Distance {
                 p1: 0,
                 p2: 1,
-                valeur: Length::from_millimeters(pas * 4.0),
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 4.0),
+                },
             },
         })
         .expect("cote posée");
@@ -1284,7 +1300,9 @@ impl DemoApp {
             contrainte: ContrainteEsquisse::Distance {
                 p1: 1,
                 p2: 2,
-                valeur: Length::from_millimeters(pas * 3.0),
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 3.0),
+                },
             },
         })
         .expect("cote posée");
@@ -1893,6 +1911,7 @@ impl DemoApp {
             let _ = self.executer(&SetInput {
                 name: name.into(),
                 value,
+                unite: None,
             });
         }
         ui.separator();
@@ -1904,6 +1923,7 @@ impl DemoApp {
             let _ = self.executer(&SetExpression {
                 name: "diagonal".into(),
                 expression,
+                unite: None,
             });
         }
         match self.session.graph_mut().value("diagonal") {
@@ -2486,6 +2506,7 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 1234.0,
+            unite: None,
         })
         .expect("largeur");
         let dossier = std::env::temp_dir().join("omnifab-phase-b-enregistrer");
@@ -2835,6 +2856,7 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
+            unite: None,
         })
         .expect("largeur");
         app.annuler();
@@ -2866,6 +2888,7 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
+            unite: None,
         })
         .expect("largeur");
         assert!(app.dirty, "une commande effective pose l'indicateur");
@@ -2919,6 +2942,7 @@ mod tests {
         app.executer(&SetInput {
             name: "width_mm".into(),
             value: 900.0,
+            unite: None,
         })
         .expect("commande valide");
         assert!(app.error.is_none(), "la correction efface l'erreur");
@@ -3558,7 +3582,9 @@ mod tests {
             contrainte: ContrainteEsquisse::Distance {
                 p1: 0,
                 p2: 1,
-                valeur: Length::from_millimeters(pas * 4.0),
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 4.0),
+                },
             },
         })
         .expect("cote posée");
@@ -3566,7 +3592,9 @@ mod tests {
             contrainte: ContrainteEsquisse::Distance {
                 p1: 1,
                 p2: 2,
-                valeur: Length::from_millimeters(pas * 3.0),
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 3.0),
+                },
             },
         })
         .expect("cote posée");
