@@ -467,7 +467,9 @@ impl ValueGraph {
                 name: name.to_string(),
             });
         }
-        if let Some(node) = self.noeud_par_nom(name) && node.origine != origine {
+        if let Some(node) = self.noeud_par_nom(name)
+            && node.origine != origine
+        {
             return Err(ValuesError::AliasReserve {
                 name: name.to_string(),
             });
