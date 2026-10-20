@@ -343,12 +343,18 @@ fn cote_pilotee_se_fige_pour_la_resolution() {
         .expect("nœud système");
     assert!(noeud.systeme, "la cote crée un nœud système");
     assert_eq!(noeud.unite, Some(Unite::Millimetre));
-    let avant = session.document().events().len();
-    session.undo().expect("annulation de la cote");
     assert_eq!(
-        session.document().events().len(),
-        avant - 2,
-        "contrainte et nœud s'annulent ensemble"
+        session.esquisse().contraintes().len(),
+        2,
+        "ancrage et cote pilotée avant annulation"
+    );
+    session.undo().expect("annulation de la cote");
+    assert!(
+        session
+            .esquisse()
+            .contrainte_de_cote("esquisse.demi")
+            .is_none(),
+        "la contrainte est défaite en même temps que le nœud"
     );
     assert!(
         session.graph().noeud("esquisse.demi").is_none(),

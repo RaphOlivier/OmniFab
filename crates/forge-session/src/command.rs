@@ -164,7 +164,7 @@ impl Command for SetInput {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
             });
         }
-        verifie_nom(&self.name)?;
+        verifie_nom_chemin(&self.name)?;
         verifie_prefixe_libre(&self.name)?;
         if !self.value.is_finite() {
             return Err(SessionError::CommandRejected {
@@ -208,7 +208,7 @@ impl Command for SetExpression {
                 reason: "le nom de la valeur ne peut pas être vide".to_string(),
             });
         }
-        verifie_nom(&self.name)?;
+        verifie_nom_chemin(&self.name)?;
         verifie_prefixe_libre(&self.name)?;
         if self.expression.trim().is_empty() {
             return Err(SessionError::CommandRejected {

@@ -44,7 +44,7 @@ const VERSION_SCHEMA_CONTRAINTE: u32 = 2;
 
 /// Versions acceptées à la relecture d'une contrainte (ADR-0019 §1) :
 /// les journaux v1 non migrés rejouent, le registre les aligne en v2.
-const VERSIONS_CONTRAINTE: &[u32] = &[1, 2];
+const VERSIONS_CONTRAINTE: &[u32] = &[1, VERSION_SCHEMA_CONTRAINTE];
 
 /// Version de schéma de `sketch.constraint.updated` : type nouveau de
 /// la phase E, né en v1 — son champ `valeur` suit le schéma des
@@ -794,12 +794,11 @@ impl EsquisseProjection {
     /// forge-values → forge-gcs, ADR-0019).
     pub fn figer_cote(&mut self, alias: &str, mm: Length) {
         for (_, contrainte) in &mut self.contraintes {
-            if let ContrainteEsquisse::Distance { valeur, .. } = contrainte {
-                if let ValeurCote::Expression { alias: a, .. } = valeur {
-                    if a.as_str() == alias {
-                        *valeur = ValeurCote::Fixe { mm };
-                    }
-                }
+            if let ContrainteEsquisse::Distance { valeur, .. } = contrainte
+                && let ValeurCote::Expression { alias: a, .. } = valeur
+                && a.as_str() == alias
+            {
+                *valeur = ValeurCote::Fixe { mm };
             }
         }
     }
