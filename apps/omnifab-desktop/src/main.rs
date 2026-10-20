@@ -1234,9 +1234,7 @@ impl DemoApp {
             Retour::Erreur { message, .. } => {
                 self.error = Some(message);
             }
-            Retour::EsquisseResolue {
-                cle, resultat, ..
-            } => {
+            Retour::EsquisseResolue { cle, resultat, .. } => {
                 if self.resolution_en_attente == Some(cle) {
                     self.resolution_en_attente = None;
                 }
@@ -1285,10 +1283,7 @@ impl DemoApp {
             self.resolution_en_attente = None;
             return;
         }
-        let cle = (
-            self.session.esquisse().edition(),
-            self.generation_liaisons,
-        );
+        let cle = (self.session.esquisse().edition(), self.generation_liaisons);
         if self
             .croquis_resolu
             .as_ref()
@@ -2013,8 +2008,7 @@ impl DemoApp {
                     if let Ok(calcul) = &valeur {
                         ui.small(format!("{calcul}"));
                     }
-                    self.tampon_expressions
-                        .insert(nom.clone(), (tampon, actif));
+                    self.tampon_expressions.insert(nom.clone(), (tampon, actif));
                 } else {
                     // Valeur du graphe en début de frame : un
                     // engagement sans changement effectif n'écrit
@@ -2026,15 +2020,10 @@ impl DemoApp {
                     // un rechargement du graphe à chaque frame
                     // figeait le chiffre pendant le geste (validation
                     // C1 round 6).
-                    let (memoire, actif_precedent) = self
-                        .tampon_dimensions
-                        .remove(nom)
-                        .unwrap_or((0.0, false));
-                    let mut tampon = Self::tampon_apres_inactivite(
-                        actif_precedent,
-                        memoire,
-                        valeur_initiale,
-                    );
+                    let (memoire, actif_precedent) =
+                        self.tampon_dimensions.remove(nom).unwrap_or((0.0, false));
+                    let mut tampon =
+                        Self::tampon_apres_inactivite(actif_precedent, memoire, valeur_initiale);
                     let mut actif = false;
                     let reponse = ui.add(egui::DragValue::new(&mut tampon).speed(1.0));
                     avec_aide(&reponse, "aide-liaisons-valeur", demande);

@@ -615,10 +615,8 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
         let libelle_fixe = app.texte("cote-fixe");
         let libelle_expression = app.texte("cote-expression");
         let libelle_texte = app.texte("cote-texte");
-        let libelle_alias = app.texte_avec(
-            "cote-alias",
-            &[("prefixe", Argument::from("esquisse."))],
-        );
+        let libelle_alias =
+            app.texte_avec("cote-alias", &[("prefixe", Argument::from("esquisse."))]);
         let libelle_poser = app.texte("cote-poser");
         let libelle_annuler = app.texte("cote-annuler");
         let demande = &mut app.aide;
@@ -626,14 +624,10 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
             .open(&mut visible)
             .default_width(280.0)
             .show(ctx, |ui| {
-                let reponse =
-                    ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
+                let reponse = ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
                 avec_aide(&reponse, "aide-cote-fixe", demande);
-                let reponse = ui.radio_value(
-                    &mut dialogue.fixe,
-                    false,
-                    libelle_expression.as_str(),
-                );
+                let reponse =
+                    ui.radio_value(&mut dialogue.fixe, false, libelle_expression.as_str());
                 avec_aide(&reponse, "aide-cote-expression", demande);
                 if dialogue.fixe {
                     let reponse = ui.add(
@@ -654,10 +648,8 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
                 let alias_pret = !dialogue.alias.trim().is_empty();
                 let pose_possible = dialogue.fixe || (texte_pret && alias_pret);
                 ui.horizontal(|ui| {
-                    let reponse = ui.add_enabled(
-                        pose_possible,
-                        egui::Button::new(libelle_poser.as_str()),
-                    );
+                    let reponse =
+                        ui.add_enabled(pose_possible, egui::Button::new(libelle_poser.as_str()));
                     avec_aide(&reponse, "aide-cote-poser", demande);
                     if reponse.clicked() {
                         poser = true;
