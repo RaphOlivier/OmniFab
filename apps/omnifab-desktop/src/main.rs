@@ -64,7 +64,7 @@ mod esquisse;
 mod fichiers;
 mod i18n;
 
-use aide::avec_aide;
+use aide::{avec_aide, avec_aide_sur_calque};
 use bibliotheque::EntreeProjet;
 use eframe::egui;
 use forge_doc::Document;
@@ -2218,13 +2218,7 @@ impl DemoApp {
             }
             Vue::TroisD => {
                 if self.viewport_wgpu {
-                    let scene = Self::scene_vue_3d(
-                        traces,
-                        maillage,
-                        &self.camera3d,
-                        width,
-                        height,
-                    );
+                    let scene = Self::scene_vue_3d(traces, maillage, &self.camera3d, width, height);
                     dessiner_wireframe(&painter, rect, scene, self.camera3d);
                 } else {
                     ui.label(

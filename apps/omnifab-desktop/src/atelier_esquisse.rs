@@ -18,7 +18,7 @@
 //! résolutions consécutives (ADR-0018 D5).
 
 use crate::DemoApp;
-use crate::aide::avec_aide;
+use crate::aide::{avec_aide, avec_aide_sur_calque};
 use eframe::egui;
 use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};

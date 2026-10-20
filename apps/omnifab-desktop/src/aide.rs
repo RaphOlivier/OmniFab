@@ -43,11 +43,7 @@ pub fn avec_aide_sur_calque(
         *ouverte = Some(help_id.to_string());
         return;
     }
-    let calque = ui.interact(
-        reponse.rect,
-        reponse.id.with(help_id),
-        egui::Sense::click(),
-    );
+    let calque = ui.interact(reponse.rect, reponse.id.with(help_id), egui::Sense::click());
     if calque.clicked_by(egui::PointerButton::Secondary) {
         *ouverte = Some(help_id.to_string());
     }
