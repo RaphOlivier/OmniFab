@@ -6,6 +6,7 @@
 //! L'élévation est bornée juste sous la verticale : la base caméra
 //! (droite, haut, avant) ne dégénère jamais.
 
+use crate::scene::Boite2;
 use crate::scene3d::Boite3D;
 
 /// Distance minimale à la cible, en millimètres.
@@ -21,6 +22,10 @@ const FOVY: f64 = std::f64::consts::FRAC_PI_4;
 const MARGE_CADRAGE: f64 = 1.1;
 /// Sensibilité de l'orbite, en radians par pixel glissé.
 const SENSIBILITE: f64 = 0.01;
+/// Plafond du sol visible : multiple de la distance à la cible
+/// au-delà duquel la grille ne s'étend pas, même vers un horizon
+/// dégagé (validation jalon 2 — borné en nombre de lignes).
+const PLAFOND_SOL: f64 = 32.0;
 
 /// Vecteur de l'espace en millimètres.
 type Vecteur3 = (f64, f64, f64);
@@ -129,6 +134,43 @@ impl Camera3D {
     /// millimètre — sert au pas de la grille au sol.
     pub fn echelle_cible(&self, hauteur_px: f64) -> f64 {
         hauteur_px / (2.0 * self.distance * (FOVY / 2.0).tan())
+    }
+
+    /// Partie du sol (plan z = 0) visible dans le champ de la
+    /// caméra : boîte englobante des points du sol visés par les
+    /// quatre coins de l'écran — un coin qui vise au-dessus de
+    /// l'horizon étend la boîte jusqu'au plafond de distance. La
+    /// grille posée dessus atteint les bords de la vue, quel que
+    /// soit le cadrage du contenu (validation jalon 2).
+    pub fn sol_visible(&self, largeur_px: f64, hauteur_px: f64) -> Boite2 {
+        let cap = self.distance * PLAFOND_SOL;
+        let (cx, cy) = (self.cible_mm.0, self.cible_mm.1);
+        let position = self.position();
+        let (droite, haut, avant) = self.base();
+        let demi = (FOVY / 2.0).tan();
+        let aspect = largeur_px.max(1.0) / hauteur_px.max(1.0);
+        let mut sol = Boite2::du_point(cx, cy);
+        let mut horizon = false;
+        for (x_ndc, y_ndc) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let direction = (
+                avant.0 + x_ndc * demi * aspect * droite.0 + y_ndc * demi * haut.0,
+                avant.1 + x_ndc * demi * aspect * droite.1 + y_ndc * demi * haut.1,
+                avant.2 + x_ndc * demi * aspect * droite.2 + y_ndc * demi * haut.2,
+            );
+            if direction.2 >= -1e-9 || position.2 <= 0.0 {
+                horizon = true;
+                continue;
+            }
+            let t = -position.2 / direction.2;
+            sol = sol.etendre(
+                (position.0 + t * direction.0).clamp(cx - cap, cx + cap),
+                (position.1 + t * direction.1).clamp(cy - cap, cy + cap),
+            );
+        }
+        if horizon {
+            sol = sol.etendre(cx - cap, cy - cap).etendre(cx + cap, cy + cap);
+        }
+        sol
     }
 
     /// Projette un point du monde : position en pixels logiques
@@ -261,5 +303,42 @@ mod tests {
             camera.vers_ecran(derriere, 800.0, 600.0).is_none(),
             "point derrière la caméra ignoré"
         );
+    }
+
+    /// Le sol visible couvre les coins de la vue : la boîte s'étend
+    /// au-delà de la cible dans les deux axes, la grille atteint
+    /// les bords du viewport (validation jalon 2).
+    #[test]
+    fn le_sol_visible_deborde_de_la_cible() {
+        let camera = Camera3D::nouvelle();
+        let sol = camera.sol_visible(800.0, 600.0);
+        assert!(
+            sol.max_x - sol.min_x > 1000.0,
+            "la boîte s'étend en profondeur de vue"
+        );
+        assert!(
+            sol.max_y - sol.min_y > 1000.0,
+            "la boîte s'étend en largeur de vue"
+        );
+    }
+
+    /// Un coin qui vise au-dessus de l'horizon étend le sol visible
+    /// jusqu'au plafond de distance : la grille reste bornée, en
+    /// nombre de lignes comme en étendue (validation jalon 2).
+    #[test]
+    fn le_sol_visible_est_borne_vers_l_horizon() {
+        let camera = Camera3D {
+            cible_mm: (0.0, 0.0, 0.0),
+            distance: 100.0,
+            azimut: 0.0,
+            elevation: 0.0,
+        };
+        let sol = camera.sol_visible(800.0, 600.0);
+        assert_eq!(
+            sol.max_x - sol.min_x,
+            32.0 * 100.0 * 2.0,
+            "plafond de distance"
+        );
+        assert_eq!(sol.min_x, -32.0 * 100.0, "borné autour de la cible");
     }
 }

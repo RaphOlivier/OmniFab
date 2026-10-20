@@ -439,7 +439,8 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         {
             ajouter_contrainte(app, ContrainteEsquisse::Horizontale { ligne });
         }
-        avec_aide(
+        avec_aide_sur_calque(
+            ui,
             &reponse,
             "aide-esquisse-contrainte-horizontale",
             &mut app.aide,
@@ -455,7 +456,8 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         {
             ajouter_contrainte(app, ContrainteEsquisse::Verticale { ligne });
         }
-        avec_aide(
+        avec_aide_sur_calque(
+            ui,
             &reponse,
             "aide-esquisse-contrainte-verticale",
             &mut app.aide,
@@ -471,7 +473,8 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         {
             ajouter_contrainte(app, ContrainteEsquisse::PointFixe { point });
         }
-        avec_aide(
+        avec_aide_sur_calque(
+            ui,
             &reponse,
             "aide-esquisse-contrainte-point-fixe",
             &mut app.aide,
@@ -488,7 +491,12 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             let valeur = Length::from_millimeters(app.cote_distance);
             ajouter_contrainte(app, ContrainteEsquisse::Distance { p1, p2, valeur });
         }
-        avec_aide(&reponse, "aide-esquisse-contrainte-distance", &mut app.aide);
+        avec_aide_sur_calque(
+            ui,
+            &reponse,
+            "aide-esquisse-contrainte-distance",
+            &mut app.aide,
+        );
     }
     // La cote de distance se règle avant de poser la contrainte :
     // la valeur de départ suit la sélection (traiter_clic).
@@ -859,19 +867,23 @@ pub(crate) fn position_point(
 }
 
 /// Angles de la discrétisation d'un arc (radians), sens
-/// trigonométrique : de l'angle de début à l'angle de fin, cercle
-/// entier quand les bornes sont nulles ou inversées.
+/// trigonométrique : de l'angle de début à l'angle de fin en
+/// enroulant le cercle — une fin « avant » le début dans ce sens
+/// balaye le reste du tour au lieu de dessiner un cercle complet,
+/// une fin confondue avec le début dessine le cercle entier
+/// (validation jalon 2 : l'arc ne devait pas changer de forme
+/// selon le côté du troisième clic).
 pub(crate) fn angles_arc(debut: Angle, fin: Angle, segments: usize) -> Vec<f64> {
-    let (debut_rad, fin_rad) = if fin.radians() > debut.radians() {
-        (debut.radians(), fin.radians())
-    } else {
-        (0.0, std::f64::consts::TAU)
-    };
+    let debut_rad = debut.radians();
+    let mut balayage = (fin.radians() - debut_rad).rem_euclid(std::f64::consts::TAU);
+    if balayage == 0.0 {
+        balayage = std::f64::consts::TAU;
+    }
     let denominateur = segments.max(1) as f64;
     let mut angles = Vec::with_capacity(segments + 1);
     for i in 0..=segments {
         let part = i as f64 / denominateur;
-        angles.push(debut_rad + (fin_rad - debut_rad) * part);
+        angles.push(debut_rad + balayage * part);
     }
     angles
 }

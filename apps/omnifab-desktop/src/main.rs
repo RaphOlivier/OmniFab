@@ -1474,18 +1474,20 @@ impl DemoApp {
     fn scene_vue_3d(
         traces: &[Path2],
         maillage: Option<&Mesh>,
+        camera: &Camera3D,
         width: f64,
         height: f64,
-        echelle: f64,
     ) -> Scene3D {
+        let echelle = camera.echelle_cible(height);
         let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
         let mut scene = Scene3D::vide();
-        // La grille au sol couvre la boîte de cadrage, élargie d'un
-        // pas de chaque côté.
-        let boite = Self::boite_cadrage_3d(width, height, Self::boite_scene_3d(traces, maillage));
-        let boite_grille = boite
-            .etendre(boite.min_x - pas, boite.min_y - pas, 0.0)
-            .etendre(boite.max_x + pas, boite.max_y + pas, 0.0);
+        // La grille au sol couvre la partie du sol visible dans le
+        // champ de la caméra : elle atteint les bords de la vue, quel
+        // que soit le cadrage du contenu (validation jalon 2 — elle
+        // s'arrêtait auparavant au contenu).
+        let sol = camera.sol_visible(width, height);
+        let boite_grille = Boite3D::du_point(sol.min_x, sol.min_y, 0.0);
+        let boite_grille = boite_grille.etendre(sol.max_x, sol.max_y, 0.0);
         scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
         scene
             .segments
@@ -1624,7 +1626,7 @@ impl DemoApp {
             self.session.can_undo(),
             egui::Button::new(self.texte("top-annuler")),
         );
-        avec_aide(&reponse, "aide-top-annuler", &mut self.aide);
+        avec_aide_sur_calque(ui, &reponse, "aide-top-annuler", &mut self.aide);
         if reponse.clicked() {
             self.annuler();
         }
@@ -1632,7 +1634,7 @@ impl DemoApp {
             self.session.can_redo(),
             egui::Button::new(self.texte("top-retablir")),
         );
-        avec_aide(&reponse, "aide-top-retablir", &mut self.aide);
+        avec_aide_sur_calque(ui, &reponse, "aide-top-retablir", &mut self.aide);
         if reponse.clicked() {
             self.retablir();
         }
@@ -1668,7 +1670,7 @@ impl DemoApp {
             self.session.geom().traces().is_some(),
             egui::Button::new(self.texte("top-exporter-svg")),
         );
-        avec_aide(&reponse, "aide-top-exporter-svg", &mut self.aide);
+        avec_aide_sur_calque(ui, &reponse, "aide-top-exporter-svg", &mut self.aide);
         if reponse.clicked() {
             let libelle = self.texte("filtre-svg");
             let Some(chemin) = fichiers::chemin_export(&libelle, &["svg"]) else {
@@ -1680,7 +1682,7 @@ impl DemoApp {
             self.session.geom().traces().is_some(),
             egui::Button::new(self.texte("top-exporter-dxf")),
         );
-        avec_aide(&reponse, "aide-top-exporter-dxf", &mut self.aide);
+        avec_aide_sur_calque(ui, &reponse, "aide-top-exporter-dxf", &mut self.aide);
         if reponse.clicked() {
             let libelle = self.texte("filtre-dxf");
             let Some(chemin) = fichiers::chemin_export(&libelle, &["dxf"]) else {
@@ -1692,7 +1694,7 @@ impl DemoApp {
             self.session.geom().maillage().is_some(),
             egui::Button::new(self.texte("top-exporter-stl")),
         );
-        avec_aide(&reponse, "aide-top-exporter-stl", &mut self.aide);
+        avec_aide_sur_calque(ui, &reponse, "aide-top-exporter-stl", &mut self.aide);
         if reponse.clicked() {
             let libelle = self.texte("filtre-stl");
             let Some(chemin) = fichiers::chemin_export(&libelle, &["stl"]) else {
@@ -2216,8 +2218,13 @@ impl DemoApp {
             }
             Vue::TroisD => {
                 if self.viewport_wgpu {
-                    let echelle = self.camera3d.echelle_cible(rect.height() as f64);
-                    let scene = Self::scene_vue_3d(traces, maillage, width, height, echelle);
+                    let scene = Self::scene_vue_3d(
+                        traces,
+                        maillage,
+                        &self.camera3d,
+                        width,
+                        height,
+                    );
                     dessiner_wireframe(&painter, rect, scene, self.camera3d);
                 } else {
                     ui.label(
@@ -2617,7 +2624,8 @@ mod tests {
         let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
         let b = Point2::new(un, Length::ZERO).expect("fini");
         let trace = Path2::from_points(vec![a, b], false);
-        let scene = DemoApp::scene_vue_3d(&[trace], None, 800.0, 600.0, 1.0);
+        let camera = Camera3D::nouvelle();
+        let scene = DemoApp::scene_vue_3d(&[trace], None, &camera, 800.0, 600.0);
         let grille = premiere_couleur(&scene, COULEUR_GRILLE);
         let trace_pos = premiere_couleur(&scene, COULEUR_TRACES);
         let rectangle = premiere_couleur(&scene, COULEUR_RECTANGLE_3D);
@@ -3218,6 +3226,26 @@ mod tests {
         };
         assert_eq!(centre, 0, "centre au premier clic");
         assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du centre au clic");
+    }
+
+    /// L'arc dessiné enroule le cercle quand la fin est « avant » le
+    /// début dans le sens trigonométrique : le balayage traverse zéro
+    /// au lieu de dessiner un cercle complet (validation jalon 2 —
+    /// l'arc changeait de forme selon le côté du troisième clic).
+    #[test]
+    fn l_arc_enroule_le_cercle_sens_horaire() {
+        let angles = atelier_esquisse::angles_arc(
+            forge_units::Angle::from_radians(0.5),
+            forge_units::Angle::from_radians(0.2),
+            8,
+        );
+        assert_eq!(angles.len(), 9, "segments + bornes");
+        assert!((angles[0] - 0.5).abs() < 1e-12, "le départ est conservé");
+        let balayage = std::f64::consts::TAU - 0.3;
+        assert!(
+            (angles[8] - (0.5 + balayage)).abs() < 1e-12,
+            "arrivée enroulée sur l'angle de fin"
+        );
     }
 
     /// L'outil Arc pose le centre, le début puis la fin : trois

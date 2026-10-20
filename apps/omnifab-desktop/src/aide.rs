@@ -28,6 +28,31 @@ pub fn avec_aide(reponse: &egui::Response, help_id: &str, ouverte: &mut Option<S
     }
 }
 
+/// Attache une page d'aide à un widget, y compris désactivé : egui
+/// ne délivre pas les clics aux widgets désactivés, un calque
+/// interactif posé sur le même rectangle reçoit le clic droit à
+/// leur place (ADR-0010, validation jalon 2 — l'aide des boutons
+/// grisés doit s'ouvrir aussi).
+pub fn avec_aide_sur_calque(
+    ui: &egui::Ui,
+    reponse: &egui::Response,
+    help_id: &str,
+    ouverte: &mut Option<String>,
+) {
+    if reponse.clicked_by(egui::PointerButton::Secondary) {
+        *ouverte = Some(help_id.to_string());
+        return;
+    }
+    let calque = ui.interact(
+        reponse.rect,
+        reponse.id.with(help_id),
+        egui::Sense::click(),
+    );
+    if calque.clicked_by(egui::PointerButton::Secondary) {
+        *ouverte = Some(help_id.to_string());
+    }
+}
+
 /// Affiche la fenêtre d'aide, à appeler à chaque trame.
 ///
 /// `ouverte` à `Some(help_id)` ouvre la page du widget, `None` ne
