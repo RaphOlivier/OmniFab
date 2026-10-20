@@ -2,9 +2,7 @@
 //! réservés, protection des nœuds système, cohérence des unités à la
 //! définition, et les trois modes Simple / Cascade / Remplacer.
 
-use forge_values::{
-    ModeSuppression, Origine, ResultatSuppression, Unite, ValueGraph, ValuesError,
-};
+use forge_values::{ModeSuppression, Origine, ResultatSuppression, Unite, ValueGraph, ValuesError};
 
 /// Pose une entrée utilisateur et panique si elle est refusée.
 fn entre(g: &mut ValueGraph, nom: &str, valeur: f64, unite: Option<Unite>) {
@@ -49,7 +47,10 @@ fn supprime(g: &mut ValueGraph, nom: &str, mode: &ModeSuppression) -> ResultatSu
 fn les_prefixes_reserves_sont_refuses() {
     let mut g = ValueGraph::new();
     for nom in ["esquisse.mien", "param.x", "doc.y"] {
-        refuse(g.set_input_unite(nom, 1.0, None, Origine::Utilisateur), "OF-VAL-0008");
+        refuse(
+            g.set_input_unite(nom, 1.0, None, Origine::Utilisateur),
+            "OF-VAL-0008",
+        );
     }
     // le système, lui, peut créer un nœud sous préfixe réservé
     ok(g.set_expression_systeme("esquisse.demi", "2 + 3", None));
@@ -59,7 +60,10 @@ fn les_prefixes_reserves_sont_refuses() {
 fn un_noeud_systeme_est_protege() {
     let mut g = ValueGraph::new();
     ok(g.set_expression_systeme("esquisse.demi", "5", Some(Unite::Millimetre)));
-    refuse_supprim(g.supprimer("esquisse.demi", &ModeSuppression::Simple), "OF-VAL-0008");
+    refuse_supprim(
+        g.supprimer("esquisse.demi", &ModeSuppression::Simple),
+        "OF-VAL-0008",
+    );
 }
 
 #[test]
@@ -69,7 +73,10 @@ fn le_systeme_ne_prend_pas_un_noeud_utilisateur() {
     refuse(g.set_expression_systeme("a", "2", None), "OF-VAL-0008");
     // et réciproquement, l'utilisateur ne touche pas un nœud système
     cote(&mut g, "esquisse.c", "1", None);
-    refuse(g.set_input_unite("esquisse.c", 2.0, None, Origine::Utilisateur), "OF-VAL-0008");
+    refuse(
+        g.set_input_unite("esquisse.c", 2.0, None, Origine::Utilisateur),
+        "OF-VAL-0008",
+    );
 }
 
 #[test]
@@ -77,7 +84,12 @@ fn la_coherence_des_unites_verifiee_a_la_definition() {
     let mut g = ValueGraph::new();
     entre(&mut g, "largeur", 100.0, Some(Unite::Millimetre));
     refuse(
-        g.set_expression_unite("angle", "largeur / 2", Some(Unite::Degre), Origine::Utilisateur),
+        g.set_expression_unite(
+            "angle",
+            "largeur / 2",
+            Some(Unite::Degre),
+            Origine::Utilisateur,
+        ),
         "OF-VAL-0007",
     );
     ok(g.set_expression_unite("brute", "largeur / 2", None, Origine::Utilisateur));

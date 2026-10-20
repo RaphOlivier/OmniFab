@@ -393,9 +393,7 @@ impl ValueGraph {
             }
             ModeSuppression::Remplacer { par } => {
                 let Some(cible) = self.names.get(par).copied() else {
-                    return Err(ValuesError::UnknownValue {
-                        name: par.clone(),
-                    });
+                    return Err(ValuesError::UnknownValue { name: par.clone() });
                 };
                 let mut vus = BTreeSet::new();
                 self.collecte_deps_transitifs(cible, &mut vus);
@@ -463,19 +461,16 @@ impl ValueGraph {
     /// Refuse la création utilisateur sous un préfixe réservé et tout
     /// écrasement d'un nœud d'une autre origine (OF-VAL-0008).
     fn verifie_cree(&self, name: &str, origine: Origine) -> Result<(), ValuesError> {
-        if origine == Origine::Utilisateur
-            && PREFIXES_RESERVES.iter().any(|p| name.starts_with(p))
+        if origine == Origine::Utilisateur && PREFIXES_RESERVES.iter().any(|p| name.starts_with(p))
         {
             return Err(ValuesError::AliasReserve {
                 name: name.to_string(),
             });
         }
-        if let Some(node) = self.noeud_par_nom(name) {
-            if node.origine != origine {
-                return Err(ValuesError::AliasReserve {
-                    name: name.to_string(),
-                });
-            }
+        if let Some(node) = self.noeud_par_nom(name) && node.origine != origine {
+            return Err(ValuesError::AliasReserve {
+                name: name.to_string(),
+            });
         }
         Ok(())
     }
@@ -524,15 +519,15 @@ impl ValueGraph {
                 Some(node) => (node.name.clone(), node.unite),
                 None => continue,
             };
-            if let (Some(u), Some(u_dep)) = (unite, unite_dep) {
-                if u != u_dep {
-                    return Err(ValuesError::UniteIncoherente {
-                        node: nom.clone(),
-                        unite: u,
-                        reference: nom_dep,
-                        unite_reference: u_dep,
-                    });
-                }
+            if let (Some(u), Some(u_dep)) = (unite, unite_dep)
+                && u != u_dep
+            {
+                return Err(ValuesError::UniteIncoherente {
+                    node: nom.clone(),
+                    unite: u,
+                    reference: nom_dep,
+                    unite_reference: u_dep,
+                });
             }
         }
         Ok((parsed, refs))
