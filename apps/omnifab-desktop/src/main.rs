@@ -2044,9 +2044,8 @@ impl DemoApp {
                     // rend le focus pour que le geste déplace la
                     // valeur (piège du glissement, validation C1
                     // round 4).
-                    let presse_glisse = ui.input(|i| {
-                        i.pointer.is_decidedly_dragging() && i.pointer.primary_down()
-                    });
+                    let presse_glisse =
+                        ui.input(|i| i.pointer.is_decidedly_dragging() && i.pointer.primary_down());
                     if presse_glisse && reponse.contains_pointer() {
                         ui.memory_mut(|m| m.surrender_focus(reponse.id));
                     }
@@ -2141,11 +2140,7 @@ impl DemoApp {
             }
         }
         if let Some(nom) = suppression {
-            let references = self
-                .session
-                .graph()
-                .dependants(&nom)
-                .unwrap_or_default();
+            let references = self.session.graph().dependants(&nom).unwrap_or_default();
             if references.is_empty() {
                 // Alias libre : suppression directe (ADR-0019 §6).
                 let _ = self.executer(&RemoveAlias {
@@ -2535,19 +2530,14 @@ impl DemoApp {
                     avec_aide(&reponse, "aide-liaisons-nouveau-nom", demande);
                     let reponse =
                         ui.checkbox(&mut dialogue.expression, libelle_expression.as_str());
-                    avec_aide(
-                        &reponse,
-                        "aide-liaisons-nouveau-expression",
-                        demande,
-                    );
+                    avec_aide(&reponse, "aide-liaisons-nouveau-expression", demande);
                     if dialogue.expression {
                         ui.label(&libelle_texte);
                         let reponse = ui.text_edit_singleline(&mut dialogue.texte);
                         avec_aide(&reponse, "aide-liaisons-nouveau-texte", demande);
                     } else {
                         ui.label(&libelle_valeur);
-                        let reponse =
-                            ui.add(egui::DragValue::new(&mut dialogue.valeur).speed(1.0));
+                        let reponse = ui.add(egui::DragValue::new(&mut dialogue.valeur).speed(1.0));
                         avec_aide(&reponse, "aide-liaisons-nouveau-valeur", demande);
                     }
                     ui.label(&libelle_unite);
@@ -2607,17 +2597,14 @@ impl DemoApp {
             let mut fermer = false;
             let titre = self.texte("liaisons-suppression-titre");
             let n = dialogue.references.len();
-            let libelle_texte = self.texte_avec(
-                "liaisons-suppression-texte",
-                &[("n", Argument::from(n))],
-            );
+            let libelle_texte =
+                self.texte_avec("liaisons-suppression-texte", &[("n", Argument::from(n))]);
             let libelle_cascade = self.texte_avec(
                 "liaisons-suppression-cascade",
                 &[("n", Argument::from(dialogue.references.len()))],
             );
             let libelle_remplacer = self.texte("liaisons-suppression-remplacer");
-            let libelle_bouton_remplacer =
-                self.texte("liaisons-suppression-remplacer-bouton");
+            let libelle_bouton_remplacer = self.texte("liaisons-suppression-remplacer-bouton");
             let libelle_annuler = self.texte("liaisons-suppression-annuler");
             let libelle_aucun = self.texte("liaisons-suppression-aucun-candidat");
             let candidats = self
@@ -2634,15 +2621,12 @@ impl DemoApp {
                             .is_some_and(|info| !info.systeme)
                 })
                 .collect::<Vec<_>>();
-            let cascade_possible = !dialogue
-                .references
-                .iter()
-                .any(|reference| {
-                    self.session
-                        .graph()
-                        .noeud(reference)
-                        .is_some_and(|info| info.systeme)
-                });
+            let cascade_possible = !dialogue.references.iter().any(|reference| {
+                self.session
+                    .graph()
+                    .noeud(reference)
+                    .is_some_and(|info| info.systeme)
+            });
             let demande = &mut self.aide;
             egui::Window::new(titre)
                 .open(&mut visible)
@@ -2654,11 +2638,7 @@ impl DemoApp {
                     }
                     let reponse =
                         ui.add_enabled(cascade_possible, egui::Button::new(&libelle_cascade));
-                    avec_aide(
-                        &reponse,
-                        "aide-liaisons-suppression-cascade",
-                        demande,
-                    );
+                    avec_aide(&reponse, "aide-liaisons-suppression-cascade", demande);
                     if reponse.clicked() {
                         cascade = true;
                     }
@@ -2680,11 +2660,7 @@ impl DemoApp {
                                 }
                             })
                             .response;
-                        avec_aide(
-                            &reponse,
-                            "aide-liaisons-suppression-remplacer",
-                            demande,
-                        );
+                        avec_aide(&reponse, "aide-liaisons-suppression-remplacer", demande);
                         dialogue.remplacement = choix;
                         let reponse = ui.button(&libelle_bouton_remplacer);
                         avec_aide(
