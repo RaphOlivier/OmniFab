@@ -78,7 +78,7 @@ use forge_render::{
 use forge_session::{
     AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_ALIAS_REMOVED,
     EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse,
-    EsquisseProjection, ImportMesh, ImportTraces, InfoNoeud, ModeSuppression, RemoveAlias, Session,
+    EsquisseProjection, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
     SetExpression, SetInput, Unite, ValeurCote,
 };
 use forge_units::Length;
@@ -1970,7 +1970,11 @@ impl DemoApp {
             let valeur_initiale = valeur.ok();
             let demande = &mut self.aide;
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(nom.as_str()).strong(info.expression.is_some()));
+                if info.expression.is_some() {
+                    ui.label(egui::RichText::new(nom.as_str()).strong());
+                } else {
+                    ui.label(nom.as_str());
+                }
                 if info.systeme {
                     // Cote système : valeur calculée en lecture seule,
                     // ni édition ni suppression (ADR-0019 §6).
@@ -2065,7 +2069,7 @@ impl DemoApp {
                 // cohérence est revérifiée à la définition
                 // (OF-VAL-0007).
                 let mut choix = info.unite;
-                let reponse = egui::ComboBox::from_id_source(format!("unite-{nom}"))
+                let reponse = egui::ComboBox::from_id_salt(format!("unite-{nom}"))
                     .selected_text(Self::texte_unite(choix, &libelle_unite_aucune))
                     .show_ui(ui, |ui| {
                         ui.selectable_value(&mut choix, None, &libelle_unite_aucune);
@@ -2500,7 +2504,7 @@ impl DemoApp {
     }
 }
 
-impl eframe::App for DemoApp {
+impl DemoApp {
     /// Fenêtres de dialogue des liaisons (ADR-0019 §6) : création
     /// d'alias et suppression d'un alias référencé — un refus laisse
     /// le dialogue ouvert, la saisie reste corrigeable
@@ -2548,7 +2552,7 @@ impl eframe::App for DemoApp {
                     }
                     ui.label(&libelle_unite);
                     let mut choix = dialogue.unite;
-                    let reponse = egui::ComboBox::from_id_source("unite-nouvel-alias")
+                    let reponse = egui::ComboBox::from_id_salt("unite-nouvel-alias")
                         .selected_text(Self::texte_unite(choix, &libelle_unite_aucune))
                         .show_ui(ui, |ui| {
                             ui.selectable_value(&mut choix, None, &libelle_unite_aucune);
@@ -2668,7 +2672,7 @@ impl eframe::App for DemoApp {
                         } else {
                             candidats[0].clone()
                         };
-                        let reponse = egui::ComboBox::from_id_source("remplacement-alias")
+                        let reponse = egui::ComboBox::from_id_salt("remplacement-alias")
                             .selected_text(choix.clone())
                             .show_ui(ui, |ui| {
                                 for candidat in &candidats {
@@ -2722,7 +2726,9 @@ impl eframe::App for DemoApp {
             }
         }
     }
+}
 
+impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Raccourcis : Cmd (Ctrl sous Windows/Linux) annule, Cmd+Y ou
         // Cmd+Maj+Z rétablit ; aucun raccourci quand un champ de texte
