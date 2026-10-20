@@ -34,7 +34,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libeigen3-dev libfmt-dev libboost-dev libclang-dev \
-            xvfb imagemagick mesa-vulkan-drivers libgl1 x11-utils
+            xvfb imagemagick mesa-vulkan-drivers libgl1 x11-utils \
+            libxkbcommon-x11-0
       - name: Compilation du demonstrateur
         run: cargo build -p omnifab-desktop --locked
       - name: Captures des scenarios
