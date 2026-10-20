@@ -3250,12 +3250,16 @@ mod tests {
         })
         .expect("cote pilotée");
         let figee = app.session.croquis_pour_resolution().expect("croquis figé");
-        let (_, contrainte) = figee
-            .contrainte_de_cote("esquisse.demi")
+        // La cote figée ne porte plus son alias (Expression →
+        // Fixe) : la contrainte Distance se cherche directement.
+        let valeur = figee
+            .contraintes()
+            .iter()
+            .find_map(|(_, contrainte)| match contrainte {
+                ContrainteEsquisse::Distance { valeur, .. } => Some(valeur.clone()),
+                _ => None,
+            })
             .expect("cote présente");
-        let ContrainteEsquisse::Distance { valeur, .. } = contrainte else {
-            panic!("contrainte de distance");
-        };
         let ValeurCote::Fixe { mm } = valeur else {
             panic!("cote figée pour le solveur");
         };
@@ -3267,12 +3271,16 @@ mod tests {
         })
         .expect("largeur");
         let figee = app.session.croquis_pour_resolution().expect("croquis figé");
-        let (_, contrainte) = figee
-            .contrainte_de_cote("esquisse.demi")
+        // La cote figée ne porte plus son alias (Expression →
+        // Fixe) : la contrainte Distance se cherche directement.
+        let valeur = figee
+            .contraintes()
+            .iter()
+            .find_map(|(_, contrainte)| match contrainte {
+                ContrainteEsquisse::Distance { valeur, .. } => Some(valeur.clone()),
+                _ => None,
+            })
             .expect("cote présente");
-        let ContrainteEsquisse::Distance { valeur, .. } = contrainte else {
-            panic!("contrainte de distance");
-        };
         let ValeurCote::Fixe { mm } = valeur else {
             panic!("cote figée pour le solveur");
         };
