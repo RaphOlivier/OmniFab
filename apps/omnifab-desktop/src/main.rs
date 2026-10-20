@@ -2000,10 +2000,10 @@ impl DemoApp {
                     // Engagement seulement si le texte a changé : un
                     // faux événement tronquerait les groupes défaits
                     // (ADR-0008, validation C1 round 6).
-                    if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        if tampon != courante {
-                            expression_modifiee = Some(nom.clone());
-                        }
+                    if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        && tampon != courante
+                    {
+                        expression_modifiee = Some(nom.clone());
                     }
                     if let Ok(calcul) = &valeur {
                         ui.small(format!("{calcul}"));
@@ -2096,16 +2096,15 @@ impl DemoApp {
                 unite,
             });
         }
-        if let Some(nom) = expression_modifiee {
-            if let Some(info) = self.session.graph().noeud(&nom)
-                && let Some((texte, _)) = self.tampon_expressions.get(&nom)
-            {
-                let _ = self.executer(&SetExpression {
-                    name: nom,
-                    expression: texte.clone(),
-                    unite: info.unite,
-                });
-            }
+        if let Some(nom) = expression_modifiee
+            && let Some(info) = self.session.graph().noeud(&nom)
+            && let Some((texte, _)) = self.tampon_expressions.get(&nom)
+        {
+            let _ = self.executer(&SetExpression {
+                name: nom,
+                expression: texte.clone(),
+                unite: info.unite,
+            });
         }
         if let Some((nom, unite)) = unite_modifiee {
             // L'unité se redéclare en réémettant la définition : la
