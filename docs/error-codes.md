@@ -25,6 +25,9 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-VAL-0004 | Erreur d'évaluation | Division par zéro, racine carrée d'un nombre négatif, résultat non fini (NaN ou infini) | Corriger les données d'entrée ou l'expression |
 | OF-VAL-0005 | Valeur inconnue | Lecture d'un nom absent du graphe | Vérifier le nom demandé |
 | OF-VAL-0006 | Valeur d'entrée non finie | Écriture d'un NaN ou d'un infini par set_input | Corriger la valeur d'entrée |
+| OF-VAL-0007 | Incohérence d'unités à la définition | Expression ou entrée déclarée d'une unité incompatible avec ses références (ex. `deg` lisant du `mm`) | Corriger l'unité déclarée |
+| OF-VAL-0008 | Alias réservé | Création sous un préfixe système (`esquisse.`, tableaux) ou écrasement d'un nœud d'une autre origine | Choisir un autre nom |
+| OF-VAL-0009 | Alias référencé | Suppression `Simple` demandée alors que des formules ou cotes lisent encore cet alias | Utiliser Cascade ou Remplacer, ou corriger d'abord les références |
 
 ## forge-doc (DOC) — conteneur et journal d'événements
 

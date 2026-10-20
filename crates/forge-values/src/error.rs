@@ -3,6 +3,8 @@
 
 use thiserror::Error;
 
+use crate::Unite;
+
 /// Erreur du moteur de liaisons. Chaque variante porte un code stable
 /// documenté dans `docs/error-codes.md`.
 #[derive(Debug, Error)]
@@ -50,6 +52,35 @@ pub enum ValuesError {
         /// Nom de la valeur fautive.
         name: String,
     },
+    /// Incohérence d'unités à la définition (OF-VAL-0007) : une valeur
+    /// déclarée d'une unité lit une référence d'une autre unité.
+    #[error("OF-VAL-0007 : « {node} » en {unite} lit « {reference} » en {unite_reference}")]
+    UniteIncoherente {
+        /// Nom de la valeur portant la définition fautive.
+        node: String,
+        /// Unité déclarée de la valeur fautive.
+        unite: Unite,
+        /// Nom de la référence incompatible.
+        reference: String,
+        /// Unité déclarée de la référence.
+        unite_reference: Unite,
+    },
+    /// Alias réservé (OF-VAL-0008) : création sous un préfixe système
+    /// ou écrasement d'un nœud d'une autre origine.
+    #[error("OF-VAL-0008 : alias réservé : « {name} »")]
+    AliasReserve {
+        /// Nom de l'alias refusé.
+        name: String,
+    },
+    /// Alias encore référencé (OF-VAL-0009) : suppression `Simple`
+    /// impossible tant que des formules lisent l'alias.
+    #[error("OF-VAL-0009 : alias « {name} » référencé par : {references}")]
+    AliasReference {
+        /// Nom de l'alias supprimé.
+        name: String,
+        /// Noms des valeurs qui le référencent, joints par « , ».
+        references: String,
+    },
 }
 
 impl ValuesError {
@@ -64,6 +95,9 @@ impl ValuesError {
             Self::Evaluation { .. } => "OF-VAL-0004",
             Self::UnknownValue { .. } => "OF-VAL-0005",
             Self::NonFiniteInput { .. } => "OF-VAL-0006",
+            Self::UniteIncoherente { .. } => "OF-VAL-0007",
+            Self::AliasReserve { .. } => "OF-VAL-0008",
+            Self::AliasReference { .. } => "OF-VAL-0009",
         }
     }
 }

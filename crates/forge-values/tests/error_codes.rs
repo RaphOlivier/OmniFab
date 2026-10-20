@@ -3,7 +3,7 @@
 //! deux sens (chaque code du registre VAL est porté par une variante,
 //! chaque variante porte un code du registre).
 
-use forge_values::ValuesError;
+use forge_values::{Unite, ValuesError};
 
 const REGISTRY: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -33,6 +33,19 @@ fn toutes_les_variantes() -> Vec<ValuesError> {
         },
         ValuesError::NonFiniteInput {
             name: "x".to_string(),
+        },
+        ValuesError::UniteIncoherente {
+            node: "x".to_string(),
+            unite: Unite::Degre,
+            reference: "y".to_string(),
+            unite_reference: Unite::Millimetre,
+        },
+        ValuesError::AliasReserve {
+            name: "esquisse.x".to_string(),
+        },
+        ValuesError::AliasReference {
+            name: "x".to_string(),
+            references: "y".to_string(),
         },
     ]
 }
