@@ -543,8 +543,7 @@ impl Command for AddConstraint {
         if !alias.starts_with("esquisse.") {
             return Err(SessionError::CommandRejected {
                 reason: format!(
-                    "l'alias d'une cote doit vivre sous le préfixe réservé "
-                    "« esquisse. » : « {alias} »"
+                    "l'alias d'une cote vit sous le préfixe réservé « esquisse. » : « {alias} »"
                 ),
             });
         }
