@@ -1967,7 +1967,7 @@ impl DemoApp {
                 continue;
             };
             let valeur = self.session.graph_mut().value(nom);
-            let valeur_initiale = valeur.ok();
+            let valeur_initiale = valeur.as_ref().ok().copied();
             let demande = &mut self.aide;
             ui.horizontal(|ui| {
                 if info.expression.is_some() {
