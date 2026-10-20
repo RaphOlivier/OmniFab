@@ -15,7 +15,11 @@
 //! (ADR-0018 D4/D5). Les contraintes du lot 3c-4 partent de la
 //! sélection : le panneau affiche les degrés de liberté et le
 //! diagnostic de redondance n'apparaît que stable sur deux
-//! résolutions consécutives (ADR-0018 D5).
+//! résolutions consécutives (ADR-0018 D5). La cote de distance
+//! passe par le dialogue de cote (ADR-0019 §6) : valeur fixe ou
+//! expression pilotée par un alias sous le préfixe réservé
+//! « esquisse. », posée par la commande AddConstraint seulement
+//! au clic sur « Poser ».
 
 use crate::DemoApp;
 use crate::aide::{avec_aide, avec_aide_sur_calque};
@@ -41,6 +45,25 @@ const SEGMENTS_ARC: usize = 32;
 /// contraintes relient au plus deux entités — la plus ancienne
 /// cède sa place à la nouvelle.
 const SELECTION_MAX: usize = 2;
+/// Dialogue de cote de distance (ADR-0019 §6) : valeur fixe ou
+/// expression pilotée par alias — état de l'app UI, jamais un
+/// événement tant que « Poser » n'est pas cliqué.
+pub(crate) struct DialogueCote {
+    /// Premier point de la cote.
+    pub(crate) p1: u32,
+    /// Second point de la cote.
+    pub(crate) p2: u32,
+    /// `true` : valeur fixe ; `false` : expression pilotée.
+    pub(crate) fixe: bool,
+    /// Valeur fixe, en millimètres.
+    pub(crate) mm: f64,
+    /// Texte de l'expression pilotée.
+    pub(crate) texte: String,
+    /// Alias de la cote : suffixe sous le préfixe réservé
+    /// `esquisse.`.
+    pub(crate) alias: String,
+}
+
 /// Couleur de l'aperçu du geste : la teinte des entités,
 /// translucide pour se lire au-dessus du croquis posé —
 /// `Color32::from_rgba_unmultiplied` n'est pas const (E0015) :
@@ -180,9 +203,10 @@ pub(crate) fn viser(
 /// (ADR-0018 D7) : celle de l'édition courante du croquis, aucune
 /// sinon — les positions retombent sur les graines du journal.
 fn resolu_frais(app: &DemoApp) -> Option<&CroquisResolu> {
+    let cle = (app.session.esquisse().edition(), app.generation_liaisons);
     app.croquis_resolu
         .as_ref()
-        .filter(|(edition, _)| *edition == app.session.esquisse().edition())
+        .filter(|(cle_cache, _)| *cle_cache == cle)
         .and_then(|(_, resultat)| resultat.as_ref().ok())
 }
 
@@ -488,14 +512,25 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         if reponse.clicked()
             && let Some((p1, p2)) = deux_points_selectionnes(app)
         {
-            let contrainte = ContrainteEsquisse::Distance {
+            // Dialogue de cote (ADR-0019 §6) : valeur fixe ou
+            // expression pilotée, l'alias vit sous le préfixe
+            // réservé « esquisse. » ; la valeur de départ suit la
+            // sélection (traiter_clic).
+            let cotes = app
+                .session
+                .graph()
+                .names()
+                .iter()
+                .filter(|nom| nom.starts_with("esquisse."))
+                .count();
+            app.dialogue_cote = Some(DialogueCote {
                 p1,
                 p2,
-                valeur: ValeurCote::Fixe {
-                    mm: Length::from_millimeters(app.cote_distance),
-                },
-            };
-            ajouter_contrainte(app, contrainte);
+                fixe: true,
+                mm: app.cote_distance,
+                texte: String::new(),
+                alias: format!("cote-{cotes}"),
+            });
         }
         avec_aide_sur_calque(
             ui,
@@ -503,13 +538,6 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             "aide-esquisse-contrainte-distance",
             &mut app.aide,
         );
-    }
-    // La cote de distance se règle avant de poser la contrainte :
-    // la valeur de départ suit la sélection (traiter_clic).
-    if deux_points_selectionnes(app).is_some() {
-        ui.label(app.texte("esquisse-cote-distance"));
-        let reponse = ui.add(egui::DragValue::new(&mut app.cote_distance).speed(1.0));
-        avec_aide(&reponse, "aide-esquisse-cote-distance", &mut app.aide);
     }
     // Degrés de liberté (ADR-0018 D5) : lus sur le cache résolu
     // frais — rien pendant une résolution en vol, la valeur
@@ -568,6 +596,107 @@ fn deux_points_selectionnes(app: &DemoApp) -> Option<(u32, u32)> {
 /// rien au journal et le message d'état reste fidèle (ADR-0016 C4).
 pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquisse) {
     let _ = app.executer(&AddConstraint { contrainte });
+}
+
+/// Fenêtre du dialogue de cote (ADR-0019 §6) : valeur fixe ou
+/// expression pilotée par un alias sous le préfixe réservé
+/// « esquisse. ». La pose passe par `AddConstraint` ; un refus
+/// laisse le dialogue ouvert, la saisie reste corrigeable
+/// (ADR-0016 C4). État de l'app UI tant que « Poser » n'est pas
+/// cliqué : jamais un événement avant.
+pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
+    if let Some(mut dialogue) = app.dialogue_cote.take() {
+        let mut visible = true;
+        let mut poser = false;
+        let mut fermer = false;
+        // Textes traduits avant la fenêtre : la pose n'emprunte
+        // plus l'app dans les closures (ADR-0010).
+        let titre = app.texte("cote-titre");
+        let libelle_fixe = app.texte("cote-fixe");
+        let libelle_expression = app.texte("cote-expression");
+        let libelle_texte = app.texte("cote-texte");
+        let libelle_alias = app.texte_avec(
+            "cote-alias",
+            &[("prefixe", Argument::from("esquisse."))],
+        );
+        let libelle_poser = app.texte("cote-poser");
+        let libelle_annuler = app.texte("cote-annuler");
+        let demande = &mut app.aide;
+        egui::Window::new(titre)
+            .open(&mut visible)
+            .default_width(280.0)
+            .show(ctx, |ui| {
+                let reponse =
+                    ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
+                avec_aide(&reponse, "aide-cote-fixe", demande);
+                let reponse = ui.radio_value(
+                    &mut dialogue.fixe,
+                    false,
+                    libelle_expression.as_str(),
+                );
+                avec_aide(&reponse, "aide-cote-expression", demande);
+                if dialogue.fixe {
+                    let reponse = ui.add(
+                        egui::DragValue::new(&mut dialogue.mm)
+                            .speed(1.0)
+                            .suffix(" mm"),
+                    );
+                    avec_aide(&reponse, "aide-cote-mm", demande);
+                } else {
+                    ui.label(&libelle_texte);
+                    let reponse = ui.text_edit_singleline(&mut dialogue.texte);
+                    avec_aide(&reponse, "aide-cote-texte", demande);
+                }
+                ui.label(&libelle_alias);
+                let reponse = ui.text_edit_singleline(&mut dialogue.alias);
+                avec_aide(&reponse, "aide-cote-alias", demande);
+                let texte_pret = !dialogue.texte.trim().is_empty();
+                let alias_pret = !dialogue.alias.trim().is_empty();
+                let pose_possible = dialogue.fixe || (texte_pret && alias_pret);
+                ui.horizontal(|ui| {
+                    let reponse = ui.add_enabled(
+                        pose_possible,
+                        egui::Button::new(libelle_poser.as_str()),
+                    );
+                    avec_aide(&reponse, "aide-cote-poser", demande);
+                    if reponse.clicked() {
+                        poser = true;
+                    }
+                    let reponse = ui.button(&libelle_annuler);
+                    avec_aide(&reponse, "aide-cote-annuler", demande);
+                    if reponse.clicked() {
+                        fermer = true;
+                    }
+                });
+            });
+        if visible && !fermer && poser {
+            let valeur = if dialogue.fixe {
+                ValeurCote::Fixe {
+                    mm: Length::from_millimeters(dialogue.mm),
+                }
+            } else {
+                ValeurCote::Expression {
+                    texte: dialogue.texte.clone(),
+                    alias: format!("esquisse.{}", dialogue.alias.trim()),
+                }
+            };
+            ajouter_contrainte(
+                app,
+                ContrainteEsquisse::Distance {
+                    p1: dialogue.p1,
+                    p2: dialogue.p2,
+                    valeur,
+                },
+            );
+            // Un refus laisse le dialogue ouvert : la saisie reste
+            // corrigeable (ADR-0016 C4).
+            if app.error.is_some() {
+                app.dialogue_cote = Some(dialogue);
+            }
+        } else if visible && !fermer {
+            app.dialogue_cote = Some(dialogue);
+        }
+    }
 }
 
 /// Ligne du croquis visée par un clic (ADR-0018 D5, lot 3c-4) : la

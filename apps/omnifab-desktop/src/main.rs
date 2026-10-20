@@ -76,9 +76,10 @@ use forge_render::{
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
 };
 use forge_session::{
-    AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_EXPRESSION_SET,
-    EntiteEsquisse, EsquisseProjection, ImportMesh, ImportTraces, Session, SetExpression, SetInput,
-    ValeurCote,
+    AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_ALIAS_REMOVED,
+    EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse,
+    EsquisseProjection, ImportMesh, ImportTraces, InfoNoeud, ModeSuppression, RemoveAlias, Session,
+    SetExpression, SetInput, Unite, ValeurCote,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -92,7 +93,7 @@ type RenderState = eframe::egui_wgpu::RenderState;
 /// Acteur des événements écrits par le démonstrateur (ADR-0011).
 const ACTEUR: &str = "desktop.demo";
 /// Expression initiale de la diagonale du rectangle.
-const DEFAULT_DIAGONAL_EXPR: &str = "sqrt(width_mm * width_mm + height_mm * height_mm)";
+const DEFAULT_DIAGONAL_EXPR: &str = "sqrt(largeur * largeur + hauteur * hauteur)";
 /// Couleur du wireframe 3D du maillage, RGBA normalisé — parité avec
 /// le painter egui (40, 220, 220) (ADR-0015, phase C2).
 const COULEUR_WIREFRAME: Couleur = [40.0 / 255.0, 220.0 / 255.0, 220.0 / 255.0, 1.0];
@@ -221,9 +222,10 @@ enum Travail {
     ResoudreEsquisse {
         /// Génération de l’état au moment de l’envoi.
         generation: u64,
-        /// Numéro d’édition du croquis au moment de l’envoi : clé du
-        /// cache des positions résolues.
-        edition: u64,
+        /// Clé du cache des positions résolues au moment de l’envoi :
+        /// numéro d’édition du croquis et génération des liaisons
+        /// (ADR-0019 §6).
+        cle: (u64, u64),
         /// Clone de la projection du croquis : entités, contraintes
         /// et graines du journal.
         croquis: EsquisseProjection,
@@ -332,13 +334,13 @@ impl Travail {
             }
             Travail::ResoudreEsquisse {
                 generation,
-                edition,
+                cle,
                 croquis,
             } => {
                 let resultat = esquisse::resoudre(&croquis);
                 Retour::EsquisseResolue {
                     generation,
-                    edition,
+                    cle,
                     resultat,
                 }
             }
@@ -396,8 +398,8 @@ enum Retour {
     EsquisseResolue {
         /// Génération de l’état au moment de l’envoi du travail.
         generation: u64,
-        /// Numéro d’édition du croquis résolu.
-        edition: u64,
+        /// Clé (édition, liaisons) du croquis résolu.
+        cle: (u64, u64),
         /// Positions et diagnostic, ou message d’échec.
         resultat: Result<CroquisResolu, String>,
     },
@@ -542,12 +544,66 @@ fn ecris_fichier(generation: u64, chemin: &Path, octets: &[u8]) -> Retour {
     }
 }
 
+/// Dialogue « + Nouvel alias » (ADR-0019 §6) : nom, entrée ou
+/// expression, unité — état de l'app UI, jamais un événement tant
+/// que « Poser » n'est pas cliqué.
+struct DialogueNouvelAlias {
+    /// Nom de l'alias à créer.
+    nom: String,
+    /// `true` : expression calculée ; `false` : entrée numérique.
+    expression: bool,
+    /// Valeur de l'entrée.
+    valeur: f64,
+    /// Texte de l'expression.
+    texte: String,
+    /// Unité déclarée (`None` = sans unité).
+    unite: Option<Unite>,
+}
+
+/// Dialogue de suppression d'un alias référencé (ADR-0019 §6,
+/// amendement 2026-10-20) : les formules concernées sont listées, la
+/// suppression propose cascade, remplacement ou annulation.
+struct DialogueSuppression {
+    /// Alias demandé en suppression.
+    alias: String,
+    /// Formules et cotes qui lisent encore l'alias.
+    references: Vec<String>,
+    /// Alias de remplacement choisi (mode Remplacer).
+    remplacement: String,
+}
+
+/// Un événement touche-t-il le graphe des liaisons ? Entrées,
+/// expressions et suppressions d'alias redéfinissent des nœuds, la
+/// mise à jour d'une contrainte réécrit une cote pilotée
+/// (ADR-0019 §1) : la génération des liaisons avance et la
+/// résolution du croquis re-fige ses cotes (ADR-0019 §6).
+fn touche_les_liaisons(evenement: &str) -> bool {
+    evenement == EVENT_INPUT_SET
+        || evenement == EVENT_EXPRESSION_SET
+        || evenement == EVENT_ALIAS_REMOVED
+        || evenement == EVENT_SKETCH_CONSTRAINT_UPDATED
+}
+
+/// `help_id` de la page d'aide d'un code d'erreur du registre : le
+/// message du moteur porte son code stable en tête (ADR-0003), la
+/// page d'aide existe pour chaque OF-VAL-NNNN (ADR-0019 §6).
+fn aide_du_code(message: &str) -> String {
+    format!(
+        "aide-{}",
+        message.split(' ').next().unwrap_or("").to_lowercase()
+    )
+}
+
 struct DemoApp {
     /// Session de travail : document, projections, undo/redo
     /// (ADR-0008/0011).
     session: Session,
-    /// Tampon d'édition de l'expression de la diagonale.
-    expr_buf: String,
+    /// Tampons d'édition des expressions des alias calculés : le
+    /// champ texte affiche l'expression du début de frame, un
+    /// rechargement du graphe à chaque frame écraserait la saisie
+    /// en cours (leçon round 6 egui) — chaque alias garde son
+    /// texte et son activité d'une frame à l'autre.
+    tampon_expressions: BTreeMap<String, (String, bool)>,
     /// Dernière erreur à afficher dans le viewport.
     error: Option<String>,
     /// Dernier message d'information à afficher dans le viewport.
@@ -590,7 +646,7 @@ struct DemoApp {
     /// frame figeait le chiffre pendant le geste — chaque champ garde
     /// donc sa valeur et son activité d'une frame à l'autre
     /// (validation C1 round 6).
-    tampon_dimensions: BTreeMap<&'static str, (f64, bool)>,
+    tampon_dimensions: BTreeMap<String, (f64, bool)>,
     /// Émetteur vers le fil de travail : lectures, parses et exports
     /// hors du fil d'interface (ADR-0016 C1) ; `None` si le fil n'a
     /// pas pu démarrer.
@@ -616,15 +672,17 @@ struct DemoApp {
     /// Choix des unités d'un maillage minuscule, en attente de la
     /// réponse de l'utilisateur (ADR-0017).
     demande_echelle: Option<DemandeEchelle>,
-    /// Cache des positions résolues du croquis, clé par numéro
-    /// d’édition de la projection (ADR-0018 D3) : état dérivé en
-    /// mémoire, jamais sérialisé ; un échec est mémorisé à sa
-    /// clé — pas re-résolu à chaque frame — et les graines du
-    /// journal restent la vérité affichable (ADR-0018 D7).
-    croquis_resolu: Option<(u64, Result<CroquisResolu, String>)>,
-    /// Numéro d’édition en cours de résolution au fil de travail :
-    /// une seule résolution en vol (ADR-0016 C1).
-    resolution_en_attente: Option<u64>,
+    /// Cache des positions résolues du croquis, clé par (numéro
+    /// d’édition, génération des liaisons) (ADR-0018 D3,
+    /// ADR-0019 §6) : état dérivé en mémoire, jamais sérialisé ; un
+    /// échec est mémorisé à sa clé — pas re-résolu à chaque
+    /// frame — et les graines du journal restent la vérité
+    /// affichable (ADR-0018 D7). Une cote pilotée re-figée repart
+    /// en résolution même sans changement du croquis.
+    croquis_resolu: Option<((u64, u64), Result<CroquisResolu, String>)>,
+    /// Clé (édition, liaisons) en cours de résolution au fil de
+    /// travail : une seule résolution en vol (ADR-0016 C1).
+    resolution_en_attente: Option<(u64, u64)>,
     /// Outil actif du mode esquisse (ADR-0018, lot 3c) : état de
     /// l’app UI, jamais un événement.
     outil: atelier_esquisse::OutilEsquisse,
@@ -652,8 +710,23 @@ struct DemoApp {
     redondances_precedentes: Option<Vec<u32>>,
     /// Valeur en millimètres de la cote de distance en cours de
     /// saisie (ADR-0018 D5, lot 3c-4) : état de l'app UI, jamais un
-    /// événement — la commande AddConstraint l'emporte au journal.
+    /// événement — elle préremplit le dialogue de cote.
     cote_distance: f64,
+    /// Génération des liaisons (ADR-0019 §6) : avance à chaque
+    /// commande ou annulation qui touche le graphe des valeurs —
+    /// les cotes pilotées se re-figent et la résolution repart
+    /// même sans changement du croquis (checklist §8).
+    generation_liaisons: u64,
+    /// Dialogue « + Nouvel alias » ouvert (ADR-0019 §6) : état de
+    /// l'app UI, jamais un événement tant que « Poser » n'est pas
+    /// cliqué.
+    dialogue_nouvel_alias: Option<DialogueNouvelAlias>,
+    /// Dialogue de suppression d'un alias référencé (ADR-0019 §6) :
+    /// cascade, remplacement ou annulation.
+    dialogue_suppression: Option<DialogueSuppression>,
+    /// Dialogue de cote de l'atelier esquisse : valeur fixe ou
+    /// expression pilotée (ADR-0019 §6).
+    dialogue_cote: Option<atelier_esquisse::DialogueCote>,
 }
 
 impl DemoApp {
@@ -687,7 +760,7 @@ impl DemoApp {
             .then_some(emetteur_travaux);
         let mut app = Self {
             session: Session::new(ACTEUR),
-            expr_buf: String::new(),
+            tampon_expressions: BTreeMap::new(),
             error: None,
             info: None,
             i18n,
@@ -719,6 +792,10 @@ impl DemoApp {
             redondances_affichees: None,
             redondances_precedentes: None,
             cote_distance: 100.0,
+            generation_liaisons: 0,
+            dialogue_nouvel_alias: None,
+            dialogue_suppression: None,
+            dialogue_cote: None,
         };
         app.reinitialiser();
         app
@@ -730,7 +807,12 @@ impl DemoApp {
     fn reinitialiser(&mut self) {
         self.generation += 1;
         self.session = Session::new(ACTEUR);
-        self.expr_buf = DEFAULT_DIAGONAL_EXPR.to_string();
+        self.tampon_dimensions.clear();
+        self.tampon_expressions.clear();
+        self.generation_liaisons += 1;
+        self.dialogue_nouvel_alias = None;
+        self.dialogue_suppression = None;
+        self.dialogue_cote = None;
         self.effacer_messages();
         self.cache = None;
         self.cache_maillage = None;
@@ -750,19 +832,19 @@ impl DemoApp {
         self.redondances_precedentes = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
-            name: "width_mm".into(),
+            name: "largeur".into(),
             value: 800.0,
-            unite: None,
+            unite: Some(Unite::Millimetre),
         });
         let _ = self.executer(&SetInput {
-            name: "height_mm".into(),
+            name: "hauteur".into(),
             value: 600.0,
-            unite: None,
+            unite: Some(Unite::Millimetre),
         });
         let _ = self.executer(&SetExpression {
-            name: "diagonal".into(),
+            name: "diagonale".into(),
             expression: DEFAULT_DIAGONAL_EXPR.into(),
-            unite: None,
+            unite: Some(Unite::Millimetre),
         });
         // La session posée est à jour : rien à perdre (ADR-0016 C3).
         self.dirty = false;
@@ -780,7 +862,9 @@ impl DemoApp {
     /// d'erreur du viewport sans interrompre l'interface. Toute
     /// commande effective pose l'indicateur de travail non enregistré
     /// (ADR-0016 C3). Le `Result` porte le verdict : seul l'appelant
-    /// affiche un succès, jamais après un refus (ADR-0016 C4).
+    /// affiche un succès, jamais après un refus (ADR-0016 C4). Une
+    /// commande qui redéfinit le graphe des liaisons avance la
+    /// génération : les cotes pilotées se re-figent (ADR-0019 §6).
     fn executer(&mut self, commande: &dyn Command) -> Result<(), String> {
         self.effacer_messages();
         let empreinte_avant = self.empreinte_journal();
@@ -791,6 +875,14 @@ impl DemoApp {
         }
         if self.empreinte_journal() != empreinte_avant {
             self.dirty = true;
+            let journal = self.session.document().events();
+            let avance = journal.len() > empreinte_avant.0
+                && journal[empreinte_avant.0..]
+                    .iter()
+                    .any(|evenement| touche_les_liaisons(&evenement.event_type));
+            if avance {
+                self.generation_liaisons += 1;
+            }
         }
         Ok(())
     }
@@ -810,7 +902,7 @@ impl DemoApp {
         self.effacer_messages();
         if self.session.undo().is_ok() {
             self.dirty = true;
-            self.expr_buf = self.expression_courante();
+            self.raz_liaisons();
         }
     }
 
@@ -821,8 +913,19 @@ impl DemoApp {
         self.effacer_messages();
         if self.session.redo().is_ok() {
             self.dirty = true;
-            self.expr_buf = self.expression_courante();
+            self.raz_liaisons();
         }
+    }
+
+    /// Remet à zéro les tampons d'édition des liaisons et avance la
+    /// génération : une annulation, un rétablissement ou une
+    /// ouverture peut avoir redéfini le graphe des valeurs — les
+    /// cotes pilotées se re-figent à la prochaine résolution
+    /// (ADR-0019 §6).
+    fn raz_liaisons(&mut self) {
+        self.tampon_dimensions.clear();
+        self.tampon_expressions.clear();
+        self.generation_liaisons += 1;
     }
 
     /// Traduit une clé du catalogue embarqué.
@@ -837,24 +940,6 @@ impl DemoApp {
         self.i18n
             .traduction_avec(cle, arguments)
             .expect("clé présente dans le FTL (test de la CI)")
-    }
-
-    /// Dernière expression de la diagonale écrite au journal, ou
-    /// l'expression par défaut (tampon d'édition après undo/redo ou
-    /// ouverture).
-    fn expression_courante(&self) -> String {
-        self.session
-            .document()
-            .events()
-            .iter()
-            .rev()
-            .filter(|event| event.event_type == EVENT_EXPRESSION_SET)
-            .find_map(|event| {
-                let nom = event.data.get("name")?.as_str()?;
-                let expression = event.data.get("expression")?.as_str()?;
-                (nom == "diagonal").then_some(expression.to_string())
-            })
-            .unwrap_or_else(|| DEFAULT_DIAGONAL_EXPR.to_string())
     }
 
     /// Ouvre un projet depuis un chemin choisi (sélecteur natif ou
@@ -893,7 +978,7 @@ impl DemoApp {
         self.redondances_precedentes = None;
         self.chemin_projet = Some(chemin.to_path_buf());
         self.ecran = Ecran::Atelier;
-        self.expr_buf = self.expression_courante();
+        self.raz_liaisons();
         self.info = Some(self.texte_avec("info-recharge", &[("n", Argument::from(nombre))]));
         self.dirty = false;
     }
@@ -1150,9 +1235,9 @@ impl DemoApp {
                 self.error = Some(message);
             }
             Retour::EsquisseResolue {
-                edition, resultat, ..
+                cle, resultat, ..
             } => {
-                if self.resolution_en_attente == Some(edition) {
+                if self.resolution_en_attente == Some(cle) {
                     self.resolution_en_attente = None;
                 }
                 // Redondances du diagnostic (ADR-0018 D5, lot 3c-4) :
@@ -1183,31 +1268,35 @@ impl DemoApp {
                 if let Err(message) = &resultat {
                     self.error = Some(message.clone());
                 }
-                self.croquis_resolu = Some((edition, resultat));
+                self.croquis_resolu = Some((cle, resultat));
             }
         }
     }
     /// Demande la résolution du croquis contraint au fil de travail
-    /// si l’édition de la projection a changé (ADR-0018 D3) : le
-    /// solveur natif est instancié dans le fil de travail — jamais
-    /// sur le fil d’interface, jamais dans forge-session
-    /// (ADR-0016 C1). Une seule résolution en vol par édition ; un
-    /// échec déjà mémorisé ne repart pas à chaque frame.
+    /// si l’édition de la projection ou le graphe des liaisons a
+    /// changé (ADR-0018 D3, ADR-0019 §6) : le solveur natif est
+    /// instancié dans le fil de travail — jamais sur le fil
+    /// d’interface, jamais dans forge-session (ADR-0016 C1). Une
+    /// seule résolution en vol par clé ; un échec déjà mémorisé ne
+    /// repart pas à chaque frame.
     fn demande_resolution_esquisse(&mut self) {
         if self.session.esquisse().entites().is_empty() {
             self.croquis_resolu = None;
             self.resolution_en_attente = None;
             return;
         }
-        let edition = self.session.esquisse().edition();
+        let cle = (
+            self.session.esquisse().edition(),
+            self.generation_liaisons,
+        );
         if self
             .croquis_resolu
             .as_ref()
-            .is_some_and(|(cle, _)| *cle == edition)
+            .is_some_and(|(cle_cache, _)| *cle_cache == cle)
         {
             return;
         }
-        if self.resolution_en_attente == Some(edition) {
+        if self.resolution_en_attente == Some(cle) {
             return;
         }
         let Some(emetteur) = &self.travaux else {
@@ -1225,11 +1314,11 @@ impl DemoApp {
         };
         let travail = Travail::ResoudreEsquisse {
             generation: self.generation,
-            edition,
+            cle,
             croquis,
         };
         if emetteur.send(travail).is_ok() {
-            self.resolution_en_attente = Some(edition);
+            self.resolution_en_attente = Some(cle);
             self.travaux_en_attente += 1;
         }
     }
@@ -1843,99 +1932,230 @@ impl DemoApp {
         });
     }
 
-    fn params_panel(&mut self, ui: &mut egui::Ui) {
-        let reponse = ui.heading(self.texte("params-titre"));
-        avec_aide(&reponse, "aide-params-titre", &mut self.aide);
-        let mut edited: Option<(&str, f64)> = None;
-        for (name, cle, help_id) in [
-            ("width_mm", "params-largeur", "aide-params-largeur"),
-            ("height_mm", "params-hauteur", "aide-params-hauteur"),
-        ] {
-            let libelle = self.texte(cle);
-            let graphe = self.session.graph_mut().value(name).ok();
-            // Valeur du graphe en début de frame : un engagement sans
-            // changement effectif n'écrit rien au journal — un faux
-            // événement tronquerait les groupes défaits (ADR-0008).
-            let avant = graphe.unwrap_or(0.0);
-            // Tampon d'édition persistant du champ : le DragValue affiche
-            // la valeur du début de frame, un rechargement du graphe à
-            // chaque frame figeait le chiffre pendant le geste
-            // (validation C1 round 6).
-            let (memoire, actif_precedent) =
-                self.tampon_dimensions.remove(name).unwrap_or((0.0, false));
-            let mut tampon = Self::tampon_apres_inactivite(actif_precedent, memoire, graphe);
-            let mut actif = false;
-            let demande = &mut self.aide;
-            ui.horizontal(|ui| {
-                ui.label(&libelle);
-                let reponse = ui.add(
-                    egui::DragValue::new(&mut tampon)
-                        .speed(1.0)
-                        .range(1.0..=5000.0)
-                        // Une valeur existante hors plage (entrée absente
-                        // après un undo) n'est jamais « corrigée » : le
-                        // clamp par défaut compte comme un changement et
-                        // poussait un faux événement qui détruisait
-                        // l'historique défait (validation C1 round 3).
-                        .clamp_existing_to_range(false)
-                        .suffix(" mm"),
-                );
-                // Le clic ouvre le mode édition clavier, qui garde le
-                // focus indéfiniment : un champ focusé ne réagit plus
-                // au glissement (le geste sélectionne le texte du
-                // tampon). Un appui-glissement rend le focus pour que
-                // le geste déplace la valeur (piège du glissement,
-                // validation C1 round 4).
-                let presse_glisse =
-                    ui.input(|i| i.pointer.is_decidedly_dragging() && i.pointer.primary_down());
-                if presse_glisse && reponse.contains_pointer() {
-                    ui.memory_mut(|m| m.surrender_focus(reponse.id));
-                }
-                if reponse.dragged() || reponse.has_focus() {
-                    actif = true;
-                }
-                if let Some(valeur) = Self::engagement_params(
-                    avant,
-                    tampon,
-                    reponse.dragged(),
-                    reponse.drag_stopped(),
-                    reponse.changed(),
-                ) {
-                    edited = Some((name, valeur));
-                }
-                avec_aide(&reponse, help_id, demande);
-            });
-            self.tampon_dimensions.insert(name, (tampon, actif));
-        }
-        if let Some((name, value)) = edited {
-            let _ = self.executer(&SetInput {
-                name: name.into(),
-                value,
+    /// Panneau de liaisons (ADR-0019 §6) : le panneau des paramètres
+    /// devient la liste des alias du graphe — nom en gras si calculé,
+    /// DragValue pour une entrée, champ texte pour une expression,
+    /// unité déclarée, erreur du registre en clair — plus la création
+    /// d'alias et la suppression. Les cotes système (`esquisse.*`)
+    /// sont en lecture seule, jamais supprimables d'ici.
+    fn liaisons_panel(&mut self, ui: &mut egui::Ui) {
+        let reponse = ui.heading(self.texte("liaisons-titre"));
+        avec_aide(&reponse, "aide-liaisons-titre", &mut self.aide);
+        let reponse = ui.button(self.texte("liaisons-nouvel-alias"));
+        avec_aide(&reponse, "aide-liaisons-nouvel-alias", &mut self.aide);
+        if reponse.clicked() {
+            self.dialogue_nouvel_alias = Some(DialogueNouvelAlias {
+                nom: String::new(),
+                expression: false,
+                valeur: 0.0,
+                texte: String::new(),
                 unite: None,
             });
         }
         ui.separator();
-        ui.label(self.texte("params-expression"));
-        let reponse = ui.add(egui::TextEdit::singleline(&mut self.expr_buf).desired_width(240.0));
-        avec_aide(&reponse, "aide-params-expression", &mut self.aide);
-        if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            let expression = self.expr_buf.clone();
-            let _ = self.executer(&SetExpression {
-                name: "diagonal".into(),
-                expression,
-                unite: None,
+        let libelle_unite_aucune = self.texte("liaisons-unite-aucune");
+        let libelle_supprimer = self.texte("liaisons-supprimer");
+        // Actions collectées pendant le rendu, exécutées après : le
+        // graphe se relit entre deux lignes sans double emprunt.
+        let mut entree: Option<(String, f64)> = None;
+        let mut expression_modifiee: Option<String> = None;
+        let mut unite_modifiee: Option<(String, Option<Unite>)> = None;
+        let mut suppression: Option<String> = None;
+        let noms = self.session.graph().names();
+        for nom in &noms {
+            let Some(info) = self.session.graph().noeud(nom) else {
+                continue;
+            };
+            let valeur = self.session.graph_mut().value(nom);
+            let valeur_initiale = valeur.ok();
+            let demande = &mut self.aide;
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new(nom.as_str()).strong(info.expression.is_some()));
+                if info.systeme {
+                    // Cote système : valeur calculée en lecture seule,
+                    // ni édition ni suppression (ADR-0019 §6).
+                    if let Ok(calcul) = &valeur {
+                        let texte = Length::from_millimeters(*calcul).to_string();
+                        ui.strong(texte.as_str());
+                    }
+                    return;
+                }
+                if info.expression.is_some() {
+                    let (memoire, actif_precedent) = self
+                        .tampon_expressions
+                        .remove(nom)
+                        .unwrap_or((String::new(), false));
+                    let courante = info.expression.clone().unwrap_or_default();
+                    let mut tampon = if actif_precedent {
+                        memoire
+                    } else {
+                        courante.clone()
+                    };
+                    let mut actif = false;
+                    let reponse =
+                        ui.add(egui::TextEdit::singleline(&mut tampon).desired_width(120.0));
+                    avec_aide(&reponse, "aide-liaisons-expression", demande);
+                    if reponse.has_focus() {
+                        actif = true;
+                    }
+                    // Engagement seulement si le texte a changé : un
+                    // faux événement tronquerait les groupes défaits
+                    // (ADR-0008, validation C1 round 6).
+                    if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        if tampon != courante {
+                            expression_modifiee = Some(nom.clone());
+                        }
+                    }
+                    if let Ok(calcul) = &valeur {
+                        ui.small(format!("{calcul}"));
+                    }
+                    self.tampon_expressions
+                        .insert(nom.clone(), (tampon, actif));
+                } else {
+                    // Valeur du graphe en début de frame : un
+                    // engagement sans changement effectif n'écrit
+                    // rien au journal — un faux événement tronquerait
+                    // les groupes défaits (ADR-0008).
+                    let avant = valeur_initiale.unwrap_or(0.0);
+                    // Tampon d'édition persistant du champ : le
+                    // DragValue affiche la valeur du début de frame,
+                    // un rechargement du graphe à chaque frame
+                    // figeait le chiffre pendant le geste (validation
+                    // C1 round 6).
+                    let (memoire, actif_precedent) = self
+                        .tampon_dimensions
+                        .remove(nom)
+                        .unwrap_or((0.0, false));
+                    let mut tampon = Self::tampon_apres_inactivite(
+                        actif_precedent,
+                        memoire,
+                        valeur_initiale,
+                    );
+                    let mut actif = false;
+                    let reponse = ui.add(egui::DragValue::new(&mut tampon).speed(1.0));
+                    avec_aide(&reponse, "aide-liaisons-valeur", demande);
+                    // Le clic ouvre le mode édition clavier, qui
+                    // garde le focus indéfiniment : un champ focusé ne
+                    // réagit plus au glissement. Un appui-glissement
+                    // rend le focus pour que le geste déplace la
+                    // valeur (piège du glissement, validation C1
+                    // round 4).
+                    let presse_glisse = ui.input(|i| {
+                        i.pointer.is_decidedly_dragging() && i.pointer.primary_down()
+                    });
+                    if presse_glisse && reponse.contains_pointer() {
+                        ui.memory_mut(|m| m.surrender_focus(reponse.id));
+                    }
+                    if reponse.dragged() || reponse.has_focus() {
+                        actif = true;
+                    }
+                    if let Some(valeur_engagee) = Self::engagement_params(
+                        avant,
+                        tampon,
+                        reponse.dragged(),
+                        reponse.drag_stopped(),
+                        reponse.changed(),
+                    ) {
+                        entree = Some((nom.clone(), valeur_engagee));
+                    }
+                    self.tampon_dimensions.insert(nom.clone(), (tampon, actif));
+                }
+                // Unité déclarée (ADR-0019 §6) : sans unité, mm ou
+                // deg, redéclarée en réémettant la définition — la
+                // cohérence est revérifiée à la définition
+                // (OF-VAL-0007).
+                let mut choix = info.unite;
+                let reponse = egui::ComboBox::from_id_source(format!("unite-{nom}"))
+                    .selected_text(Self::texte_unite(choix, &libelle_unite_aucune))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut choix, None, &libelle_unite_aucune);
+                        ui.selectable_value(&mut choix, Some(Unite::Millimetre), "mm");
+                        ui.selectable_value(&mut choix, Some(Unite::Degre), "deg");
+                    })
+                    .response;
+                avec_aide(&reponse, "aide-liaisons-unite", demande);
+                if choix != info.unite {
+                    unite_modifiee = Some((nom.clone(), choix));
+                }
+                let reponse = ui.small_button(libelle_supprimer.as_str());
+                avec_aide(&reponse, "aide-liaisons-supprimer", demande);
+                if reponse.clicked() {
+                    suppression = Some(nom.clone());
+                }
+            });
+            if let Err(erreur) = &valeur {
+                // Badge d'erreur en clair à la ligne concernée : le
+                // message du registre, clic droit → page d'aide du
+                // code (ADR-0019 §6).
+                let message = erreur.to_string();
+                let reponse = ui.label(
+                    egui::RichText::new(message.as_str())
+                        .color(egui::Color32::RED)
+                        .small(),
+                );
+                avec_aide(&reponse, &aide_du_code(&message), &mut self.aide);
+            }
+        }
+        if let Some((nom, valeur_engagee)) = entree {
+            let unite = self.session.graph().noeud(&nom).and_then(|info| info.unite);
+            let _ = self.executer(&SetInput {
+                name: nom,
+                value: valeur_engagee,
+                unite,
             });
         }
-        match self.session.graph_mut().value("diagonal") {
-            Ok(value) => {
-                let valeur = Length::from_millimeters(value).to_string();
-                ui.label(self.texte_avec(
-                    "params-diagonale",
-                    &[("valeur", Argument::from(valeur.as_str()))],
-                ));
+        if let Some(nom) = expression_modifiee {
+            if let Some(info) = self.session.graph().noeud(&nom)
+                && let Some((texte, _)) = self.tampon_expressions.get(&nom)
+            {
+                let _ = self.executer(&SetExpression {
+                    name: nom,
+                    expression: texte.clone(),
+                    unite: info.unite,
+                });
             }
-            Err(error) => {
-                ui.label(egui::RichText::new(error.to_string()).color(egui::Color32::RED));
+        }
+        if let Some((nom, unite)) = unite_modifiee {
+            // L'unité se redéclare en réémettant la définition : la
+            // cohérence est revérifiée à la définition
+            // (OF-VAL-0007, ADR-0019 §6).
+            if let Some(info) = self.session.graph().noeud(&nom) {
+                if let Some(texte) = &info.expression {
+                    let _ = self.executer(&SetExpression {
+                        name: nom.clone(),
+                        expression: texte.clone(),
+                        unite,
+                    });
+                } else {
+                    let valeur = self.session.graph_mut().value(&nom).unwrap_or(0.0);
+                    let _ = self.executer(&SetInput {
+                        name: nom.clone(),
+                        value: valeur,
+                        unite,
+                    });
+                }
+            }
+        }
+        if let Some(nom) = suppression {
+            let references = self
+                .session
+                .graph()
+                .dependants(&nom)
+                .unwrap_or_default();
+            if references.is_empty() {
+                // Alias libre : suppression directe (ADR-0019 §6).
+                let _ = self.executer(&RemoveAlias {
+                    name: nom,
+                    mode: ModeSuppression::Simple,
+                });
+            } else {
+                // Alias référencé : le dialogue propose cascade,
+                // remplacement ou annulation (amendement 2026-10-20).
+                self.dialogue_suppression = Some(DialogueSuppression {
+                    alias: nom,
+                    references,
+                    remplacement: String::new(),
+                });
             }
         }
         // Outils du mode esquisse (vue 2D) : le croquis contraint se
@@ -1943,6 +2163,15 @@ impl DemoApp {
         if self.vue == Vue::DeuxD {
             ui.separator();
             atelier_esquisse::panneau(ui, self);
+        }
+    }
+
+    /// Texte affiché du sélecteur d'unité : « sans unité », ou le
+    /// code de l'unité (ADR-0019 §6).
+    fn texte_unite(unite: Option<Unite>, sans: &str) -> String {
+        match unite {
+            None => sans.to_string(),
+            Some(u) => u.code().to_string(),
         }
     }
 
@@ -2010,13 +2239,13 @@ impl DemoApp {
         let width = self
             .session
             .graph_mut()
-            .value("width_mm")
+            .value("largeur")
             .unwrap_or(1.0)
             .max(1.0);
         let height = self
             .session
             .graph_mut()
-            .value("height_mm")
+            .value("hauteur")
             .unwrap_or(1.0)
             .max(1.0);
         // Une ligne est réservée sous le viewport pour chaque compteur.
@@ -2272,6 +2501,228 @@ impl DemoApp {
 }
 
 impl eframe::App for DemoApp {
+    /// Fenêtres de dialogue des liaisons (ADR-0019 §6) : création
+    /// d'alias et suppression d'un alias référencé — un refus laisse
+    /// le dialogue ouvert, la saisie reste corrigeable
+    /// (ADR-0016 C4).
+    fn fenetre_dialogues_liaisons(&mut self, ctx: &egui::Context) {
+        if let Some(mut dialogue) = self.dialogue_nouvel_alias.take() {
+            let mut visible = true;
+            let mut poser = false;
+            let mut fermer = false;
+            // Textes traduits avant la fenêtre : la fermeture
+            // n'emprunte plus l'app (ADR-0010).
+            let titre = self.texte("liaisons-nouveau-titre");
+            let libelle_nom = self.texte("liaisons-nouveau-nom");
+            let libelle_expression = self.texte("liaisons-nouveau-expression");
+            let libelle_texte = self.texte("liaisons-nouveau-texte");
+            let libelle_valeur = self.texte("liaisons-nouveau-valeur");
+            let libelle_unite = self.texte("liaisons-nouveau-unite");
+            let libelle_poser = self.texte("liaisons-nouveau-poser");
+            let libelle_annuler = self.texte("liaisons-nouveau-annuler");
+            let libelle_unite_aucune = self.texte("liaisons-unite-aucune");
+            let demande = &mut self.aide;
+            egui::Window::new(titre)
+                .open(&mut visible)
+                .default_width(320.0)
+                .show(ctx, |ui| {
+                    ui.label(&libelle_nom);
+                    let reponse = ui.text_edit_singleline(&mut dialogue.nom);
+                    avec_aide(&reponse, "aide-liaisons-nouveau-nom", demande);
+                    let reponse =
+                        ui.checkbox(&mut dialogue.expression, libelle_expression.as_str());
+                    avec_aide(
+                        &reponse,
+                        "aide-liaisons-nouveau-expression",
+                        demande,
+                    );
+                    if dialogue.expression {
+                        ui.label(&libelle_texte);
+                        let reponse = ui.text_edit_singleline(&mut dialogue.texte);
+                        avec_aide(&reponse, "aide-liaisons-nouveau-texte", demande);
+                    } else {
+                        ui.label(&libelle_valeur);
+                        let reponse =
+                            ui.add(egui::DragValue::new(&mut dialogue.valeur).speed(1.0));
+                        avec_aide(&reponse, "aide-liaisons-nouveau-valeur", demande);
+                    }
+                    ui.label(&libelle_unite);
+                    let mut choix = dialogue.unite;
+                    let reponse = egui::ComboBox::from_id_source("unite-nouvel-alias")
+                        .selected_text(Self::texte_unite(choix, &libelle_unite_aucune))
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(&mut choix, None, &libelle_unite_aucune);
+                            ui.selectable_value(&mut choix, Some(Unite::Millimetre), "mm");
+                            ui.selectable_value(&mut choix, Some(Unite::Degre), "deg");
+                        })
+                        .response;
+                    avec_aide(&reponse, "aide-liaisons-nouveau-unite", demande);
+                    dialogue.unite = choix;
+                    ui.horizontal(|ui| {
+                        let reponse = ui.button(&libelle_poser);
+                        avec_aide(&reponse, "aide-liaisons-nouveau-poser", demande);
+                        if reponse.clicked() {
+                            poser = true;
+                        }
+                        let reponse = ui.button(&libelle_annuler);
+                        avec_aide(&reponse, "aide-liaisons-nouveau-annuler", demande);
+                        if reponse.clicked() {
+                            fermer = true;
+                        }
+                    });
+                });
+            if visible && !fermer {
+                if poser {
+                    let resultat = if dialogue.expression {
+                        self.executer(&SetExpression {
+                            name: dialogue.nom.clone(),
+                            expression: dialogue.texte.clone(),
+                            unite: dialogue.unite,
+                        })
+                    } else {
+                        self.executer(&SetInput {
+                            name: dialogue.nom.clone(),
+                            value: dialogue.valeur,
+                            unite: dialogue.unite,
+                        })
+                    };
+                    // Un refus laisse le dialogue ouvert : la saisie
+                    // reste corrigeable (ADR-0016 C4).
+                    if resultat.is_err() {
+                        self.dialogue_nouvel_alias = Some(dialogue);
+                    }
+                } else {
+                    self.dialogue_nouvel_alias = Some(dialogue);
+                }
+            }
+        }
+        if let Some(mut dialogue) = self.dialogue_suppression.take() {
+            let mut visible = true;
+            let mut cascade = false;
+            let mut remplacer = false;
+            let mut fermer = false;
+            let titre = self.texte("liaisons-suppression-titre");
+            let n = dialogue.references.len();
+            let libelle_texte = self.texte_avec(
+                "liaisons-suppression-texte",
+                &[("n", Argument::from(n))],
+            );
+            let libelle_cascade = self.texte_avec(
+                "liaisons-suppression-cascade",
+                &[("n", Argument::from(dialogue.references.len()))],
+            );
+            let libelle_remplacer = self.texte("liaisons-suppression-remplacer");
+            let libelle_bouton_remplacer =
+                self.texte("liaisons-suppression-remplacer-bouton");
+            let libelle_annuler = self.texte("liaisons-suppression-annuler");
+            let libelle_aucun = self.texte("liaisons-suppression-aucun-candidat");
+            let candidats = self
+                .session
+                .graph()
+                .names()
+                .into_iter()
+                .filter(|candidat| {
+                    candidat != &dialogue.alias
+                        && self
+                            .session
+                            .graph()
+                            .noeud(candidat)
+                            .is_some_and(|info| !info.systeme)
+                })
+                .collect::<Vec<_>>();
+            let cascade_possible = !dialogue
+                .references
+                .iter()
+                .any(|reference| {
+                    self.session
+                        .graph()
+                        .noeud(reference)
+                        .is_some_and(|info| info.systeme)
+                });
+            let demande = &mut self.aide;
+            egui::Window::new(titre)
+                .open(&mut visible)
+                .default_width(360.0)
+                .show(ctx, |ui| {
+                    ui.label(&libelle_texte);
+                    for reference in &dialogue.references {
+                        ui.label(format!("- {reference}"));
+                    }
+                    let reponse =
+                        ui.add_enabled(cascade_possible, egui::Button::new(&libelle_cascade));
+                    avec_aide(
+                        &reponse,
+                        "aide-liaisons-suppression-cascade",
+                        demande,
+                    );
+                    if reponse.clicked() {
+                        cascade = true;
+                    }
+                    ui.separator();
+                    ui.label(&libelle_remplacer);
+                    if candidats.is_empty() {
+                        ui.label(&libelle_aucun);
+                    } else {
+                        let mut choix = if candidats.contains(&dialogue.remplacement) {
+                            dialogue.remplacement.clone()
+                        } else {
+                            candidats[0].clone()
+                        };
+                        let reponse = egui::ComboBox::from_id_source("remplacement-alias")
+                            .selected_text(choix.clone())
+                            .show_ui(ui, |ui| {
+                                for candidat in &candidats {
+                                    ui.selectable_value(&mut choix, candidat.clone(), candidat);
+                                }
+                            })
+                            .response;
+                        avec_aide(
+                            &reponse,
+                            "aide-liaisons-suppression-remplacer",
+                            demande,
+                        );
+                        dialogue.remplacement = choix;
+                        let reponse = ui.button(&libelle_bouton_remplacer);
+                        avec_aide(
+                            &reponse,
+                            "aide-liaisons-suppression-remplacer-bouton",
+                            demande,
+                        );
+                        if reponse.clicked() {
+                            remplacer = true;
+                        }
+                    }
+                    let reponse = ui.button(&libelle_annuler);
+                    avec_aide(&reponse, "aide-liaisons-suppression-annuler", demande);
+                    if reponse.clicked() {
+                        fermer = true;
+                    }
+                });
+            if visible && !fermer {
+                let mode = if cascade {
+                    Some(ModeSuppression::Cascade)
+                } else if remplacer {
+                    Some(ModeSuppression::Remplacer {
+                        par: dialogue.remplacement.clone(),
+                    })
+                } else {
+                    None
+                };
+                if let Some(mode) = mode {
+                    let resultat = self.executer(&RemoveAlias {
+                        name: dialogue.alias.clone(),
+                        mode,
+                    });
+                    if resultat.is_err() {
+                        self.dialogue_suppression = Some(dialogue);
+                    }
+                } else {
+                    self.dialogue_suppression = Some(dialogue);
+                }
+            }
+        }
+    }
+
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         // Raccourcis : Cmd (Ctrl sous Windows/Linux) annule, Cmd+Y ou
         // Cmd+Maj+Z rétablit ; aucun raccourci quand un champ de texte
@@ -2315,11 +2766,11 @@ impl eframe::App for DemoApp {
         // Panneaux de l'atelier seulement : l'accueil garde tout
         // l'espace pour la bibliothèque (ADR-0014).
         if self.ecran == Ecran::Atelier {
-            egui::SidePanel::left("params")
+            egui::SidePanel::left("liaisons")
                 .resizable(false)
-                .default_width(280.0)
+                .default_width(300.0)
                 .show(ctx, |ui| {
-                    self.params_panel(ui);
+                    self.liaisons_panel(ui);
                 });
             egui::SidePanel::right("journal")
                 .default_width(330.0)
@@ -2350,6 +2801,8 @@ impl eframe::App for DemoApp {
         }
         self.fenetre_confirmation(ctx);
         self.fenetre_echelle(ctx);
+        self.fenetre_dialogues_liaisons(ctx);
+        atelier_esquisse::fenetre_cote(ctx, self);
         aide::fenetre(ctx, &self.i18n, &mut self.aide);
     }
 }
@@ -2504,7 +2957,7 @@ mod tests {
     fn enregistrer_puis_ouvrir_par_chemin() {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         app.executer(&SetInput {
-            name: "width_mm".into(),
+            name: "largeur".into(),
             value: 1234.0,
             unite: None,
         })
@@ -2524,7 +2977,7 @@ mod tests {
             "chemin repris à l'ouverture"
         );
         assert_eq!(relue.ecran, Ecran::Atelier, "l'atelier s'ouvre");
-        let largeur = relue.session.graph_mut().value("width_mm").expect("valeur");
+        let largeur = relue.session.graph_mut().value("largeur").expect("valeur");
         assert_eq!(largeur, 1234.0, "l'état est rejoué");
     }
 
@@ -2724,10 +3177,124 @@ mod tests {
             3,
             "journal intact : trois événements"
         );
-        let largeur = app.session.graph_mut().value("width_mm").expect("valeur");
-        let hauteur = app.session.graph_mut().value("height_mm").expect("valeur");
+        let largeur = app.session.graph_mut().value("largeur").expect("valeur");
+        let hauteur = app.session.graph_mut().value("hauteur").expect("valeur");
         assert_eq!(largeur, 800.0, "largeur rétablie");
         assert_eq!(hauteur, 600.0, "hauteur rétablie");
+    }
+
+    /// Le projet vierge porte les trois liaisons de référence :
+    /// largeur et hauteur en entrées mm, diagonale en expression mm
+    /// (ADR-0019 §6).
+    #[test]
+    fn le_projet_vierge_porte_les_trois_liaisons() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let noms = app.session.graph().names();
+        assert!(noms.contains(&"largeur".to_string()), "entrée largeur");
+        assert!(noms.contains(&"hauteur".to_string()), "entrée hauteur");
+        assert!(
+            noms.contains(&"diagonale".to_string()),
+            "expression diagonale"
+        );
+        let info = app.session.graph().noeud("largeur").expect("nœud");
+        assert_eq!(info.unite, Some(Unite::Millimetre), "unité mm déclarée");
+        assert!(info.expression.is_none(), "largeur est une entrée");
+        let diagonale = app.session.graph_mut().value("diagonale").expect("valeur");
+        assert_eq!(diagonale, 1000.0, "sqrt(800² + 600²) = 1000");
+    }
+
+    /// La génération des liaisons avance sur les commandes de
+    /// valeurs et l'annulation, pas sur les autres commandes : les
+    /// cotes pilotées savent quand se re-figer (ADR-0019 §6).
+    #[test]
+    fn la_generation_des_liaisons_avance() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let avant = app.generation_liaisons;
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 900.0,
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("largeur");
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 1,
+            "une commande de valeur avance la génération"
+        );
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(1.0),
+                y: Length::from_millimeters(2.0),
+            },
+        })
+        .expect("point");
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 1,
+            "une commande hors liaisons ne l'avance pas"
+        );
+        app.annuler();
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 2,
+            "l'annulation avance la génération"
+        );
+    }
+
+    /// Une cote pilotée se fige depuis le graphe et suit les
+    /// liaisons : changer la largeur re-fige la cote à la prochaine
+    /// résolution (ADR-0019 §4/§6, checklist §8).
+    #[test]
+    fn la_cote_pilotee_se_gele_depuis_le_graphe() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        for (x, y) in [(0.0, 0.0), (100.0, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Expression {
+                    texte: "largeur / 2".into(),
+                    alias: "esquisse.demi".into(),
+                },
+            },
+        })
+        .expect("cote pilotée");
+        let figee = app.session.croquis_pour_resolution().expect("croquis figé");
+        let (_, contrainte) = figee
+            .contrainte_de_cote("esquisse.demi")
+            .expect("cote présente");
+        let ContrainteEsquisse::Distance { valeur, .. } = contrainte else {
+            panic!("contrainte de distance");
+        };
+        let ValeurCote::Fixe { mm } = valeur else {
+            panic!("cote figée pour le solveur");
+        };
+        assert_eq!(mm.millimeters(), 400.0, "largeur 800 → cote 400");
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 1000.0,
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("largeur");
+        let figee = app.session.croquis_pour_resolution().expect("croquis figé");
+        let (_, contrainte) = figee
+            .contrainte_de_cote("esquisse.demi")
+            .expect("cote présente");
+        let ContrainteEsquisse::Distance { valeur, .. } = contrainte else {
+            panic!("contrainte de distance");
+        };
+        let ValeurCote::Fixe { mm } = valeur else {
+            panic!("cote figée pour le solveur");
+        };
+        assert_eq!(mm.millimeters(), 500.0, "largeur 1000 → cote 500");
     }
 
     /// L'axe Y monte dans la scêne et descend à l'écran : un point
@@ -2854,7 +3421,7 @@ mod tests {
     fn enregistrer_apres_undo_preserve_le_redo() {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         app.executer(&SetInput {
-            name: "width_mm".into(),
+            name: "largeur".into(),
             value: 900.0,
             unite: None,
         })
@@ -2875,7 +3442,7 @@ mod tests {
         );
         assert!(app.session.can_redo(), "enregistrer garde le redo");
         app.retablir();
-        let largeur = app.session.graph_mut().value("width_mm").expect("valeur");
+        let largeur = app.session.graph_mut().value("largeur").expect("valeur");
         assert_eq!(largeur, 900.0, "le redo restaure la largeur");
     }
 
@@ -2886,7 +3453,7 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         assert!(!app.dirty, "session vierge : rien à enregistrer");
         app.executer(&SetInput {
-            name: "width_mm".into(),
+            name: "largeur".into(),
             value: 900.0,
             unite: None,
         })
@@ -2940,7 +3507,7 @@ mod tests {
         assert!(app.error.is_some(), "l'échec est affiché");
         assert!(app.info.is_none(), "aucun succès affiché");
         app.executer(&SetInput {
-            name: "width_mm".into(),
+            name: "largeur".into(),
             value: 900.0,
             unite: None,
         })
@@ -3090,10 +3657,18 @@ mod tests {
         })
         .expect("entité posée");
         app.demande_resolution_esquisse();
-        assert_eq!(app.resolution_en_attente, Some(1), "résolution demandée");
+        assert_eq!(
+            app.resolution_en_attente,
+            Some((1, app.generation_liaisons)),
+            "résolution demandée"
+        );
         pomper_les_retours(&mut app);
-        let (edition, resultat) = app.croquis_resolu.expect("croquis résolu");
-        assert_eq!(edition, 1, "clé du cache : l’édition");
+        let (cle, resultat) = app.croquis_resolu.expect("croquis résolu");
+        assert_eq!(
+            cle,
+            (1, app.generation_liaisons),
+            "clé du cache : édition et liaisons"
+        );
         let resolu = resultat.expect("résolution réussie");
         assert!(proche(resolu.position(0), 10.0, 20.0), "position résolue");
     }

@@ -53,13 +53,37 @@ accueil-taille-octets = {$n} octets
 accueil-taille-ko = {$n} Ko
 accueil-taille-mio = {$n} Mio
 
-# --- Panneau des paramètres ---
+# --- Panneau des liaisons (ADR-0019) ---
 
-params-titre = Paramètres
-params-largeur = Largeur
-params-hauteur = Hauteur
-params-expression = Expression de la diagonale :
-params-diagonale = Diagonale : {$valeur}
+liaisons-titre = Liaisons
+liaisons-nouvel-alias = + Nouvel alias
+liaisons-nouveau-titre = Nouvel alias
+liaisons-nouveau-nom = Nom
+liaisons-nouveau-expression = Expression pilotée
+liaisons-nouveau-texte = Texte de l'expression :
+liaisons-nouveau-valeur = Valeur :
+liaisons-nouveau-unite = Unité
+liaisons-unite-aucune = sans unité
+liaisons-nouveau-poser = Poser
+liaisons-nouveau-annuler = Annuler
+liaisons-supprimer = Supprimer
+liaisons-suppression-titre = Supprimer l'alias
+liaisons-suppression-texte = {$n} formules lisent encore cet alias :
+liaisons-suppression-cascade = Supprimer aussi ces formules ({$n})
+liaisons-suppression-remplacer = Remplacer la référence par :
+liaisons-suppression-remplacer-bouton = Remplacer
+liaisons-suppression-annuler = Annuler
+liaisons-suppression-aucun-candidat = Aucun autre alias disponible pour le remplacement.
+
+# --- Dialogue de cote de l'atelier (ADR-0019) ---
+
+cote-titre = Cote de distance
+cote-fixe = Valeur fixe
+cote-expression = Expression pilotée
+cote-texte = Texte de l'expression :
+cote-alias = Alias (préfixe {$prefixe})
+cote-poser = Poser
+cote-annuler = Annuler
 
 # --- Journal des événements ---
 
@@ -88,7 +112,6 @@ esquisse-contrainte-horizontale = Horizontale
 esquisse-contrainte-verticale = Verticale
 esquisse-contrainte-point-fixe = Fixer le point
 esquisse-contrainte-distance = Distance
-esquisse-cote-distance = Cote de distance (mm) :
 esquisse-dof = Degrés de liberté : {$n}
 esquisse-redondances = Contraintes redondantes : {$n}
 
@@ -230,25 +253,90 @@ aide-accueil-projet =
     .description = Un projet enregistré dans le dossier de la bibliothèque : son nom, son âge et sa taille sont lus depuis le disque. « Ouvrir » le charge et en fait le projet courant.
     .exemple = Cliquez « Ouvrir » sur le projet le plus récent : l'atelier s'ouvre avec son état complet, prêt à être modifié.
 
-aide-params-titre =
-    .titre = Paramètres
-    .description = Panneau des dimensions du rectangle de démonstration. Chaque modification devient un événement du journal : l'état se reconstruit par rejeu.
-    .exemple = Agrandissez la largeur : une ligne value.input_set apparaît en tête du journal, avec son horodatage.
+aide-liaisons-titre =
+    .titre = Liaisons
+    .description = Panneau du moteur de liaisons (ADR-0019) : une ligne par alias du projet — entrée à valeur saisie ou expression pilotée, avec son unité. Les cotes de l'esquisse vivent sous le préfixe réservé « esquisse. » et s'y lisent sans se modifier.
+    .exemple = Ouvrez un projet vierge : les alias largeur, hauteur et diagonale y apparaissent ; changez la largeur et la diagonale se recalcule au prochain recalcul.
 
-aide-params-largeur =
-    .titre = Largeur
-    .description = Largeur du rectangle de démonstration, en millimètres. Un événement est enregistré à la fin du geste, pas pendant le glissement.
-    .exemple = Faites glisser jusqu'à 500 : le viewport dessine un rectangle plus étroit et la diagonale se met à jour.
+aide-liaisons-valeur =
+    .titre = Valeur d'entrée
+    .description = Valeur saisie de l'alias, en millimètres ou degrés selon l'unité déclarée. L'événement part à la fin du geste : le journal reste fidèle aux actions de l'utilisateur.
+    .exemple = Faites glisser la valeur de largeur jusqu'à 500 : une ligne value.input_set apparaît en tête du journal, avec son horodatage.
 
-aide-params-hauteur =
-    .titre = Hauteur
-    .description = Hauteur du rectangle de démonstration, en millimètres. Un événement est enregistré à la fin du geste, pas pendant le glissement.
-    .exemple = Saisissez 1000 : avec une largeur de 1000, le rectangle de démonstration devient carré.
+aide-liaisons-expression =
+    .titre = Expression pilotée
+    .description = Texte de l'expression de l'alias, dans le sous-ensemble déterministe accepté par forge-values. La saisie s'engage à la touche Entrée ; le résultat calculé s'affiche à côté en petit.
+    .exemple = Remplacez l'expression de la diagonale par sqrt(largeur * largeur) : la diagonale vaut alors exactement la largeur.
 
-aide-params-expression =
-    .titre = Expression de la diagonale
-    .description = Expression de la diagonale, dans le sous-ensemble déterministe accepté par forge-values. Les noms width_mm et height_mm sont disponibles ; validez avec la touche Entrée.
-    .exemple = Remplacez l'expression par sqrt(width_mm * width_mm) : la diagonale affichée vaut alors exactement la largeur.
+aide-liaisons-unite =
+    .titre = Unité
+    .description = Unité déclarée de l'alias : sans unité, millimètres ou degrés. La changer réémet la définition et la cohérence des expressions est revérifiée (OF-VAL-0007).
+    .exemple = Déclarez un angle en degrés puis écrivez une expression qui le lit : une incohérence d'unités affiche le badge d'erreur en clair sous la ligne.
+
+aide-liaisons-supprimer =
+    .titre = Supprimer l'alias
+    .description = Supprime l'alias de la ligne. Un alias encore lu par des formules ouvre le dialogue de suppression : cascade, remplacement ou annulation (ADR-0019).
+    .exemple = Supprimez la hauteur alors que la diagonale la lit : le dialogue propose de supprimer aussi la formule ou de remplacer la référence.
+
+aide-liaisons-nouvel-alias =
+    .titre = + Nouvel alias
+    .description = Ouvre le dialogue de création d'un alias : entrée à valeur saisie ou expression pilotée, avec son unité. L'alias n'existe qu'au clic sur « Poser » : jamais d'événement avant.
+    .exemple = Créez l'alias « epaisseur » en entrée millimétrique : il apparaît dans le panneau et peut servir dans une expression.
+
+aide-liaisons-nouveau-nom =
+    .titre = Nom
+    .description = Nom de l'alias à créer : pas de point (les chemins sépareraient les espaces de noms) et pas de préfixe réservé « esquisse. » (OF-VAL-0008).
+    .exemple = Saisissez « epaisseur » : l'alias se pose ; saisissez « esquisse.x » : le refus s'affiche et le dialogue reste ouvert.
+
+aide-liaisons-nouveau-expression =
+    .titre = Expression pilotée
+    .description = Bascule l'alias à créer en expression pilotée : sa valeur se calcule depuis d'autres alias au lieu d'être saisie.
+    .exemple = Cochez puis écrivez « largeur / 2 » : l'alias posé vaut la moitié de la largeur à chaque recalcul.
+
+aide-liaisons-nouveau-texte =
+    .titre = Texte de l'expression
+    .description = Texte de l'expression du nouvel alias, dans le sous-ensemble déterministe accepté par forge-values : les noms disponibles sont ceux des autres alias du panneau.
+    .exemple = Écrivez « sqrt(largeur * largeur + hauteur * hauteur) » : l'alias posé vaut la diagonale du rectangle.
+
+aide-liaisons-nouveau-valeur =
+    .titre = Valeur
+    .description = Valeur initiale saisie de l'alias à créer, dans son unité déclarée.
+    .exemple = Saisissez 12 puis posez : l'alias démarre à 12 et chaque changement devient un événement du journal.
+
+aide-liaisons-nouveau-unite =
+    .titre = Unité
+    .description = Unité du nouvel alias : sans unité, millimètres ou degrés. La cohérence avec les expressions qui le liront est revérifiée à chaque définition (OF-VAL-0007).
+    .exemple = Posez un alias en millimètres puis lisez-le depuis une expression en degrés : le refus s'affiche en clair.
+
+aide-liaisons-nouveau-poser =
+    .titre = Poser
+    .description = Crée l'alias et ferme le dialogue. Un refus — nom invalide, expression invalide, incohérence d'unités — laisse le dialogue ouvert, la saisie reste corrigeable.
+    .exemple = Saisissez un nom libre puis cliquez : l'alias apparaît dans le panneau et une ligne value.input_set ou value.expression_set part au journal.
+
+aide-liaisons-nouveau-annuler =
+    .titre = Annuler
+    .description = Ferme le dialogue sans rien créer : aucun événement, le journal ne bouge pas.
+    .exemple = Ouvrez la création puis annulez : le panneau des liaisons reste exactement comme avant.
+
+aide-liaisons-suppression-cascade =
+    .titre = Supprimer aussi ces formules
+    .description = Supprime l'alias et toutes les formules qui le lisent, d'un seul groupe d'actions annulable. Désactivé si une référence est un nœud système : les cotes « esquisse. » ne se suppriment pas depuis le panneau.
+    .exemple = Supprimez la largeur alors que diagonale la lit : la diagonale disparaît avec elle, et Ctrl+Z rétablit le tout.
+
+aide-liaisons-suppression-remplacer =
+    .titre = Remplacer la référence par
+    .description = Liste des alias candidats au remplacement : les formules qui lisent l'alias supprimé liront l'alias choisi, unités revérifiées à la définition (OF-VAL-0007).
+    .exemple = Remplacez les références de « hauteur » par « largeur » : les formules qui la lisaient affichent la largeur.
+
+aide-liaisons-suppression-remplacer-bouton =
+    .titre = Remplacer
+    .description = Applique le remplacement choisi puis supprime l'alias : un seul groupe d'actions annulable.
+    .exemple = Choisissez un candidat puis cliquez : l'alias disparaît, les formules survivent, Ctrl+Z rétablit le tout.
+
+aide-liaisons-suppression-annuler =
+    .titre = Annuler
+    .description = Ferme le dialogue sans supprimer : l'alias et ses formules restent intacts.
+    .exemple = Ouvrez la suppression puis annulez : rien ne change dans le panneau ni dans le journal.
 
 aide-journal-titre =
     .titre = Journal d'événements
@@ -352,10 +440,88 @@ aide-esquisse-contrainte-point-fixe =
 
 aide-esquisse-contrainte-distance =
     .titre = Contrainte Distance
-    .description = Pose une cote de distance entre les deux points sélectionnés, à la valeur réglée (ADR-0018) : la cote devient pilotable par expression en phase E. Le bouton est actif seulement avec deux points en sélection.
-    .exemple = Sélectionnez deux points du croquis, réglez la cote puis cliquez : la distance entre eux s'impose au prochain recalcul.
+    .description = Ouvre le dialogue de cote pour les deux points sélectionnés (ADR-0019) : valeur fixe en millimètres ou expression pilotée par un alias sous le préfixe réservé « esquisse. ». La contrainte n'est posée qu'au clic sur « Poser » : un refus laisse le dialogue ouvert. Le bouton est actif seulement avec deux points en sélection.
+    .exemple = Sélectionnez deux points du croquis puis cliquez : le dialogue propose la distance courante ; posez une expression « largeur / 2 » sous l'alias « demi » et la cote pilotée s'impose au prochain recalcul.
 
-aide-esquisse-cote-distance =
-    .titre = Cote de distance
-    .description = Valeur en millimètres de la prochaine contrainte Distance, préremplie avec la distance courante entre les deux points sélectionnés.
-    .exemple = Sélectionnez deux points à 30 mm : la cote propose 30 ; changez-la à 50 puis posez la contrainte Distance.
+aide-cote-fixe =
+    .titre = Valeur fixe
+    .description = Cote de distance à valeur fixe, en millimètres : la distance entre les deux points s'impose au solveur, indépendamment du moteur de liaisons.
+    .exemple = Posez une cote fixe de 50 : la distance entre les deux points vaut 50 mm au prochain recalcul.
+
+aide-cote-mm =
+    .titre = Distance
+    .description = Valeur fixe de la cote en millimètres, préremplie avec la distance courante entre les deux points sélectionnés.
+    .exemple = Sélectionnez deux points à 30 mm : le dialogue propose 30 ; changez à 50 puis posez.
+
+aide-cote-expression =
+    .titre = Expression pilotée
+    .description = Cote pilotée par le moteur de liaisons : la distance entre les deux points se calcule depuis une expression, et se re-fige quand les alias qu'elle lit changent (ADR-0019).
+    .exemple = Posez une cote d'expression « largeur / 2 » : changez la largeur dans le panneau des liaisons et la cote se re-fige à la nouvelle valeur.
+
+aide-cote-texte =
+    .titre = Texte de l'expression
+    .description = Texte de l'expression pilotant la cote, dans le sous-ensemble déterministe accepté par forge-values : les noms disponibles sont les alias du panneau des liaisons.
+    .exemple = Écrivez « largeur / 2 » : la cote vaudra la moitié de la largeur, recalculée à chaque changement.
+
+aide-cote-alias =
+    .titre = Alias
+    .description = Nom de la cote sous le préfixe réservé « esquisse. » : l'alias apparaît en lecture seule dans le panneau des liaisons et peut servir dans d'autres expressions.
+    .exemple = Saisissez « demi » : la cote vit sous « esquisse.demi », visible dans le panneau des liaisons.
+
+aide-cote-poser =
+    .titre = Poser
+    .description = Pose la contrainte Distance et ferme le dialogue. Un refus — expression invalide, alias déjà pris — laisse le dialogue ouvert, la saisie reste corrigeable.
+    .exemple = Remplissez l'expression et l'alias puis cliquez : la contrainte part au journal et la cote s'impose au prochain recalcul.
+
+aide-cote-annuler =
+    .titre = Annuler
+    .description = Ferme le dialogue sans poser la contrainte : aucun événement, le croquis ne bouge pas.
+    .exemple = Ouvrez le dialogue puis annulez : le croquis reste exactement comme avant.
+
+# --- Pages d'aide des codes d'erreur du moteur de liaisons
+#     (ADR-0019 : badge rouge du panneau, clic droit) ---
+
+aide-of-val-0001 =
+    .titre = Cycle dans le graphe (OF-VAL-0001)
+    .description = Le moteur de liaisons a détecté un cycle : une expression ramène à son propre alias, directement ou à travers d'autres formules. Le chemin du cycle accompagne le code.
+    .exemple = Écrivez que « a » lit « b » puis que « b » lit « a » : le refus affiche le cycle et le graphe reste à l'état précédent.
+
+aide-of-val-0002 =
+    .titre = Valeur inconnue (OF-VAL-0002)
+    .description = Une expression référence un nom absent du graphe des liaisons : vérifiez l'orthographe du nom cité, ou créez l'alias d'abord.
+    .exemple = Écrivez « largeur * 2 » alors que « largeur » n'existe pas encore : le refus cite le nom inconnu.
+
+aide-of-val-0003 =
+    .titre = Expression invalide (OF-VAL-0003)
+    .description = Le texte sort du sous-ensemble déterministe accepté : opérateurs arithmétiques, fonctions usuelles et noms d'alias seulement — pas d'appel arbitraire, pas de syntaxe libre.
+    .exemple = Écrivez « largeur & hauteur » : l'esperluette n'est pas un opérateur accepté, le refus explique la raison.
+
+aide-of-val-0004 =
+    .titre = Erreur d'évaluation (OF-VAL-0004)
+    .description = L'expression est syntaxiquement valide mais son évaluation échoue : division par zéro, racine d'un nombre négatif, ou résultat non fini.
+    .exemple = Écrivez « 1 / (largeur - largeur) » : la division par zéro refuse la définition, le nœud garde sa valeur précédente.
+
+aide-of-val-0005 =
+    .titre = Valeur inconnue (OF-VAL-0005)
+    .description = Lecture d'une valeur absente du graphe des liaisons : le nom demandé n'existe pas — l'état demandé est incohérent avec le journal.
+    .exemple = Demandez la valeur d'un alias jamais posé : le refus cite le nom inconnu.
+
+aide-of-val-0006 =
+    .titre = Valeur non finie (OF-VAL-0006)
+    .description = Une valeur d'entrée doit être un nombre fini : l'infini et les indéterminés ne vivent pas dans le graphe des liaisons.
+    .exemple = Une saisie qui deviendrait infinie est refusée : le nom de l'entrée accompagne le code.
+
+aide-of-val-0007 =
+    .titre = Incohérence d'unités (OF-VAL-0007)
+    .description = Une expression lit une valeur d'une unité incompatible avec l'unité déclarée du nœud : millimètres, degrés ou sans unité doivent s'accorder.
+    .exemple = Déclarez un alias en degrés puis écrivez qu'il lit une longueur en millimètres : le refus cite les deux unités.
+
+aide-of-val-0008 =
+    .titre = Alias réservé (OF-VAL-0008)
+    .description = Le nom demandé vit sous un préfixe réservé du système, comme « esquisse. » pour les cotes du croquis : ces alias se posent par l'atelier, jamais à la main.
+    .exemple = Créez un alias nommé « esquisse.demi » depuis le panneau des liaisons : le refus explique le préfixe réservé.
+
+aide-of-val-0009 =
+    .titre = Alias référencé (OF-VAL-0009)
+    .description = Suppression « Simple » refusée : des formules lisent encore cet alias. Le dialogue de suppression propose la cascade ou le remplacement.
+    .exemple = Supprimez la hauteur alors que la diagonale la lit : le dialogue propose les deux modes au lieu de la suppression simple.

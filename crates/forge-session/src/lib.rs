@@ -45,7 +45,7 @@ pub use error::SessionError;
 pub use esquisse::{
     ContrainteEsquisse, CroquisResolu, EntiteEsquisse, EsquisseProjection, GenreEntite, ValeurCote,
 };
-pub use forge_values::{ModeSuppression, Unite};
+pub use forge_values::{InfoNoeud, ModeSuppression, Unite};
 pub use projection::{
     GeomProjection, MaillageImporte, Projection, TracesImportees, ValuesProjection,
 };
