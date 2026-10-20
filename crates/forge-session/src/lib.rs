@@ -43,8 +43,7 @@ pub use command::{
 };
 pub use error::SessionError;
 pub use esquisse::{
-    ContrainteEsquisse, CroquisResolu, EntiteEsquisse, EsquisseProjection, GenreEntite,
-    ValeurCote,
+    ContrainteEsquisse, CroquisResolu, EntiteEsquisse, EsquisseProjection, GenreEntite, ValeurCote,
 };
 pub use forge_values::{ModeSuppression, Unite};
 pub use projection::{

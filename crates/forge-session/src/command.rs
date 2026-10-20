@@ -360,8 +360,7 @@ impl RemoveAlias {
                 // Cote d'esquisse : la contrainte porte le texte de
                 // l'expression, elle suit la substitution à
                 // identifiant conservé (ADR-0019 §1).
-                let Some((id, mut contrainte)) = session.esquisse().contrainte_de_cote(&dep)
-                else {
+                let Some((id, mut contrainte)) = session.esquisse().contrainte_de_cote(&dep) else {
                     continue;
                 };
                 if let ContrainteEsquisse::Distance {

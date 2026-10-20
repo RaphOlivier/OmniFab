@@ -334,10 +334,7 @@ pub(crate) fn verifie_schema(event: &NewEvent, version: u32) -> Result<(), Sessi
 /// versions : les journaux plus anciens rejouent s'ils sont listés,
 /// toute version absente de la liste est refusée — jamais lue en
 /// devinant (ADR-0019 §1).
-pub(crate) fn verifie_schema_parmi(
-    event: &NewEvent,
-    versions: &[u32],
-) -> Result<(), SessionError> {
+pub(crate) fn verifie_schema_parmi(event: &NewEvent, versions: &[u32]) -> Result<(), SessionError> {
     if versions.contains(&event.schema_version) {
         return Ok(());
     }

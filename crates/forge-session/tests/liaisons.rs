@@ -337,7 +337,10 @@ fn remplacement_substitue_les_cotes_d_esquisse() {
 #[test]
 fn cote_pilotee_se_fige_pour_la_resolution() {
     let mut session = croquis_pilote();
-    let noeud = session.graph().noeud("esquisse.demi").expect("nœud système");
+    let noeud = session
+        .graph()
+        .noeud("esquisse.demi")
+        .expect("nœud système");
     assert!(noeud.systeme, "la cote crée un nœud système");
     assert_eq!(noeud.unite, Some(Unite::Millimetre));
     let avant = session.document().events().len();
@@ -351,7 +354,11 @@ fn cote_pilotee_se_fige_pour_la_resolution() {
         session.graph().noeud("esquisse.demi").is_none(),
         "nœud défait"
     );
-    assert_eq!(session.esquisse().contraintes().len(), 1, "l'ancrage survit");
+    assert_eq!(
+        session.esquisse().contraintes().len(),
+        1,
+        "l'ancrage survit"
+    );
     session.redo().expect("rétablissement");
     assert!(
         session.graph().noeud("esquisse.demi").is_some(),
@@ -362,7 +369,10 @@ fn cote_pilotee_se_fige_pour_la_resolution() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
     let (x, y) = resolu.position(1).expect("point mobile résolu");
-    assert!(x.approx_eq(Length::from_millimeters(50.0)), "x = w / 2 = 50");
+    assert!(
+        x.approx_eq(Length::from_millimeters(50.0)),
+        "x = w / 2 = 50"
+    );
     assert!(y.approx_eq(Length::from_millimeters(0.0)), "y inchangé");
 }
 
@@ -505,8 +515,8 @@ fn mise_a_jour_de_contrainte_survit_au_journal() {
         })
         .expect("remplacement");
     let octets = session.save_to_bytes().expect("journal visible");
-    let document = Document::from_bytes_with(&octets, registre_migrations_courant())
-        .expect("conteneur relu");
+    let document =
+        Document::from_bytes_with(&octets, registre_migrations_courant()).expect("conteneur relu");
     let mut session = Session::from_document("tests", document).expect("rejeu");
     let (_, contrainte) = session
         .esquisse()
@@ -523,7 +533,10 @@ fn mise_a_jour_de_contrainte_survit_au_journal() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
     let (x, _) = resolu.position(1).expect("point mobile");
-    assert!(x.approx_eq(Length::from_millimeters(20.0)), "x = b / 2 = 20");
+    assert!(
+        x.approx_eq(Length::from_millimeters(20.0)),
+        "x = b / 2 = 20"
+    );
 }
 
 /// Croquis piloté : point fixe, point mobile, cote `esquisse.demi`
