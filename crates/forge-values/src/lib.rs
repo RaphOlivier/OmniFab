@@ -444,6 +444,22 @@ impl ValueGraph {
         }
     }
 
+    /// Retire le nœud `id` du graphe : nœud, nom, arêtes sortantes et
+    /// entrantes.
+    fn retirer_id(&mut self, id: NodeId) {
+        self.clear_dependencies(id);
+        if let Some(node) = self.nodes.remove(&id) {
+            self.names.remove(&node.name);
+        }
+        if let Some(dependents) = self.dependents.remove(&id) {
+            for dependent in dependents {
+                if let Some(deps) = self.deps.get_mut(&dependent) {
+                    deps.remove(&id);
+                }
+            }
+        }
+    }
+
     /// Refuse la création utilisateur sous un préfixe réservé et tout
     /// écrasement d'un nœud d'une autre origine (OF-VAL-0008).
     fn verifie_cree(&self, name: &str, origine: Origine) -> Result<(), ValuesError> {
