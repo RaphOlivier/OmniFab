@@ -370,7 +370,7 @@ fn cote_pilotee_se_fige_pour_la_resolution() {
         session.graph().noeud("esquisse.demi").is_some(),
         "nœud rétabli"
     );
-    let mut croquis = session.croquis_pour_resolution().expect("cotes figées");
+    let croquis = session.croquis_pour_resolution().expect("cotes figées");
     assert!(croquis.alias_des_cotes().is_empty(), "toutes figées");
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
@@ -535,7 +535,7 @@ fn mise_a_jour_de_contrainte_survit_au_journal() {
         },
         autre => panic!("distance attendue, obtenue {autre:?}"),
     }
-    let mut croquis = session.croquis_pour_resolution().expect("cotes figées");
+    let croquis = session.croquis_pour_resolution().expect("cotes figées");
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
     let (x, _) = resolu.position(1).expect("point mobile");

@@ -117,9 +117,7 @@ fn migre_contrainte_v2(donnees: &serde_json::Value) -> Result<serde_json::Value,
         }
         _ => false,
     };
-    if cote_nue
-        && let Some(objet) = donnees.as_object_mut()
-    {
+    if cote_nue && let Some(objet) = donnees.as_object_mut() {
         let millimetres = objet.get("valeur").cloned().unwrap_or_default();
         objet.insert(
             "valeur".to_string(),
