@@ -2000,7 +2000,8 @@ impl DemoApp {
                     // Engagement seulement si le texte a changé : un
                     // faux événement tronquerait les groupes défaits
                     // (ADR-0008, validation C1 round 6).
-                    if reponse.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    if reponse.lost_focus()
+                        && ui.input(|i| i.key_pressed(egui::Key::Enter))
                         && tampon != courante
                     {
                         expression_modifiee = Some(nom.clone());
