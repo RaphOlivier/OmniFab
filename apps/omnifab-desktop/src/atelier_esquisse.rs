@@ -315,10 +315,13 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
         }
         (OutilEsquisse::Arc, Some(GesteEsquisse::ArcDebut { centre, debut })) => {
             point_du_clic(app, vise);
-            // Le clic présent participe au balayage (ADR-0020) : un
-            // geste sans passage du curseur donne le sens direct.
-            suivre_geste_arc(app, x, y);
+            // Le clic présent participe au balayage (ADR-0020) : le
+            // geste est déjà pris par le match, le delta direct
+            // depuis le dernier angle du curseur donne le sens du
+            // clic — positif trigonométrique, négatif horaire.
             let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            let angle = (y - centre_mm.1).atan2(x - centre_mm.0);
+            app.balayage_arc = balaie(app.balayage_arc, app.angle_curseur_arc, angle);
             let debut_mm = (debut.x.millimeters(), debut.y.millimeters());
             let rayon = Length::from_millimeters(distance_mm(centre_mm, debut_mm));
             let angle_debut =
@@ -360,13 +363,21 @@ pub(crate) fn suivre_geste_arc(app: &mut DemoApp, x: f64, y: f64) {
     };
     let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
     let angle = (y - centre_mm.1).atan2(x - centre_mm.0);
-    let mut delta = (angle - app.angle_curseur_arc).rem_euclid(std::f64::consts::TAU);
+    app.balayage_arc = balaie(app.balayage_arc, app.angle_curseur_arc, angle);
+    app.angle_curseur_arc = angle;
+}
+
+/// Accumule le balayage signé de l'arc (ADR-0020) : le delta
+/// d'angle autour du centre se replie dans ]-π, π] — positif dans
+/// le sens trigonométrique, négatif dans le sens horaire — et le
+/// balayage total reste borné à un tour.
+fn balaie(balayage: f64, precedent: f64, angle: f64) -> f64 {
+    let mut delta = (angle - precedent).rem_euclid(std::f64::consts::TAU);
     if delta > std::f64::consts::PI {
         delta -= std::f64::consts::TAU;
     }
     let borne = std::f64::consts::TAU;
-    app.balayage_arc = (app.balayage_arc + delta).clamp(-borne, borne);
-    app.angle_curseur_arc = angle;
+    (balayage + delta).clamp(-borne, borne)
 }
 
 /// Saisit la poignée sous le curseur au démarrage d'un glissement

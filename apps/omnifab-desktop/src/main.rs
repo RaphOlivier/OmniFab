@@ -3171,8 +3171,8 @@ mod tests {
         );
         let largeur = app.session.graph_mut().value("largeur").expect("valeur");
         let hauteur = app.session.graph_mut().value("hauteur").expect("valeur");
-        assert_eq!(largeur, 800.0, "largeur rétablie");
-        assert_eq!(hauteur, 600.0, "hauteur rétablie");
+        assert_eq!(largeur, 240.0, "largeur rétablie");
+        assert_eq!(hauteur, 160.0, "hauteur rétablie");
     }
 
     /// Le projet vierge porte les trois liaisons de référence :
@@ -3192,7 +3192,10 @@ mod tests {
         assert_eq!(info.unite, Some(Unite::Millimetre), "unité mm déclarée");
         assert!(info.expression.is_none(), "largeur est une entrée");
         let diagonale = app.session.graph_mut().value("diagonale").expect("valeur");
-        assert_eq!(diagonale, 1000.0, "sqrt(800² + 600²) = 1000");
+        assert!(
+            (diagonale - 288.44410203711914).abs() < 1e-9,
+            "sqrt(240² + 160²)"
+        );
     }
 
     /// La génération des liaisons avance sur les commandes de
@@ -3273,7 +3276,7 @@ mod tests {
         let ValeurCote::Fixe { mm } = valeur else {
             panic!("cote figée pour le solveur");
         };
-        assert_eq!(mm.millimeters(), 400.0, "largeur 800 → cote 400");
+        assert_eq!(mm.millimeters(), 120.0, "largeur 240 → cote 120");
         app.executer(&SetInput {
             name: "largeur".into(),
             value: 1000.0,
