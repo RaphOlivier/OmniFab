@@ -146,23 +146,14 @@ impl Scene2D {
     }
 }
 
-/// Pas de grille lisible : le plus petit 1, 2 ou 5 × 10ⁿ dont la
-/// représentation atteint `cible_px` pixels.
+/// Pas de grille lisible : la plus petite puissance de deux dont la
+/// représentation atteint `cible_px` pixels (ADR-0020). La série
+/// dyadique garde chaque ligne alignée sur les lignes du zoom
+/// précédent — chaque pas est le double du précédent, l'aimantation
+/// ne saute jamais d'une grille à une autre décalée.
 pub fn pas_de_grille(echelle: f64, cible_px: f64) -> f64 {
     let brut = (cible_px / echelle).max(1e-9);
-    let exposant = brut.log10().floor() as i32;
-    let dix = 10.0_f64.powi(exposant);
-    let mantisse = brut / dix;
-    let mantisse = if mantisse <= 1.0 {
-        1.0
-    } else if mantisse <= 2.0 {
-        2.0
-    } else if mantisse <= 5.0 {
-        5.0
-    } else {
-        10.0
-    };
-    mantisse * dix
+    2.0_f64.powf(brut.log2().ceil())
 }
 
 #[cfg(test)]
@@ -188,21 +179,25 @@ mod tests {
         assert_eq!(scene.segments.len(), 3, "deux arêtes et fermeture");
     }
 
-    /// Le pas de grille suit la série 1/2/5 des règles à mesurer.
+    /// Le pas de grille est une puissance de deux : chaque ligne du
+    /// zoom précédent reste sur une ligne du pas suivant (ADR-0020).
     #[test]
-    fn pas_de_grille_suit_la_serie_125() {
-        assert!(
-            (pas_de_grille(1.0, 80.0) - 100.0).abs() < 1e-9,
-            "80 px à 1 px/mm"
-        );
-        assert!(
-            (pas_de_grille(2.0, 80.0) - 50.0).abs() < 1e-9,
-            "40 px à 2 px/mm"
-        );
-        assert!(
-            (pas_de_grille(10.0, 60.0) - 10.0).abs() < 1e-9,
-            "6 px à 10 px/mm"
-        );
+    fn pas_de_grille_est_dyadique() {
+        assert!((pas_de_grille(1.0, 80.0) - 128.0).abs() < 1e-9, "80 px à 1 px/mm");
+        assert!((pas_de_grille(2.0, 80.0) - 64.0).abs() < 1e-9, "40 px à 2 px/mm");
+        assert!((pas_de_grille(10.0, 60.0) - 8.0).abs() < 1e-9, "6 px à 10 px/mm");
+        for echelle in [0.3, 1.0, 2.7, 10.0, 63.0] {
+            let pas = pas_de_grille(echelle, 80.0);
+            assert!(
+                (pas.log2().round() - pas.log2()).abs() < 1e-9,
+                "le pas reste une puissance de deux à l'échelle {echelle}"
+            );
+            let grossier = pas_de_grille(echelle / 2.0, 80.0);
+            assert!(
+                (grossier - 2.0 * pas).abs() < 1e-9,
+                "un cran de zoom double le pas"
+            );
+        }
     }
 
     /// La grille couvre la zone visible au pas calculé.

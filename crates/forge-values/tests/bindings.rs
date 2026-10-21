@@ -51,19 +51,49 @@ fn erreur_differee_jusqua_la_lecture() {
 }
 
 #[test]
-fn cycle_detecte_comme_erreur_typee() {
+fn cycle_traverse_refuse_a_la_definition() {
+    // ADR-0020 : un cycle traversé est refusé au moment de poser
+    // l'expression — la valeur précédente tient, rien n'est gelé.
     let mut graph = ValueGraph::new();
     graph.set_input("b", 1.0).unwrap();
     graph.set_expression("a", "b").unwrap();
-    graph.set_expression("b", "a").unwrap();
-    match graph.value("a") {
-        Err(ValuesError::Cycle { path }) => {
-            assert!(path.contains("a"), "chemin du cycle : {path}");
+    let error = graph.set_expression("b", "a").unwrap_err();
+    assert_code(&error, "OF-VAL-0001");
+    match &error {
+        ValuesError::Cycle { path } => {
+            assert_eq!(path, "b → a → b", "chemin du cycle");
         }
         other => panic!("cycle attendu, obtenu {other:?}"),
     }
-    let error = graph.value("a").unwrap_err();
+    // La valeur précédente tient : a suit b, b reste son entrée.
+    assert_eq!(graph.value("a").unwrap(), 1.0, "a suit encore b");
+    assert_eq!(graph.value("b").unwrap(), 1.0, "b garde son entrée");
+}
+
+#[test]
+fn cycle_profond_refuse_aussi() {
+    // Cycle à trois maillons : la traversée transitive est couverte.
+    let mut graph = ValueGraph::new();
+    graph.set_input("x", 1.0).unwrap();
+    graph.set_expression("a", "x").unwrap();
+    graph.set_expression("b", "a").unwrap();
+    let error = graph.set_expression("x", "b").unwrap_err();
     assert_code(&error, "OF-VAL-0001");
+    assert_eq!(graph.value("x").unwrap(), 1.0, "x garde son entrée");
+    assert_eq!(graph.value("b").unwrap(), 1.0, "b suit a qui suit x");
+}
+
+#[test]
+fn rebranchement_sans_cycle_accepte() {
+    // Garde-fou : redéfinir une expression sur un graphe sain sans
+    // créer de cycle reste accepté (ADR-0020).
+    let mut graph = ValueGraph::new();
+    graph.set_input("a", 1.0).unwrap();
+    graph.set_expression("b", "a").unwrap();
+    graph.set_expression("c", "b + 1").unwrap();
+    graph.set_expression("b", "c - 1").unwrap_err();
+    graph.set_expression("b", "a + 1").unwrap();
+    assert_eq!(graph.value("c").unwrap(), 2.0, "c suit le nouveau b");
 }
 
 #[test]

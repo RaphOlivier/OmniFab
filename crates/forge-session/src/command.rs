@@ -496,7 +496,7 @@ impl Command for AddEntity {
         let id = esquisse.prochaine_id_entite();
         Ok(CommandPlan::new(vec![NewEvent::new(
             EVENT_SKETCH_ENTITY_ADDED,
-            1,
+            crate::esquisse::VERSION_SCHEMA_ENTITE,
             "",
             crate::esquisse::entite_en_json(id, &self.entite),
         )]))

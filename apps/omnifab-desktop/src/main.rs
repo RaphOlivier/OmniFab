@@ -584,14 +584,18 @@ fn touche_les_liaisons(evenement: &str) -> bool {
         || evenement == EVENT_SKETCH_CONSTRAINT_UPDATED
 }
 
-/// `help_id` de la page d'aide d'un code d'erreur du registre : le
-/// message du moteur porte son code stable en tête (ADR-0003), la
-/// page d'aide existe pour chaque OF-VAL-NNNN (ADR-0019 §6).
+/// `help_id` de la page d'aide du code d'erreur **terminal** du
+/// message : les refus de la session enchaînent les codes — un refus
+/// de projection enveloppe celui de la cause (OF-SES-0002 puis
+/// OF-VAL-0007) —, la page d'aide de la cause terminale, le dernier
+/// code du message, s'ouvre (ADR-0019 §6, correctif ADR-0020).
 fn aide_du_code(message: &str) -> String {
-    format!(
-        "aide-{}",
-        message.split(' ').next().unwrap_or("").to_lowercase()
-    )
+    let code = message
+        .split(' ')
+        .filter(|mot| mot.starts_with("OF-"))
+        .next_back()
+        .unwrap_or_else(|| message.split(' ').next().unwrap_or(""));
+    format!("aide-{}", code.to_lowercase())
 }
 
 struct DemoApp {
@@ -699,6 +703,13 @@ struct DemoApp {
     /// l'aperçu local le suit sans écrire, le relâchement pose sa
     /// graine — état de l'app UI, jamais un événement.
     saisie: Option<u32>,
+    /// Balayage signé accumulé du geste de l'arc en cours (ADR-0020)
+    /// : positif dans le sens trigonométrique, négatif dans le sens
+    /// horaire — état de l'app UI, jamais un événement.
+    balayage_arc: f64,
+    /// Dernier angle du curseur autour du centre de l'arc en cours,
+    /// pour accumuler le balayage au fil du mouvement (ADR-0020).
+    angle_curseur_arc: f64,
     /// Identifiants des contraintes redondantes ou partiellement
     /// redondantes affichées (ADR-0018 D5, lot 3c-4) : le diagnostic
     /// du solveur est instable (FPA #106) — l'affichage exige le
@@ -789,6 +800,8 @@ impl DemoApp {
             geste: None,
             selection: Vec::new(),
             saisie: None,
+            balayage_arc: 0.0,
+            angle_curseur_arc: 0.0,
             redondances_affichees: None,
             redondances_precedentes: None,
             cote_distance: 100.0,
@@ -828,17 +841,22 @@ impl DemoApp {
         self.geste = None;
         self.selection = Vec::new();
         self.saisie = None;
+        self.balayage_arc = 0.0;
+        self.angle_curseur_arc = 0.0;
         self.redondances_affichees = None;
         self.redondances_precedentes = None;
         self.chemin_projet = None;
         let _ = self.executer(&SetInput {
             name: "largeur".into(),
-            value: 800.0,
+            // 240 × 160 mm : le rectangle de démonstration tient
+            // plusieurs positions dans une vue d'écran (ADR-0020,
+            // validation jalon 2 — 800 × 600 couvrait tout l'écran).
+            value: 240.0,
             unite: Some(Unite::Millimetre),
         });
         let _ = self.executer(&SetInput {
             name: "hauteur".into(),
-            value: 600.0,
+            value: 160.0,
             unite: Some(Unite::Millimetre),
         });
         let _ = self.executer(&SetExpression {
@@ -2436,6 +2454,9 @@ impl DemoApp {
                     let (x, y) = self
                         .camera
                         .depuis_ecran((decalage.x as f64, decalage.y as f64));
+                    // Le geste de l'arc suit le curseur (ADR-0020) :
+                    // le balayage signé s'accumule avant l'aperçu.
+                    atelier_esquisse::suivre_geste_arc(self, x, y);
                     atelier_esquisse::dessiner_apercu(&painter, self, rect, x, y);
                 }
                 // Cote du rectangle par le painter, après les
@@ -2738,7 +2759,8 @@ impl eframe::App for DemoApp {
         // l'espace pour la bibliothèque (ADR-0014).
         if self.ecran == Ecran::Atelier {
             egui::SidePanel::left("liaisons")
-                .resizable(false)
+                .resizable(true)
+                .min_width(220.0)
                 .default_width(300.0)
                 .show(ctx, |ui| {
                     self.liaisons_panel(ui);
@@ -3800,12 +3822,11 @@ mod tests {
         assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du centre au clic");
     }
 
-    /// L'arc dessiné enroule le cercle quand la fin est « avant » le
-    /// début dans le sens trigonométrique : le balayage traverse zéro
-    /// au lieu de dessiner un cercle complet (validation jalon 2 —
-    /// l'arc changeait de forme selon le côté du troisième clic).
+    /// Le balayage est signé (ADR-0020) : une fin « avant » le début
+    /// dans le sens trigonométrique balaie dans le sens horaire — le
+    /// sens suit le geste au lieu d'enrouler le cercle.
     #[test]
-    fn l_arc_enroule_le_cercle_sens_horaire() {
+    fn le_balayage_de_l_arc_est_signe() {
         let angles = atelier_esquisse::angles_arc(
             forge_units::Angle::from_radians(0.5),
             forge_units::Angle::from_radians(0.2),
@@ -3813,10 +3834,75 @@ mod tests {
         );
         assert_eq!(angles.len(), 9, "segments + bornes");
         assert!((angles[0] - 0.5).abs() < 1e-12, "le départ est conservé");
-        let balayage = std::f64::consts::TAU - 0.3;
         assert!(
-            (angles[8] - (0.5 + balayage)).abs() < 1e-12,
-            "arrivée enroulée sur l'angle de fin"
+            (angles[8] - 0.2).abs() < 1e-12,
+            "arrivée au sens horaire à l'angle de fin"
+        );
+    }
+
+    /// Une fin confondue avec le début dessine le tour entier, dans
+    /// le sens trigonométrique (ADR-0020).
+    #[test]
+    fn l_arc_confondu_balaie_le_tour_entier() {
+        let angles = atelier_esquisse::angles_arc(
+            forge_units::Angle::from_radians(0.5),
+            forge_units::Angle::from_radians(0.5),
+            8,
+        );
+        assert!(
+            (angles[8] - (0.5 + std::f64::consts::TAU)).abs() < 1e-12,
+            "le tour entier depuis le départ"
+        );
+    }
+
+    /// Le sens de l'arc suit le geste (ADR-0020) : un troisième clic
+    /// « avant » le début dans le sens trigonométrique balaie dans
+    /// le sens horaire.
+    #[test]
+    fn l_arc_balaie_dans_le_sens_du_geste() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Arc;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * -2.0);
+        let esquisse = app.session.esquisse();
+        let EntiteEsquisse::Arc { angle_fin, .. } = esquisse.entites()[3].1 else {
+            panic!("l'entité posée est un arc");
+        };
+        assert!(
+            (angle_fin.radians() + std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "fin « avant » le début : balayage horaire"
+        );
+    }
+
+    /// La sélection atteint les cercles (ADR-0020) : un clic sur la
+    /// courbe sélectionne l'entité, pas seulement les points et les
+    /// lignes.
+    #[test]
+    fn la_selection_atteint_les_cercles() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Cercle;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
+        assert_eq!(app.selection, vec![1], "le cercle visé est sélectionné");
+    }
+
+    /// La page d'aide suit le code terminal du message (ADR-0020) :
+    /// le refus de la session enveloppe le code de la cause, le
+    /// dernier code du message est la page à ouvrir.
+    #[test]
+    fn la_page_d_aide_suivit_le_code_terminal() {
+        let mut message =
+            String::from("OF-SES-0002 : la projection « values » rejette l'événement : ");
+        message.push_str("OF-VAL-0007 : « angle » en deg lit « largeur » en mm");
+        assert_eq!(aide_du_code(&message), "aide-of-val-0007");
+        assert_eq!(
+            aide_du_code("OF-VAL-0001 : cycle dans le graphe de liaisons : b → a → b"),
+            "aide-of-val-0001"
         );
     }
 

@@ -58,6 +58,7 @@ use forge_values::ValueGraph;
 /// types d'événement connus, déclarés à leur version courante — les
 /// liaisons passent en v2 avec le champ `unit` (ADR-0019), la
 /// contrainte de croquis migre sa cote de distance vers l'objet typé,
+/// l'entité migre son arc vers le balayage signé (ADR-0020),
 /// `value.alias_removed` et `sketch.constraint.updated` naissent
 /// en v1 (ADR-0019) ; le maillage importé migre du v1 au v2
 /// (ADR-0017). À passer à l'ouverture d'un projet
@@ -75,12 +76,38 @@ pub fn registre_migrations_courant() -> MigrationRegistry {
     registre.declare(EVENT_TRACES_IMPORTED, 1);
     registre.declare(EVENT_MESH_IMPORTED, 2);
     registre.register(EVENT_MESH_IMPORTED, 1, migre_mesh_v1_v2);
-    registre.declare(EVENT_SKETCH_ENTITY_ADDED, 1);
+    registre.declare(EVENT_SKETCH_ENTITY_ADDED, 2);
+    registre.register(EVENT_SKETCH_ENTITY_ADDED, 1, migre_entite_v1_v2);
     registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 2);
     registre.register(EVENT_SKETCH_CONSTRAINT_ADDED, 1, migre_contrainte_v2);
     registre.declare(EVENT_SKETCH_CONSTRAINT_UPDATED, 1);
     registre.declare(EVENT_SKETCH_POINT_MOVED, 1);
     registre
+}
+
+/// Migration `sketch.entity.added` v1 → v2 (ADR-0020) : l'arc v1
+/// balaie toujours dans le sens trigonométrique — `angle_fin` lu
+/// comme balayage signé v2, il est réencodé en `début + balayage
+/// positif` ; les autres genres sont inchangés.
+fn migre_entite_v1_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+    let mut donnees = donnees.clone();
+    if donnees.get("genre").and_then(serde_json::Value::as_str) == Some("arc")
+        && let Some(objet) = donnees.as_object_mut()
+    {
+        let debut = objet.get("angle_debut").and_then(serde_json::Value::as_f64);
+        let fin = objet.get("angle_fin").and_then(serde_json::Value::as_f64);
+        if let (Some(debut), Some(fin)) = (debut, fin) {
+            let mut balayage = (fin - debut).rem_euclid(std::f64::consts::TAU);
+            if balayage == 0.0 {
+                balayage = std::f64::consts::TAU;
+            }
+            objet.insert(
+                "angle_fin".to_string(),
+                serde_json::json!(debut + balayage),
+            );
+        }
+    }
+    Ok(donnees)
 }
 
 /// Migration `geom.mesh.imported` v1 → v2 (ADR-0017) : le champ

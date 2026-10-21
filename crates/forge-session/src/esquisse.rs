@@ -32,9 +32,21 @@ use forge_gcs::{
 use forge_units::{Angle, Length};
 use std::collections::BTreeMap;
 
-/// Version de schéma des événements `sketch.entity.added` et
-/// `sketch.point.moved` (ADR-0018).
-const VERSION_SCHEMA_ESQUISSE: u32 = 1;
+/// Version de schéma courante de `sketch.entity.added` : la v2
+/// (ADR-0020) donne à l'arc un balayage signé — `angle_fin` peut
+/// précéder `angle_debut`, le sens de l'arc suit le geste —, la v1
+/// reste lisible (balayage trigonométrique) pour les journaux non
+/// migrés.
+pub(crate) const VERSION_SCHEMA_ENTITE: u32 = 2;
+
+/// Versions acceptées à la relecture d'une entité (ADR-0020) : les
+/// journaux v1 non migrés rejouent, le registre aligne leurs arcs en
+/// v2.
+const VERSIONS_ENTITE: &[u32] = &[1, VERSION_SCHEMA_ENTITE];
+
+/// Version de schéma de `sketch.point.moved` (ADR-0018) : non
+/// concerné par le balayage signé des arcs (ADR-0020).
+const VERSION_SCHEMA_DEPLACEMENT: u32 = 1;
 
 /// Version de schéma courante de `sketch.constraint.added` : la v2
 /// (ADR-0019) encode la cote de `Distance` comme objet typé — fixe
@@ -1262,7 +1274,7 @@ impl Projection for EsquisseProjection {
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         match event.event_type.as_str() {
             EVENT_SKETCH_ENTITY_ADDED => {
-                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                verifie_schema_parmi(event, VERSIONS_ENTITE)?;
                 let (id, entite) = entite_de_journal(event)?;
                 if id != self.entites.len() as u32 {
                     return Err(SessionError::InvalidEventData {
@@ -1325,7 +1337,7 @@ impl Projection for EsquisseProjection {
                 Ok(())
             }
             EVENT_SKETCH_POINT_MOVED => {
-                verifie_schema(event, VERSION_SCHEMA_ESQUISSE)?;
+                verifie_schema(event, VERSION_SCHEMA_DEPLACEMENT)?;
                 let point = champ_id(event, "point")?;
                 let x = Length::from_millimeters(champ_nombre(event, "x")?);
                 let y = Length::from_millimeters(champ_nombre(event, "y")?);

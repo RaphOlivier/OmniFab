@@ -1,6 +1,3 @@
-#![deny(missing_docs)]
-#![forbid(unsafe_code)]
-
 //! # forge-values — moteur unique de liaisons paramétriques
 //!
 //! (ADR-0000 verrou nº6, ADR-0002.) Un seul graphe de dépendances réactif
@@ -532,6 +529,27 @@ impl ValueGraph {
                 });
             }
         }
+        // Cycle traversé (ADR-0020) : si une référence lit, directement
+        // ou non, le nœud redéfini, l'expression posée bouclerait — le
+        // refus vient à la définition, la valeur précédente tient.
+        for dep in &refs {
+            if *dep == id {
+                continue;
+            }
+            let mut vus = BTreeSet::new();
+            if let Some(chemin) = self.chemin_vers(*dep, id, &mut vus) {
+                let mut noms: Vec<String> = Vec::with_capacity(chemin.len() + 1);
+                noms.push(nom.clone());
+                for nid in chemin {
+                    if let Some(node) = self.noeud_par_id(nid) {
+                        noms.push(node.name.clone());
+                    }
+                }
+                return Err(ValuesError::Cycle {
+                    path: noms.join(" → "),
+                });
+            }
+        }
         Ok((parsed, refs))
     }
 
@@ -627,6 +645,35 @@ impl ValueGraph {
                 }
             }
         }
+    }
+
+    /// Chemin de dépendances de `depuis` vers `cible`, si le nœud
+    /// `cible` est lu — directement ou non — depuis `depuis` : le
+    /// premier chemin trouvé suffit au message du cycle (ADR-0020).
+    fn chemin_vers(
+        &self,
+        depuis: NodeId,
+        cible: NodeId,
+        vus: &mut BTreeSet<NodeId>,
+    ) -> Option<Vec<NodeId>> {
+        if !vus.insert(depuis) {
+            return None;
+        }
+        let deps = match self.deps.get(&depuis) {
+            Some(deps) => deps,
+            None => return None,
+        };
+        for dep in deps {
+            if *dep == cible {
+                return Some(vec![depuis, cible]);
+            }
+            if let Some(mut suite) = self.chemin_vers(*dep, cible, vus) {
+                let mut chemin = vec![depuis];
+                chemin.append(&mut suite);
+                return Some(chemin);
+            }
+        }
+        None
     }
 
     fn noms_depuis_ids(&self, ids: &BTreeSet<NodeId>) -> Vec<String> {

@@ -415,8 +415,8 @@ aide-esquisse-outil-cercle =
 
 aide-esquisse-outil-arc =
     .titre = Outil Arc
-    .description = Trace un arc du croquis en trois clics : le centre, le point de début (qui fixe le rayon), puis le point de fin — les angles suivent le sens trigonométrique, les commandes passent par la session (ADR-0018).
-    .exemple = Activez Arc, cliquez le centre, un point du cercle, puis la fin : l'arc se dessine du début vers la fin ; Ctrl+Z annule le dernier ajout, Ctrl+Y le rétablit.
+    .description = Trace un arc du croquis en trois clics : le centre, le point de début (qui fixe le rayon), puis la fin — le sens de balayage suit le déplacement du curseur autour du centre, trigonométrique ou horaire (ADR-0020), les commandes passent par la session (ADR-0018).
+    .exemple = Activez Arc, cliquez le centre, un point du cercle, tournez autour du centre dans le sens voulu, puis cliquez la fin : l'arc suit le geste ; Ctrl+Z annule le dernier ajout, Ctrl+Y le rétablit.
 
 aide-esquisse-contraintes =
     .titre = Contraintes

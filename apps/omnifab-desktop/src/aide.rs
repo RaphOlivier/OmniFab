@@ -1,3 +1,6 @@
+// PRÉPARATION — à pousser dans apps/omnifab-desktop/src/aide.rs
+// (base : dépôt 008f27e + correctifs ADR-0020).
+
 //! Aide intégrée : chaque widget interactif porte un `help_id` et un
 //! clic droit ouvre sa page d'aide (ADR-0010).
 //!
@@ -33,6 +36,13 @@ pub fn avec_aide(reponse: &egui::Response, help_id: &str, ouverte: &mut Option<S
 /// interactif posé sur le même rectangle reçoit le clic droit à
 /// leur place (ADR-0010, validation jalon 2 — l'aide des boutons
 /// grisés doit s'ouvrir aussi).
+///
+/// Le calque n'est posé que sur un widget **désactivé** : egui
+/// délivre le clic au dernier widget interactif posé sur le
+/// rectangle — sur un widget actif, le calque lui volerait le clic
+/// gauche (correctif de la validation jalon 2 : Annuler, Rétablir,
+/// les contraintes et les exports ne répondaient plus au clic,
+/// ADR-0020).
 pub fn avec_aide_sur_calque(
     ui: &egui::Ui,
     reponse: &egui::Response,
@@ -43,39 +53,55 @@ pub fn avec_aide_sur_calque(
         *ouverte = Some(help_id.to_string());
         return;
     }
-    let calque = ui.interact(reponse.rect, reponse.id.with(help_id), egui::Sense::click());
-    if calque.clicked_by(egui::PointerButton::Secondary) {
-        *ouverte = Some(help_id.to_string());
+    if !reponse.enabled() {
+        let calque = ui.interact(reponse.rect, reponse.id.with(help_id), egui::Sense::click());
+        if calque.clicked_by(egui::PointerButton::Secondary) {
+            *ouverte = Some(help_id.to_string());
+        }
     }
 }
 
 /// Affiche la fenêtre d'aide, à appeler à chaque trame.
 ///
 /// `ouverte` à `Some(help_id)` ouvre la page du widget, `None` ne
-/// dessine rien ; fermer la fenêtre remet `ouverte` à `None`.
+/// dessine rien ; fermer la fenêtre remet `ouverte` à `None`. Chaque
+/// nouvelle demande ouvre la fenêtre près du curseur — le
+/// demandeur vient de cliquer là (ADR-0020 : la validation jalon 2
+/// la voyait s'ouvrir au milieu de l'écran).
 pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<String>) {
     let Some(help_id) = ouverte.clone() else {
+        // Fermée : la prochaine demande compte pour neuve.
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("aide-page"), String::new()));
         return;
     };
+    let nouvelle = ctx.data_mut(|d| {
+        let precedente = d.get_temp::<String>(egui::Id::new("aide-page"));
+        d.insert_temp(egui::Id::new("aide-page"), help_id.clone());
+        precedente.as_deref() != Some(help_id.as_str())
+    });
+    let pos = ctx.pointer_latest_pos().map(|pos| pos + egui::vec2(16.0, 16.0));
     let mut visible = true;
     match catalogue.page_aide(&help_id) {
         Ok(page) => {
             let titre = catalogue
                 .traduction_avec(CLE_TITRE, &[("titre", page.titre.as_str().into())])
                 .expect("clé présente dans le FTL (test de la CI)");
-            egui::Window::new(titre)
+            let mut fenetre = egui::Window::new(titre)
                 .open(&mut visible)
-                .default_width(360.0)
-                .show(ctx, |ui| {
-                    ui.heading(&page.titre);
-                    ui.label(&page.description);
-                    ui.separator();
-                    let exemple = catalogue
-                        .traduction(CLE_EXEMPLE)
-                        .expect("clé présente dans le FTL (test de la CI)");
-                    ui.label(exemple);
-                    ui.label(&page.exemple);
-                });
+                .default_width(360.0);
+            if nouvelle && let Some(pos) = pos {
+                fenetre = fenetre.current_pos(pos);
+            }
+            fenetre.show(ctx, |ui| {
+                ui.heading(&page.titre);
+                ui.label(&page.description);
+                ui.separator();
+                let exemple = catalogue
+                    .traduction(CLE_EXEMPLE)
+                    .expect("clé présente dans le FTL (test de la CI)");
+                ui.label(exemple);
+                ui.label(&page.exemple);
+            });
         }
         Err(erreur) => {
             let texte = match erreur {
@@ -84,12 +110,15 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
                     .expect("clé présente dans le FTL (test de la CI)"),
                 autre => autre.to_string(),
             };
-            egui::Window::new(&help_id)
+            let mut fenetre = egui::Window::new(&help_id)
                 .open(&mut visible)
-                .default_width(360.0)
-                .show(ctx, |ui| {
-                    ui.label(texte);
-                });
+                .default_width(360.0);
+            if nouvelle && let Some(pos) = pos {
+                fenetre = fenetre.current_pos(pos);
+            }
+            fenetre.show(ctx, |ui| {
+                ui.label(texte);
+            });
         }
     }
     if !visible {

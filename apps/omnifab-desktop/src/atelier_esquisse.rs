@@ -221,16 +221,18 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     match (app.outil, app.geste.take()) {
         (OutilEsquisse::Selection, _) => {
             // Sélection au clic (ADR-0018 D5, lot 3c-3/3c-4) : le
-            // point visé prime, la ligne visée sinon ; un clic sur
-            // une entité déjà sélectionnée la retire, un clic
-            // ailleurs vide la sélection. Au plus deux entités
-            // restent sélectionnées : les contraintes du lot 3c-4
-            // relient au plus deux entités.
+            // point visé prime, la ligne sinon, la courbe enfin
+            // (ADR-0020) ; un clic sur une entité déjà sélectionnée
+            // la retire, un clic ailleurs vide la sélection. Au plus
+            // deux entités restent sélectionnées : les contraintes
+            // du lot 3c-4 relient au plus deux entités.
             let cible = if vise.id != app.session.esquisse().prochaine_id_entite() {
                 Some(vise.id)
             } else {
                 let resolu = resolu_frais(app);
-                ligne_visee(app.session.esquisse(), resolu, pas, x, y)
+                ligne_visee(app.session.esquisse(), resolu, pas, x, y).or_else(|| {
+                    courbe_visee(app.session.esquisse(), resolu, pas, x, y)
+                })
             };
             match cible {
                 Some(id) => {
@@ -300,6 +302,13 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
         }
         (OutilEsquisse::Arc, Some(GesteEsquisse::ArcCentre { centre })) => {
             point_du_clic(app, vise);
+            // Le balayage signé part de zéro au point de départ : le
+            // sens suivra le déplacement du curseur autour du centre
+            // (ADR-0020).
+            let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+            app.balayage_arc = 0.0;
+            app.angle_curseur_arc = (vise.y.millimeters() - centre_mm.1)
+                .atan2(vise.x.millimeters() - centre_mm.0);
             app.geste = Some(GesteEsquisse::ArcDebut {
                 centre,
                 debut: vise,
@@ -307,14 +316,21 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
         }
         (OutilEsquisse::Arc, Some(GesteEsquisse::ArcDebut { centre, debut })) => {
             point_du_clic(app, vise);
+            // Le clic présent participe au balayage (ADR-0020) : un
+            // geste sans passage du curseur donne le sens direct.
+            suivre_geste_arc(app, x, y);
             let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
             let debut_mm = (debut.x.millimeters(), debut.y.millimeters());
-            let fin_mm = (vise.x.millimeters(), vise.y.millimeters());
             let rayon = Length::from_millimeters(distance_mm(centre_mm, debut_mm));
             let angle_debut =
                 Angle::from_radians((debut_mm.1 - centre_mm.1).atan2(debut_mm.0 - centre_mm.0));
-            let angle_fin =
-                Angle::from_radians((fin_mm.1 - centre_mm.1).atan2(fin_mm.0 - centre_mm.0));
+            // Balayage signé (ADR-0020) : positif dans le sens
+            // trigonométrique, négatif dans le sens horaire ;
+            // confondu avec le départ, le tour entier.
+            let mut balayage = app.balayage_arc;
+            if balayage.abs() < 1e-9 {
+                balayage = std::f64::consts::TAU;
+            }
             poser(
                 app,
                 EntiteEsquisse::Arc {
@@ -323,7 +339,7 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
                     fin: vise.id,
                     rayon,
                     angle_debut,
-                    angle_fin,
+                    angle_fin: Angle::from_radians(angle_debut.radians() + balayage),
                 },
             );
         }
@@ -332,6 +348,26 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
         // ne pose rien.
         (_, Some(_)) => {}
     }
+}
+
+/// Suit le déplacement du curseur autour du centre pendant le
+/// geste de l'arc (ADR-0020) : le balayage signé s'accumule au fil
+/// du mouvement, le sens de l'arc suit le geste au lieu d'être figé
+/// dans le sens trigonométrique — état dérivé de l'interface, jamais
+/// sérialisé.
+pub(crate) fn suivre_geste_arc(app: &mut DemoApp, x: f64, y: f64) {
+    let Some(GesteEsquisse::ArcDebut { centre, .. }) = app.geste.as_ref() else {
+        return;
+    };
+    let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
+    let angle = (y - centre_mm.1).atan2(x - centre_mm.0);
+    let mut delta = (angle - app.angle_curseur_arc).rem_euclid(std::f64::consts::TAU);
+    if delta > std::f64::consts::PI {
+        delta -= std::f64::consts::TAU;
+    }
+    let borne = std::f64::consts::TAU;
+    app.balayage_arc = (app.balayage_arc + delta).clamp(-borne, borne);
+    app.angle_curseur_arc = angle;
 }
 
 /// Saisit la poignée sous le curseur au démarrage d'un glissement
@@ -620,10 +656,22 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
         let libelle_poser = app.texte("cote-poser");
         let libelle_annuler = app.texte("cote-annuler");
         let demande = &mut app.aide;
-        egui::Window::new(titre)
+        // Première trame de l'ouverture (ADR-0020) : la fenêtre se
+        // pose près du curseur, qui vient de cliquer le bouton
+        // Distance — la validation jalon 2 la voyait au centre.
+        let premiere = ctx.data_mut(|d| {
+            let deja = d.get_temp::<bool>(egui::Id::new("cote-ouverte")).unwrap_or(false);
+            d.insert_temp(egui::Id::new("cote-ouverte"), true);
+            !deja
+        });
+        let pos = ctx.pointer_latest_pos().map(|pos| pos + egui::vec2(16.0, 16.0));
+        let mut fenetre = egui::Window::new(titre)
             .open(&mut visible)
-            .default_width(280.0)
-            .show(ctx, |ui| {
+            .default_width(280.0);
+        if premiere && let Some(pos) = pos {
+            fenetre = fenetre.current_pos(pos);
+        }
+        fenetre.show(ctx, |ui| {
                 let reponse = ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
                 avec_aide(&reponse, "aide-cote-fixe", demande);
                 let reponse =
@@ -688,6 +736,9 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
         } else if visible && !fermer {
             app.dialogue_cote = Some(dialogue);
         }
+    } else {
+        // Fermé : la prochaine ouverture compte pour neuve.
+        ctx.data_mut(|d| d.insert_temp(egui::Id::new("cote-ouverte"), false));
     }
 }
 
@@ -719,6 +770,60 @@ fn ligne_visee(
             );
             (distance <= 0.25 * pas).then_some((id, distance))
         })
+        .min_by(|(_, a), (_, b)| a.total_cmp(b))
+        .map(|(id, _)| id)
+}
+
+/// Cercle ou arc visé par un clic (ADR-0020, validation jalon 2) :
+/// la sélection atteint aussi les courbes, pas seulement les points
+/// et les lignes — la plus proche sous le seuil d'un quart de pas,
+/// distance portée à la courbe.
+fn courbe_visee(
+    esquisse: &EsquisseProjection,
+    resolu: Option<&CroquisResolu>,
+    pas: f64,
+    x: f64,
+    y: f64,
+) -> Option<u32> {
+    esquisse
+        .entites()
+        .iter()
+        .filter_map(|(id, entite)| match entite {
+            EntiteEsquisse::Cercle { centre, rayon } => {
+                let (cx, cy) = position_affichee(esquisse, resolu, None, *centre)?;
+                let ecart = (distance_mm((cx.millimeters(), cy.millimeters()), (x, y))
+                    - rayon.millimeters())
+                .abs();
+                Some((*id, ecart))
+            }
+            EntiteEsquisse::Arc {
+                centre,
+                rayon,
+                angle_debut,
+                angle_fin,
+                ..
+            } => {
+                let (cx, cy) = position_affichee(esquisse, resolu, None, *centre)?;
+                let centre_mm = (cx.millimeters(), cy.millimeters());
+                let rayon_mm = rayon.millimeters();
+                let points: Vec<(f64, f64)> = angles_arc(*angle_debut, *angle_fin, SEGMENTS_ARC)
+                    .into_iter()
+                    .map(|angle| {
+                        (
+                            centre_mm.0 + rayon_mm * angle.cos(),
+                            centre_mm.1 + rayon_mm * angle.sin(),
+                        )
+                    })
+                    .collect();
+                let ecart = points
+                    .windows(2)
+                    .map(|paire| distance_segment_mm(paire[0], paire[1], (x, y)))
+                    .fold(f64::INFINITY, f64::min);
+                Some((*id, ecart))
+            }
+            _ => None,
+        })
+        .filter(|(_, ecart)| *ecart <= 0.25 * pas)
         .min_by(|(_, a), (_, b)| a.total_cmp(b))
         .map(|(id, _)| id)
 }
@@ -793,11 +898,20 @@ pub(crate) fn dessiner(
     let esquisse = app.session.esquisse();
     let camera = &app.camera;
     for (id, entite) in esquisse.entites() {
+        // Surbrillance de la sélection (ADR-0020, validation jalon 2)
+        // : l'entité sélectionnée se dessine en accent au trait
+        // épaissi — la sélection ne se lit plus uniquement à l'anneau
+        // des points.
+        let (couleur, largeur) = if app.selection.contains(id) {
+            (couleur_apercu(), LARGEUR_ESQUISSE_PX + 1.5)
+        } else {
+            (COULEUR_ESQUISSE, LARGEUR_ESQUISSE_PX)
+        };
         match entite {
             EntiteEsquisse::Point { .. } => {
                 if let Some((x, y)) = position_affichee(esquisse, resolu, surcharge, *id) {
                     let centre = point_ecran(camera, rect, x.millimeters(), y.millimeters());
-                    painter.circle_filled(centre, RAYON_POINT_PX, COULEUR_ESQUISSE);
+                    painter.circle_filled(centre, RAYON_POINT_PX, couleur);
                 }
             }
             EntiteEsquisse::Ligne { p1, p2 } => {
@@ -809,7 +923,7 @@ pub(crate) fn dessiner(
                             point_ecran(camera, rect, x1.millimeters(), y1.millimeters()),
                             point_ecran(camera, rect, x2.millimeters(), y2.millimeters()),
                         ],
-                        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
+                        egui::Stroke::new(largeur, couleur),
                     );
                 }
             }
@@ -820,7 +934,7 @@ pub(crate) fn dessiner(
                     painter.circle_stroke(
                         centre_ecran,
                         rayon_px,
-                        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
+                        egui::Stroke::new(largeur, couleur),
                     );
                 }
             }
@@ -843,10 +957,7 @@ pub(crate) fn dessiner(
                             centre_mm.1 + rayon_mm * angle.sin(),
                         ));
                     }
-                    painter.add(egui::Shape::line(
-                        points,
-                        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ESQUISSE),
-                    ));
+                    painter.add(egui::Shape::line(points, egui::Stroke::new(largeur, couleur)));
                 }
             }
         }
@@ -923,14 +1034,19 @@ pub(crate) fn dessiner_apercu(
         Some(GesteEsquisse::ArcDebut { centre, debut }) => {
             let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
             let debut_mm = (debut.x.millimeters(), debut.y.millimeters());
-            let vise_mm = (vise.x.millimeters(), vise.y.millimeters());
             let rayon_mm = distance_mm(centre_mm, debut_mm);
             let angle_debut = (debut_mm.1 - centre_mm.1).atan2(debut_mm.0 - centre_mm.0);
-            let angle_vise = (vise_mm.1 - centre_mm.1).atan2(vise_mm.0 - centre_mm.0);
+            // L'aperçu suit le balayage signé du geste (ADR-0020) :
+            // le sens se lit avant le troisième clic ; confondu avec
+            // le départ, le tour entier.
+            let mut balayage = app.balayage_arc;
+            if balayage.abs() < 1e-9 {
+                balayage = std::f64::consts::TAU;
+            }
             let mut points = Vec::with_capacity(SEGMENTS_ARC + 1);
             for angle in angles_arc(
                 Angle::from_radians(angle_debut),
-                Angle::from_radians(angle_vise),
+                Angle::from_radians(angle_debut + balayage),
                 SEGMENTS_ARC,
             ) {
                 points.push(point_ecran(
@@ -993,16 +1109,14 @@ pub(crate) fn position_point(
     esquisse.position_graine(id)
 }
 
-/// Angles de la discrétisation d'un arc (radians), sens
-/// trigonométrique : de l'angle de début à l'angle de fin en
-/// enroulant le cercle — une fin « avant » le début dans ce sens
-/// balaye le reste du tour au lieu de dessiner un cercle complet,
-/// une fin confondue avec le début dessine le cercle entier
-/// (validation jalon 2 : l'arc ne devait pas changer de forme
-/// selon le côté du troisième clic).
+/// Angles de la discrétisation d'un arc (radians), balayage signé
+/// (ADR-0020) : une fin « après » le début balaie dans le sens
+/// trigonométrique, une fin « avant » dans le sens horaire — le
+/// sens suit le geste du curseur, une fin confondue avec le début
+/// dessine le cercle entier.
 pub(crate) fn angles_arc(debut: Angle, fin: Angle, segments: usize) -> Vec<f64> {
     let debut_rad = debut.radians();
-    let mut balayage = (fin.radians() - debut_rad).rem_euclid(std::f64::consts::TAU);
+    let mut balayage = fin.radians() - debut_rad;
     if balayage == 0.0 {
         balayage = std::f64::consts::TAU;
     }
