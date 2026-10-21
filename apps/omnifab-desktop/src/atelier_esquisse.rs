@@ -219,6 +219,27 @@ fn resolu_frais(app: &DemoApp) -> Option<&CroquisResolu> {
         .and_then(|(_, resultat)| resultat.as_ref().ok())
 }
 
+/// Résolution affichable (retour de la re-validation §7) : celle de
+/// l'édition courante si le cache la tient, sinon la dernière
+/// résolution connue tant qu'une résolution fraîche est en vol —
+/// le croquis contraint ne « saute » jamais aux graines pendant le
+/// recalcul, la déformation au moment du clic disparaît. L'accroche
+/// et les cotes restent sur la résolution fraîche : eux ne doivent
+/// pas mentir sur l'état courant.
+pub(crate) fn resolu_affichage(app: &DemoApp) -> Option<&CroquisResolu> {
+    let frais = resolu_frais(app);
+    if frais.is_some() {
+        return frais;
+    }
+    if app.resolution_en_attente.is_some() {
+        return app
+            .croquis_resolu
+            .as_ref()
+            .and_then(|(_, resultat)| resultat.as_ref().ok());
+    }
+    None
+}
+
 /// Traite un clic du viewport 2D selon l'outil actif et le geste
 /// en cours (ADR-0018, lot 3c-2) : le clic vise la grille et les
 /// points existants, les entités partent à la session par
@@ -1098,7 +1119,9 @@ pub(crate) fn dessiner(
     rect: egui::Rect,
     surcharge: Option<(u32, Length, Length)>,
 ) {
-    let resolu = resolu_frais(app);
+    // Affichage : la dernière résolution connue reste montrée
+    // pendant le vol d'une résolution fraîche (anti-flash).
+    let resolu = resolu_affichage(app);
     let esquisse = app.session.esquisse();
     let camera = &app.camera;
     for (id, entite) in esquisse.entites() {
@@ -1218,7 +1241,8 @@ pub(crate) fn dessiner_apercu(
     x: f64,
     y: f64,
 ) {
-    let resolu = resolu_frais(app);
+    // Affichage de l'aperçu : même règle anti-flash que le dessin.
+    let resolu = resolu_affichage(app);
     let pas = pas_de_grille(app.camera.echelle, crate::GRILLE_CIBLE_PX);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     let camera = &app.camera;

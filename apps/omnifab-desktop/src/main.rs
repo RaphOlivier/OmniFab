@@ -3720,6 +3720,79 @@ mod tests {
         assert_eq!(app.travaux_en_attente, 0, "aucun nouvel envoi");
     }
 
+    /// Pendant le vol d'une résolution fraîche, l'affichage garde la
+    /// dernière résolution connue : le croquis contraint ne saute
+    /// jamais aux graines au moment d'un clic — la « déformation »
+    /// rapportée à la re-validation §7 disparaît. L'accroche, elle,
+    /// attend la résolution fraîche.
+    #[test]
+    fn l_affichage_garde_la_derniere_resolution_pendant_le_vol() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("origine");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("mobile");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("ancrage");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Cache à jour : l'affichage montre la position résolue
+        // (sur le cercle de rayon 40), pas la graine (80, -3).
+        let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        let (x, y) = resolu.position(1).expect("point mobile résolu");
+        assert!(
+            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
+            "position résolue sur le cercle, pas la graine"
+        );
+        // Un point de plus : l'édition avance, la résolution
+        // repart — l'affichage garde la dernière connue pendant le
+        // vol au lieu de flasher les graines.
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(120.0),
+                y: Length::from_millimeters(90.0),
+            },
+        })
+        .expect("point posé");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "résolution fraîche en vol");
+        assert!(
+            !app.croquis_resolu
+                .as_ref()
+                .is_some_and(|(cle, _)| cle.0 == app.session.esquisse().edition()),
+            "le cache est bien périmé"
+        );
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("dernière résolution tenue pendant le vol");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        assert!(
+            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
+            "l'affichage tient la résolution, pas la graine (80, -3)"
+        );
+    }
+
     /// La coïncidence traverse le fil de travail : deux points
     /// distincts se superposent après résolution (ADR-0018 D3).
     #[test]
