@@ -114,6 +114,20 @@ esquisse-contrainte-point-fixe = Fixer le point
 esquisse-contrainte-distance = Distance
 esquisse-dof = Degrés de liberté : {$n}
 esquisse-redondances = Contraintes redondantes : {$n}
+esquisse-contraintes-poses = Contraintes posées
+contrainte-libelle-horizontale = Horizontale — ligne {$ligne}
+contrainte-libelle-verticale = Verticale — ligne {$ligne}
+contrainte-libelle-coincidence = Coincidence — points {$p1} / {$p2}
+contrainte-libelle-distance-fixe = Distance — points {$p1} / {$p2} : {$mm} mm
+contrainte-libelle-distance-expression = Distance — points {$p1} / {$p2} : {$alias}
+contrainte-libelle-angle = Angle — lignes {$l1} / {$l2} : {$deg}°
+contrainte-libelle-meme-longueur = Égalité de longueur — lignes {$l1} / {$l2}
+contrainte-libelle-point-sur-ligne = Sur ligne — point {$p} / ligne {$l}
+contrainte-libelle-paralleles = Parallèles — lignes {$l1} / {$l2}
+contrainte-libelle-perpendiculaires = Perpendiculaires — lignes {$l1} / {$l2}
+contrainte-libelle-rayon-cercle = Rayon — cercle {$c} : {$mm} mm
+contrainte-libelle-point-sur-cercle = Sur cercle — point {$p} / cercle {$c}
+contrainte-libelle-point-fixe = Point fixe — point {$p}
 
 # --- Compteurs de géométrie importée ---
 
@@ -425,23 +439,28 @@ aide-esquisse-contraintes =
 
 aide-esquisse-contrainte-horizontale =
     .titre = Contrainte Horizontale
-    .description = Force la ligne sélectionnée à l'horizontale. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
-    .exemple = Tracez une ligne avec l'outil Ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient horizontale au prochain recalcul.
+    .description = Force la ligne sélectionnée à l'horizontale. Une ligne déjà orientée bascule : la nouvelle orientation remplace l'ancienne à la pose (ADR-0021), reposer la même orientation est refusé. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne avec l'outil Ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient horizontale au prochain recalcul ; cliquez ensuite Verticale : l'orientation bascule sans écraser la ligne.
 
 aide-esquisse-contrainte-verticale =
     .titre = Contrainte Verticale
-    .description = Force la ligne sélectionnée à la verticale. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
-    .exemple = Tracez une ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient verticale au prochain recalcul.
+    .description = Force la ligne sélectionnée à la verticale. Une ligne déjà orientée bascule : la nouvelle orientation remplace l'ancienne à la pose (ADR-0021), reposer la même orientation est refusé. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient verticale au prochain recalcul ; cliquez ensuite Horizontale : l'orientation bascule sans écraser la ligne.
 
 aide-esquisse-contrainte-point-fixe =
     .titre = Fixer le point
-    .description = Ancre le point sélectionné à sa position courante : le croquis gagne sa référence au monde (ADR-0018). Le bouton est actif seulement avec un point en sélection.
-    .exemple = Posez un point, sélectionnez-le, cliquez : un rectangle contraint fixé à ce coin tombe à zéro degré de liberté.
+    .description = Ancre le point sélectionné à sa position courante : le croquis gagne sa référence au monde (ADR-0018). Un point ancré ne se saisit plus — le glisser est refusé et un liseré orange le signale (ADR-0021). Le bouton est actif seulement avec un point en sélection.
+    .exemple = Posez un point, sélectionnez-le, cliquez : un rectangle contraint fixé à ce coin tombe à zéro degré de liberté ; essayez de le glisser : rien ne bouge.
 
 aide-esquisse-contrainte-distance =
     .titre = Contrainte Distance
-    .description = Ouvre le dialogue de cote pour les deux points sélectionnés (ADR-0019) : valeur fixe en millimètres ou expression pilotée par un alias sous le préfixe réservé « esquisse. ». La contrainte n'est posée qu'au clic sur « Poser » : un refus laisse le dialogue ouvert. Le bouton est actif seulement avec deux points en sélection.
-    .exemple = Sélectionnez deux points du croquis puis cliquez : le dialogue propose la distance courante ; posez une expression « largeur / 2 » sous l'alias « demi » et la cote pilotée s'impose au prochain recalcul.
+    .description = Ouvre le dialogue de cote pour les deux points sélectionnés (ADR-0019) : valeur fixe en millimètres ou expression pilotée par un alias sous le préfixe réservé « esquisse. ». La contrainte n'est posée qu'au clic sur « Poser » : un refus laisse le dialogue ouvert. Le bouton est actif seulement avec deux points en sélection. La valeur de départ vaut la distance courante : une cote posée sans changement ne déplace rien — la liste des contraintes posées confirme la pose (ADR-0021).
+    .exemple = Sélectionnez deux points du croquis puis cliquez : le dialogue propose la distance courante ; changez la valeur et posez : les points s'écartent au prochain recalcul, la contrainte apparaît en surbrillance dans la liste ; posez une expression « largeur / 2 » sous l'alias « demi » et la cote pilotée s'impose au prochain recalcul.
+
+aide-esquisse-contraintes-poses =
+    .titre = Contraintes posées
+    .description = Liste les contraintes du croquis dans l'ordre de pose (ADR-0021) : la dernière posée se surligne un court instant, chaque libellé désigne les entités par leurs identifiants. Une nouvelle orientation sur une ligne déjà orientée remplace l'existante, un point ancré ne se saisit plus.
+    .exemple = Posez Horizontale puis Verticale sur la même ligne : la verticale remplace l'horizontale, la contrainte posée s'affiche en surbrillance dans la liste, la ligne ne s'écrase plus.
 
 aide-cote-fixe =
     .titre = Valeur fixe

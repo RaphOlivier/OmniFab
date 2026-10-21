@@ -728,6 +728,15 @@ impl EsquisseProjection {
         &self.contraintes
     }
 
+    /// Un point porte-t-il un ancrage `PointFixe` (ADR-0021 D3) ?
+    /// L'ancrage interdit le déplacement de sa graine : le point
+    /// n'est plus une inconnue du solveur ni une poignée.
+    pub fn point_ancre(&self, id: u32) -> bool {
+        self.contraintes.iter().any(|(_, contrainte)| {
+            matches!(contrainte, ContrainteEsquisse::PointFixe { point } if *point == id)
+        })
+    }
+
     /// Genre d'une entité du croquis, ou `None` si l'identifiant est
     /// inconnu.
     pub fn genre_entite(&self, id: u32) -> Option<GenreEntite> {

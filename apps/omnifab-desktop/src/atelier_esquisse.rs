@@ -19,7 +19,9 @@
 //! passe par le dialogue de cote (ADR-0019 §6) : valeur fixe ou
 //! expression pilotée par un alias sous le préfixe réservé
 //! « esquisse. », posée par la commande AddConstraint seulement
-//! au clic sur « Poser ».
+//! au clic sur « Poser ». La bascule d'orientation, la liste des
+//! contraintes posées avec surbrillance momentanée et l'ancrage
+//! non saisissable complètent la reprise de validation (ADR-0021).
 
 use crate::DemoApp;
 use crate::aide::{avec_aide, avec_aide_sur_calque};
@@ -28,7 +30,8 @@ use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};
 use forge_session::{
     AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
-    EsquisseProjection, GenreEntite, MovePoint, ValeurCote,
+    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EsquisseProjection,
+    GenreEntite, MovePoint, ValeurCote,
 };
 use forge_units::{Angle, Length};
 
@@ -39,6 +42,12 @@ const COULEUR_ESQUISSE: egui::Color32 = egui::Color32::from_rgb(255, 130, 30);
 const LARGEUR_ESQUISSE_PX: f32 = 1.5;
 /// Rayon des marqueurs de points, en pixels logiques.
 const RAYON_POINT_PX: f32 = 3.0;
+/// Couleur du liseré des points ancrés (ADR-0021 D3) : turquoise
+/// distinct des entités (orange), de la sélection et de la grille.
+const COULEUR_ANCRAGE: egui::Color32 = egui::Color32::from_rgb(64, 224, 208);
+/// Durée de la surbrillance d'une contrainte posée dans la liste
+/// (ADR-0021 D2), en secondes.
+const DUREE_SURBRILLANCE_S: f64 = 1.5;
 /// Segments de la discrétisation des arcs au painter.
 const SEGMENTS_ARC: usize = 32;
 /// Taille maximale de la sélection (ADR-0018 D5, lot 3c-4) : les
@@ -388,7 +397,13 @@ fn balaie(balayage: f64, precedent: f64, angle: f64) -> f64 {
 pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let resolu = resolu_frais(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
-    if vise.id != app.session.esquisse().prochaine_id_entite() {
+    // Un point ancré ne se saisit pas (ADR-0021 D3) : le grab est
+    // refusé — pas de glissement fantôme qui suivrait le curseur
+    // avant d'être repoussé au relâchement ; le clic seul reste
+    // libre de le sélectionner.
+    if vise.id != app.session.esquisse().prochaine_id_entite()
+        && !app.session.esquisse().point_ancre(vise.id)
+    {
         app.saisie = Some(vise.id);
         app.selection = vec![vise.id];
     }
@@ -585,6 +600,43 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
             &mut app.aide,
         );
     }
+    // Contraintes posées (ADR-0021 D2) : la liste montre chaque
+    // contrainte du croquis dans l'ordre de pose — la dernière
+    // touchée se surligne un court instant, le temps de voir où
+    // elle est tombée. Sans contrainte, la section disparaît. Un
+    // état dérivé d'affichage, jamais sérialisé.
+    if !app.session.esquisse().contraintes().is_empty() {
+        let poses: Vec<(u32, String)> = app
+            .session
+            .esquisse()
+            .contraintes()
+            .iter()
+            .map(|(id, contrainte)| (*id, libelle_contrainte(app, contrainte)))
+            .collect();
+        let reponse = ui.heading(app.texte("esquisse-contraintes-poses"));
+        avec_aide_sur_calque(
+            ui,
+            &reponse,
+            "aide-esquisse-contraintes-poses",
+            &mut app.aide,
+        );
+        for (id, libelle) in poses {
+            let texte = if est_surlignee(app, id) {
+                egui::RichText::new(libelle)
+                    .color(couleur_apercu())
+                    .strong()
+            } else {
+                egui::RichText::new(libelle).weak()
+            };
+            ui.label(texte);
+        }
+        // La surbrillance s'estompe au fil des trames : redemande
+        // le rafraîchissement tant qu'elle vit.
+        if surbrillance_vivante(app) {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+        }
+    }
     // Degrés de liberté (ADR-0018 D5) : lus sur le cache résolu
     // frais — rien pendant une résolution en vol, la valeur
     // affichée reste celle d'un croquis cohérent avec le journal.
@@ -640,8 +692,151 @@ fn deux_points_selectionnes(app: &DemoApp) -> Option<(u32, u32)> {
 /// Ajoute une contrainte au croquis (ADR-0018 D2, lot 3c-4) : la
 /// commande `AddConstraint` passe par la session — un refus n'écrit
 /// rien au journal et le message d'état reste fidèle (ADR-0016 C4).
+/// Une pose effective marque la contrainte touchée pour la
+/// surbrillance momentanée de la liste (ADR-0021 D2) : l'identifiant
+/// vient du dernier événement du journal, pose neuve comme bascule.
 pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquisse) {
-    let _ = app.executer(&AddConstraint { contrainte });
+    if app.executer(&AddConstraint { contrainte }).is_err() {
+        return;
+    }
+    let Some(evenement) = app.session.document().events().last() else {
+        return;
+    };
+    let contrainte_posee = evenement.event_type == EVENT_SKETCH_CONSTRAINT_ADDED
+        || evenement.event_type == EVENT_SKETCH_CONSTRAINT_UPDATED;
+    let Some(id) = evenement
+        .data
+        .get("id")
+        .and_then(serde_json::Value::as_u64)
+    else {
+        return;
+    };
+    if contrainte_posee {
+        app.derniere_contrainte = Some((id as u32, app.instant));
+    }
+}
+
+/// La contrainte est-elle celle posée en dernier, encore dans sa
+/// fenêtre de surbrillance (ADR-0021 D2) ?
+fn est_surlignee(app: &DemoApp, id: u32) -> bool {
+    if let Some((id_posee, _)) = app.derniere_contrainte {
+        id_posee == id && surbrillance_vivante(app)
+    } else {
+        false
+    }
+}
+
+/// Une contrainte posée récemment est-elle encore dans sa fenêtre
+/// de surbrillance (ADR-0021 D2) ?
+fn surbrillance_vivante(app: &DemoApp) -> bool {
+    if let Some((_, instant)) = app.derniere_contrainte {
+        app.instant - instant < DUREE_SURBRILLANCE_S
+    } else {
+        false
+    }
+}
+
+/// Libellé d'une contrainte de la liste des posées (ADR-0021 D2) :
+/// genre traduit, cotes en millimètres et angle en degrés, entités
+/// désignées par leurs identifiants — identifiant à identifiant, le
+/// croquis reste relisible.
+fn libelle_contrainte(app: &DemoApp, contrainte: &ContrainteEsquisse) -> String {
+    match contrainte {
+        ContrainteEsquisse::Coincidence { p1, p2 } => app.texte_avec(
+            "contrainte-libelle-coincidence",
+            &[
+                ("p1", Argument::from(i64::from(*p1))),
+                ("p2", Argument::from(i64::from(*p2))),
+            ],
+        ),
+        ContrainteEsquisse::Horizontale { ligne } => app.texte_avec(
+            "contrainte-libelle-horizontale",
+            &[("ligne", Argument::from(i64::from(*ligne)))],
+        ),
+        ContrainteEsquisse::Verticale { ligne } => app.texte_avec(
+            "contrainte-libelle-verticale",
+            &[("ligne", Argument::from(i64::from(*ligne)))],
+        ),
+        ContrainteEsquisse::Distance { p1, p2, valeur } => match valeur {
+            ValeurCote::Fixe { mm } => app.texte_avec(
+                "contrainte-libelle-distance-fixe",
+                &[
+                    ("p1", Argument::from(i64::from(*p1))),
+                    ("p2", Argument::from(i64::from(*p2))),
+                    ("mm", Argument::from(format!("{:.1}", mm.millimeters()))),
+                ],
+            ),
+            ValeurCote::Expression { alias, .. } => app.texte_avec(
+                "contrainte-libelle-distance-expression",
+                &[
+                    ("p1", Argument::from(i64::from(*p1))),
+                    ("p2", Argument::from(i64::from(*p2))),
+                    ("alias", Argument::from(alias.as_str())),
+                ],
+            ),
+        },
+        ContrainteEsquisse::Angle {
+            ligne1,
+            ligne2,
+            valeur,
+        } => app.texte_avec(
+            "contrainte-libelle-angle",
+            &[
+                ("l1", Argument::from(i64::from(*ligne1))),
+                ("l2", Argument::from(i64::from(*ligne2))),
+                (
+                    "deg",
+                    Argument::from(format!("{:.1}", valeur.radians().to_degrees())),
+                ),
+            ],
+        ),
+        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => app.texte_avec(
+            "contrainte-libelle-meme-longueur",
+            &[
+                ("l1", Argument::from(i64::from(*ligne1))),
+                ("l2", Argument::from(i64::from(*ligne2))),
+            ],
+        ),
+        ContrainteEsquisse::PointSurLigne { point, ligne } => app.texte_avec(
+            "contrainte-libelle-point-sur-ligne",
+            &[
+                ("p", Argument::from(i64::from(*point))),
+                ("l", Argument::from(i64::from(*ligne))),
+            ],
+        ),
+        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => app.texte_avec(
+            "contrainte-libelle-paralleles",
+            &[
+                ("l1", Argument::from(i64::from(*ligne1))),
+                ("l2", Argument::from(i64::from(*ligne2))),
+            ],
+        ),
+        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => app.texte_avec(
+            "contrainte-libelle-perpendiculaires",
+            &[
+                ("l1", Argument::from(i64::from(*ligne1))),
+                ("l2", Argument::from(i64::from(*ligne2))),
+            ],
+        ),
+        ContrainteEsquisse::RayonCercle { cercle, valeur } => app.texte_avec(
+            "contrainte-libelle-rayon-cercle",
+            &[
+                ("c", Argument::from(i64::from(*cercle))),
+                ("mm", Argument::from(format!("{:.1}", valeur.millimeters()))),
+            ],
+        ),
+        ContrainteEsquisse::PointSurCercle { point, cercle } => app.texte_avec(
+            "contrainte-libelle-point-sur-cercle",
+            &[
+                ("p", Argument::from(i64::from(*point))),
+                ("c", Argument::from(i64::from(*cercle))),
+            ],
+        ),
+        ContrainteEsquisse::PointFixe { point } => app.texte_avec(
+            "contrainte-libelle-point-fixe",
+            &[("p", Argument::from(i64::from(*point)))],
+        ),
+    }
 }
 
 /// Fenêtre du dialogue de cote (ADR-0019 §6) : valeur fixe ou
@@ -999,6 +1194,16 @@ pub(crate) fn dessiner(
                         centre,
                         RAYON_POINT_PX + 3.0,
                         egui::Stroke::new(LARGEUR_ESQUISSE_PX, couleur_apercu()),
+                    );
+                }
+                // Point ancré (ADR-0021 D3) : un liseré distinct
+                // signale l'ancrage — la poignée ne se saisit plus,
+                // le marqueur dit pourquoi.
+                if esquisse.point_ancre(*id) {
+                    painter.circle_stroke(
+                        centre,
+                        RAYON_POINT_PX + 3.0,
+                        egui::Stroke::new(LARGEUR_ESQUISSE_PX, COULEUR_ANCRAGE),
                     );
                 }
             }

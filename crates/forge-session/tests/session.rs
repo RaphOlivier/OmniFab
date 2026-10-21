@@ -823,6 +823,124 @@ fn une_contrainte_sur_entite_absente_est_refusee() {
     assert_eq!(session.esquisse().contraintes().len(), 0);
 }
 
+/// La bascule d'orientation remplace la contrainte opposée au
+/// même identifiant (ADR-0021 D1) : jamais deux orientations
+/// contradictoires sur une ligne, reposer le même genre est
+/// refusé sans rien écrire — la ligne ne s'écrase plus à la
+/// résolution. L'annulation de la bascule restaure l'orientation
+/// précédente.
+#[test]
+fn la_bascule_d_orientation_remplace_l_opposee() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (40.0, 25.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne ajoutée");
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .expect("orientation posée");
+    let journal_avant = session.document().events().len();
+    // Bascule : la verticale remplace l'horizontale, identifiant
+    // conservé, un seul événement de mise à jour.
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Verticale { ligne: 2 },
+        })
+        .expect("bascule");
+    let contraintes = session.esquisse().contraintes();
+    assert_eq!(contraintes.len(), 1, "remplacée, pas ajoutée");
+    assert_eq!(contraintes[0].0, 0, "identifiant conservé");
+    assert!(matches!(
+        contraintes[0].1,
+        ContrainteEsquisse::Verticale { ligne: 2 }
+    ));
+    assert_eq!(
+        session.document().events().len(),
+        journal_avant + 1,
+        "un événement de mise à jour"
+    );
+    // Reposer le même genre : refusé, rien au journal.
+    let erreur = session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Verticale { ligne: 2 },
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert_eq!(
+        session.document().events().len(),
+        journal_avant + 1,
+        "le refus n'écrit rien"
+    );
+    // L'annulation de la bascule restaure l'horizontale.
+    session.undo().expect("undo");
+    let contraintes = session.esquisse().contraintes();
+    assert_eq!(contraintes.len(), 1, "la contrainte originale tient");
+    assert!(matches!(
+        contraintes[0].1,
+        ContrainteEsquisse::Horizontale { ligne: 2 }
+    ));
+}
+
+/// Le déplacement d'un point ancré est refusé (ADR-0021 D3) : la
+/// graine d'un `PointFixe` ne bouge plus, rien au journal ; un
+/// point libre se déplace toujours.
+#[test]
+fn le_deplacement_d_un_point_ancre_est_refuse() {
+    let mut session = Session::new("tests");
+    for x in [0.0, 30.0] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(0.0),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("ancrage posé");
+    let erreur = session
+        .execute(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(50.0),
+            y: Length::from_millimeters(20.0),
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert_eq!(
+        session.document().events().len(),
+        3,
+        "le refus n'écrit rien : deux points et l'ancrage"
+    );
+    assert!(proche(session.esquisse().position_graine(0), 0.0, 0.0));
+    // Un point libre se déplace toujours.
+    session
+        .execute(&MovePoint {
+            point: 1,
+            x: Length::from_millimeters(60.0),
+            y: Length::from_millimeters(10.0),
+        })
+        .expect("déplacement");
+    assert_eq!(session.document().events().len(), 4, "le déplacement écrit");
+    assert!(proche(session.esquisse().position_graine(1), 60.0, 10.0));
+}
+
 /// Le déplacement pose la graine du point, l'annulation la retire :
 /// la résolution suit la dernière graine au journal (ADR-0018 D1).
 #[test]

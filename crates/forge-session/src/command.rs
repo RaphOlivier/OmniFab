@@ -506,7 +506,10 @@ impl Command for AddEntity {
 /// Ajoute une contrainte au croquis contraint (ADR-0018 D1) : les
 /// onze genres du solveur plus l'ancrage d'un point. Un refus
 /// (entités référencées absentes, cote invalide) ne laisse rien au
-/// journal (OF-SES-0001).
+/// journal (OF-SES-0001). Bascule d'orientation (ADR-0021 D1) :
+/// poser `Horizontale` sur une ligne déjà `Verticale` (ou
+/// inversement) remplace la contrainte existante à identifiant
+/// conservé ; reposer le même genre est refusé.
 ///
 /// Cote pilotée (ADR-0019 décision 4) : une `Distance` en expression
 /// crée AUSSI le nœud `esquisse.<alias>` dans le graphe des liaisons
@@ -525,6 +528,44 @@ impl Command for AddConstraint {
         let esquisse = session.esquisse();
         if let Some(reason) = esquisse.raison_refus_contrainte(&self.contrainte) {
             return Err(SessionError::CommandRejected { reason });
+        }
+        // Bascule d'orientation (ADR-0021 D1) : une ligne porte au
+        // plus une contrainte d'orientation. La pose du genre opposé
+        // remplace l'existante à identifiant conservé — jamais deux
+        // orientations contradictoires, la ligne ne s'écrase plus à
+        // la résolution ; reposer le même genre est refusé
+        // (redondance) sans rien écrire au journal.
+        let orientation = match &self.contrainte {
+            ContrainteEsquisse::Horizontale { ligne } => Some((*ligne, true)),
+            ContrainteEsquisse::Verticale { ligne } => Some((*ligne, false)),
+            _ => None,
+        };
+        if let Some((ligne, horizontale)) = orientation
+            && let Some((id_existante, horiz_existante)) = esquisse
+                .contraintes()
+                .iter()
+                .find_map(|(id, contrainte)| match contrainte {
+                    ContrainteEsquisse::Horizontale { ligne: l } if *l == ligne => {
+                        Some((*id, true))
+                    }
+                    ContrainteEsquisse::Verticale { ligne: l } if *l == ligne => {
+                        Some((*id, false))
+                    }
+                    _ => None,
+                })
+        {
+            if horiz_existante == horizontale {
+                let genre = if horizontale { "horizontale" } else { "verticale" };
+                return Err(SessionError::CommandRejected {
+                    reason: format!("la ligne {ligne} porte déjà une contrainte {genre}"),
+                });
+            }
+            return Ok(CommandPlan::new(vec![NewEvent::new(
+                EVENT_SKETCH_CONSTRAINT_UPDATED,
+                1,
+                "",
+                crate::esquisse::contrainte_en_json(id_existante, &self.contrainte),
+            )]));
         }
         let id = esquisse.prochaine_id_contrainte();
         let valeur = match &self.contrainte {
@@ -580,8 +621,8 @@ impl Command for AddConstraint {
 /// Pose la graine de position d'un point du croquis (ADR-0018 D1) :
 /// la nouvelle position devient le point de départ de la prochaine
 /// résolution — jamais une position résolue au journal. Un refus
-/// (point absent, coordonnées non finies) ne laisse rien au journal
-/// (OF-SES-0001).
+/// (point absent, coordonnées non finies, point ancré par un
+/// `PointFixe`, ADR-0021) ne laisse rien au journal (OF-SES-0001).
 #[derive(Debug, Clone)]
 pub struct MovePoint {
     /// Identifiant du point déplacé.
@@ -595,6 +636,15 @@ pub struct MovePoint {
 impl Command for MovePoint {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
         let esquisse = session.esquisse();
+        // Un point ancré ne se déplace plus (ADR-0021 D3) : la
+        // graine d'un `PointFixe` ne bouge pas — l'ancrage reste
+        // effectif face à un glisser tenté depuis l'atelier comme
+        // à une commande scriptée.
+        if esquisse.point_ancre(self.point) {
+            return Err(SessionError::CommandRejected {
+                reason: format!("le point {} est ancré par une contrainte PointFixe", self.point),
+            });
+        }
         if let Some(reason) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
             return Err(SessionError::CommandRejected { reason });
         }

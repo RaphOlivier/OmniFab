@@ -722,6 +722,13 @@ struct DemoApp {
     /// saisie (ADR-0018 D5, lot 3c-4) : état de l'app UI, jamais un
     /// événement — elle préremplit le dialogue de cote.
     cote_distance: f64,
+    /// Dernière contrainte touchée et instant de pose (ADR-0021
+    /// D2) : surbrillance momentanée dans la liste des contraintes
+    /// — état d'affichage, jamais sérialisé.
+    derniere_contrainte: Option<(u32, f64)>,
+    /// Instant de la trame courante, en secondes egui monotones :
+    /// sert à estomper la surbrillance momentanée.
+    instant: f64,
     /// Génération des liaisons (ADR-0019 §6) : avance à chaque
     /// commande ou annulation qui touche le graphe des valeurs —
     /// les cotes pilotées se re-figent et la résolution repart
@@ -804,6 +811,8 @@ impl DemoApp {
             redondances_affichees: None,
             redondances_precedentes: None,
             cote_distance: 100.0,
+            derniere_contrainte: None,
+            instant: 0.0,
             generation_liaisons: 0,
             dialogue_nouvel_alias: None,
             dialogue_suppression: None,
@@ -2715,6 +2724,9 @@ impl DemoApp {
 
 impl eframe::App for DemoApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Instant de la trame (ADR-0021 D2) : alimente l'estompage
+        // de la surbrillance momentanée des contraintes posées.
+        self.instant = ctx.input(|i| i.time);
         // Raccourcis : Cmd (Ctrl sous Windows/Linux) annule, Cmd+Y ou
         // Cmd+Maj+Z rétablit ; aucun raccourci quand un champ de texte
         // a le focus — la saisie en cours n'est pas écrasée
@@ -2869,7 +2881,7 @@ fn main() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
-    use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse};
+    use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
 
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
@@ -4180,6 +4192,103 @@ mod tests {
             "le refus n'écrit rien au journal"
         );
         assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+    }
+
+    /// La bascule d'orientation depuis l'atelier remplace la
+    /// contrainte opposée au même identifiant et la liste
+    /// surligne la contrainte touchée (ADR-0021 D1/D2) ;
+    /// reposer le même genre est refusé sans rien écrire.
+    #[test]
+    fn la_bascule_depuis_l_atelier_remplace_et_surligne() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        for (x, y) in [(0.0, 0.0), (40.0, 25.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.selection = vec![2];
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 2 },
+        );
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "la pose surligne la contrainte"
+        );
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Verticale { ligne: 2 },
+        );
+        let contraintes = app.session.esquisse().contraintes();
+        assert_eq!(contraintes.len(), 1, "bascule : remplacée, pas ajoutée");
+        assert_eq!(contraintes[0].0, 0, "identifiant conservé");
+        assert!(matches!(
+            contraintes[0].1,
+            ContrainteEsquisse::Verticale { ligne: 2 }
+        ));
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "la bascule surligne la contrainte remplacée"
+        );
+        // Reposer le même genre : refusé, aucune nouvelle
+        // surbrillance.
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Verticale { ligne: 2 },
+        );
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "rien de neuf à surligner"
+        );
+    }
+
+    /// Un point ancré ne se saisit plus (ADR-0021 D3) : le grab est
+    /// refusé et un déplacement scripté par `MovePoint` laisse la
+    /// graine en place.
+    #[test]
+    fn un_point_ancre_ne_se_saisit_plus() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.selection = vec![0];
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::PointFixe { point: 0 },
+        );
+        atelier_esquisse::saisir_poignee(&mut app, pas, 0.0, 0.0);
+        assert!(app.saisie.is_none(), "le point ancré n'est pas saisi");
+        // Un déplacement scripté est refusé : la graine tient.
+        let _ = app.executer(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(pas),
+            y: Length::from_millimeters(pas),
+        });
+        assert!(app.error.is_some(), "le déplacement d'un point ancré est refusé");
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point");
+        assert_eq!(x.millimeters(), 0.0, "la graine tient");
+        assert_eq!(y.millimeters(), 0.0, "la graine tient");
     }
 
     /// Le rectangle contraint tombe à zéro degré de liberté
