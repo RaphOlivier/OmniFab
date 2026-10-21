@@ -659,10 +659,7 @@ impl ValueGraph {
         if !vus.insert(depuis) {
             return None;
         }
-        let deps = match self.deps.get(&depuis) {
-            Some(deps) => deps,
-            None => return None,
-        };
+        let deps = self.deps.get(&depuis)?;
         for dep in deps {
             if *dep == cible {
                 return Some(vec![depuis, cible]);

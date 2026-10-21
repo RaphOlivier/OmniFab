@@ -101,10 +101,7 @@ fn migre_entite_v1_v2(donnees: &serde_json::Value) -> Result<serde_json::Value, 
             if balayage == 0.0 {
                 balayage = std::f64::consts::TAU;
             }
-            objet.insert(
-                "angle_fin".to_string(),
-                serde_json::json!(debut + balayage),
-            );
+            objet.insert("angle_fin".to_string(), serde_json::json!(debut + balayage));
         }
     }
     Ok(donnees)

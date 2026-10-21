@@ -672,43 +672,42 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
             fenetre = fenetre.current_pos(pos);
         }
         fenetre.show(ctx, |ui| {
-                let reponse = ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
-                avec_aide(&reponse, "aide-cote-fixe", demande);
+            let reponse = ui.radio_value(&mut dialogue.fixe, true, libelle_fixe.as_str());
+            avec_aide(&reponse, "aide-cote-fixe", demande);
+            let reponse = ui.radio_value(&mut dialogue.fixe, false, libelle_expression.as_str());
+            avec_aide(&reponse, "aide-cote-expression", demande);
+            if dialogue.fixe {
+                let reponse = ui.add(
+                    egui::DragValue::new(&mut dialogue.mm)
+                        .speed(1.0)
+                        .suffix(" mm"),
+                );
+                avec_aide(&reponse, "aide-cote-mm", demande);
+            } else {
+                ui.label(&libelle_texte);
+                let reponse = ui.text_edit_singleline(&mut dialogue.texte);
+                avec_aide(&reponse, "aide-cote-texte", demande);
+            }
+            ui.label(&libelle_alias);
+            let reponse = ui.text_edit_singleline(&mut dialogue.alias);
+            avec_aide(&reponse, "aide-cote-alias", demande);
+            let texte_pret = !dialogue.texte.trim().is_empty();
+            let alias_pret = !dialogue.alias.trim().is_empty();
+            let pose_possible = dialogue.fixe || (texte_pret && alias_pret);
+            ui.horizontal(|ui| {
                 let reponse =
-                    ui.radio_value(&mut dialogue.fixe, false, libelle_expression.as_str());
-                avec_aide(&reponse, "aide-cote-expression", demande);
-                if dialogue.fixe {
-                    let reponse = ui.add(
-                        egui::DragValue::new(&mut dialogue.mm)
-                            .speed(1.0)
-                            .suffix(" mm"),
-                    );
-                    avec_aide(&reponse, "aide-cote-mm", demande);
-                } else {
-                    ui.label(&libelle_texte);
-                    let reponse = ui.text_edit_singleline(&mut dialogue.texte);
-                    avec_aide(&reponse, "aide-cote-texte", demande);
+                    ui.add_enabled(pose_possible, egui::Button::new(libelle_poser.as_str()));
+                avec_aide(&reponse, "aide-cote-poser", demande);
+                if reponse.clicked() {
+                    poser = true;
                 }
-                ui.label(&libelle_alias);
-                let reponse = ui.text_edit_singleline(&mut dialogue.alias);
-                avec_aide(&reponse, "aide-cote-alias", demande);
-                let texte_pret = !dialogue.texte.trim().is_empty();
-                let alias_pret = !dialogue.alias.trim().is_empty();
-                let pose_possible = dialogue.fixe || (texte_pret && alias_pret);
-                ui.horizontal(|ui| {
-                    let reponse =
-                        ui.add_enabled(pose_possible, egui::Button::new(libelle_poser.as_str()));
-                    avec_aide(&reponse, "aide-cote-poser", demande);
-                    if reponse.clicked() {
-                        poser = true;
-                    }
-                    let reponse = ui.button(&libelle_annuler);
-                    avec_aide(&reponse, "aide-cote-annuler", demande);
-                    if reponse.clicked() {
-                        fermer = true;
-                    }
-                });
+                let reponse = ui.button(&libelle_annuler);
+                avec_aide(&reponse, "aide-cote-annuler", demande);
+                if reponse.clicked() {
+                    fermer = true;
+                }
             });
+        });
         if visible && !fermer && poser {
             let valeur = if dialogue.fixe {
                 ValeurCote::Fixe {
@@ -957,7 +956,10 @@ pub(crate) fn dessiner(
                             centre_mm.1 + rayon_mm * angle.sin(),
                         ));
                     }
-                    painter.add(egui::Shape::line(points, egui::Stroke::new(largeur, couleur)));
+                    painter.add(egui::Shape::line(
+                        points,
+                        egui::Stroke::new(largeur, couleur),
+                    ));
                 }
             }
         }

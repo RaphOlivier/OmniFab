@@ -183,9 +183,18 @@ mod tests {
     /// zoom précédent reste sur une ligne du pas suivant (ADR-0020).
     #[test]
     fn pas_de_grille_est_dyadique() {
-        assert!((pas_de_grille(1.0, 80.0) - 128.0).abs() < 1e-9, "80 px à 1 px/mm");
-        assert!((pas_de_grille(2.0, 80.0) - 64.0).abs() < 1e-9, "40 px à 2 px/mm");
-        assert!((pas_de_grille(10.0, 60.0) - 8.0).abs() < 1e-9, "6 px à 10 px/mm");
+        assert!(
+            (pas_de_grille(1.0, 80.0) - 128.0).abs() < 1e-9,
+            "80 px à 1 px/mm"
+        );
+        assert!(
+            (pas_de_grille(2.0, 80.0) - 64.0).abs() < 1e-9,
+            "40 px à 2 px/mm"
+        );
+        assert!(
+            (pas_de_grille(10.0, 60.0) - 8.0).abs() < 1e-9,
+            "6 px à 10 px/mm"
+        );
         for echelle in [0.3, 1.0, 2.7, 10.0, 63.0] {
             let pas = pas_de_grille(echelle, 80.0);
             assert!(
@@ -208,14 +217,14 @@ mod tests {
         scene.ajouter_grille(visible, 2.0, 100.0, [1.0, 1.0, 1.0, 0.1]);
         assert_eq!(
             scene.segments.len(),
-            9,
-            "six verticales et trois horizontales"
+            6,
+            "quatre verticales et deux horizontales"
         );
         let verticales = scene
             .segments
             .iter()
             .filter(|segment| (segment.depart.0 - segment.arrivee.0).abs() < 1e-9)
             .count();
-        assert_eq!(verticales, 6, "x = 0, 50, 100, 150, 200, 250 mm");
+        assert_eq!(verticales, 4, "x = 0, 64, 128, 192 mm");
     }
 }
