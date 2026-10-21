@@ -1188,3 +1188,72 @@ fn un_croquis_totalement_contraint_replie_sur_la_passe_de_base() {
         "le coin retombe sur le rectangle exact, pas sur la graine"
     );
 }
+
+/// Croquis rigide en translation (DoF 2, aucun ancrage) : le geste
+/// du point relâché se transmet au croquis entier — le rectangle
+/// suit le coin tiré, il ne s'arrête plus « à mi-chemin ».
+#[test]
+fn le_croquis_rigide_suit_le_geste() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("ligne ajoutée");
+    }
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    session
+        .execute(&MovePoint {
+            point: 2,
+            x: Length::from_millimeters(130.0),
+            y: Length::from_millimeters(70.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(resolu.dof(), 2, "translation libre, forme rigide");
+    // Le point relâché reste où on le lâche…
+    assert!(
+        proche(resolu.position(2), 130.0, 70.0),
+        "le coin relâché tient sa graine"
+    );
+    // …et le rectangle entier suit le geste : translation (30, 20).
+    assert!(proche(resolu.position(0), 30.0, 20.0), "coin 0 suit");
+    assert!(proche(resolu.position(1), 130.0, 20.0), "coin 1 suit");
+    assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
+}

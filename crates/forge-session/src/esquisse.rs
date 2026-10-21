@@ -709,6 +709,11 @@ pub struct EsquisseProjection {
     /// la résolution l'épingle pour qu'il reste où on le lâche, le
     /// reste du croquis absorbant l'ajustement.
     dernier_deplace: Option<u32>,
+    /// Position du dernier point déplacé juste AVANT son dernier
+    /// glissement (graine précédente ou origine de l'entité) :
+    /// avec la graine courante, elle donne le vecteur du dernier
+    /// geste — un croquis rigide en translation le suit en entier.
+    graine_avant_dernier: Option<(Length, Length)>,
     /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
     unknown: Vec<String>,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
@@ -1005,12 +1010,23 @@ impl EsquisseProjection {
     /// liberté, conflits, redondances) reste celui de la passe de
     /// base ; la passe épinglée n'est retenue que si elle résout
     /// sans conflit, sinon on revient à la passe de base.
+    ///
+    /// Un croquis **rigide en translation** (deux degrés de liberté
+    /// restants à la passe de base, aucun ancrage) suit le geste en
+    /// entier : les graines de la passe épinglée partent translatées
+    /// du vecteur du dernier geste — le carré suit le coin tiré, il
+    /// ne s'arrête plus « à mi-chemin ».
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        let base = self.resoudre_passe(solveur, None)?;
+        let base = self.resoudre_passe(solveur, None, None)?;
+        let translation = if base.dof() == 2 {
+            self.translation_du_dernier()
+        } else {
+            None
+        };
         if let Some(point) = self.dernier_deplace
             && !self.point_ancre(point)
             && self.graines.contains_key(&point)
-            && let Ok(epingle) = self.resoudre_passe(solveur, Some(point))
+            && let Ok(epingle) = self.resoudre_passe(solveur, Some(point), translation)
             && epingle.conflictuelles.is_empty()
         {
             return Ok(CroquisResolu {
@@ -1021,16 +1037,32 @@ impl EsquisseProjection {
         Ok(base)
     }
 
+    /// Vecteur du dernier geste : de la graine d'avant (graine
+    /// précédente du point déplacé ou origine de son entité) vers sa
+    /// graine courante. `None` si le journal ne le détermine pas.
+    fn translation_du_dernier(&self) -> Option<(Length, Length)> {
+        let point = self.dernier_deplace?;
+        let avant = self.graine_avant_dernier?;
+        let apres = self.graines.get(&point).copied()?;
+        Some((
+            Length::from_millimeters(apres.0.millimeters() - avant.0.millimeters()),
+            Length::from_millimeters(apres.1.millimeters() - avant.1.millimeters()),
+        ))
+    }
+
     /// Une passe de résolution : reconstruit le système (solveur
     /// vidé au préalable — le même solveur peut servir à plusieurs
     /// passes), pose les contraintes, résout, puis relève positions
     /// et diagnostic. Si `epingle` désigne un point, il est fixé
     /// après la reconstruction : il n'est plus une inconnue et
-    /// garde sa position germe.
+    /// garde sa position germe. Si `translation` est donnée, les
+    /// graines de tous les points SAUF l'épinglé partent translatées
+    /// de ce vecteur (suivi du geste d'un croquis rigide).
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
         epingle: Option<u32>,
+        translation: Option<(Length, Length)>,
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
@@ -1049,7 +1081,17 @@ impl EsquisseProjection {
             match entite {
                 EntiteEsquisse::Point { x, y } => {
                     let graine = self.graines.get(id).copied().unwrap_or((*x, *y));
-                    let identifiant = solveur.ajouter_point(graine.0, graine.1)?;
+                    // Suivi du geste : les points non épinglés
+                    // partent translatés du vecteur du dernier
+                    // geste, l'épinglé reste à sa graine.
+                    let (dx, dy) = match (translation, epingle) {
+                        (Some((dx, dy)), Some(e)) if *id != e => (dx, dy),
+                        _ => (Length::from_millimeters(0.0), Length::from_millimeters(0.0)),
+                    };
+                    let identifiant = solveur.ajouter_point(
+                        Length::from_millimeters(graine.0.millimeters() + dx.millimeters()),
+                        Length::from_millimeters(graine.1.millimeters() + dy.millimeters()),
+                    )?;
                     reconstruction.points.insert(*id, identifiant);
                 }
                 EntiteEsquisse::Ligne { p1, p2 } => {
@@ -1316,6 +1358,7 @@ impl Projection for EsquisseProjection {
         self.contraintes.clear();
         self.graines.clear();
         self.dernier_deplace = None;
+        self.graine_avant_dernier = None;
         self.unknown.clear();
         // `edition` n'est jamais remis à zéro : clé de cache monotone —
         // deux contenus différents du croquis portent des éditions
@@ -1398,6 +1441,7 @@ impl Projection for EsquisseProjection {
                         reason,
                     });
                 }
+                self.graine_avant_dernier = self.position_graine(point);
                 self.graines.insert(point, (x, y));
                 self.dernier_deplace = Some(point);
                 self.edition += 1;
