@@ -1007,17 +1007,16 @@ impl EsquisseProjection {
     /// sans conflit, sinon on revient à la passe de base.
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
         let base = self.resoudre_passe(solveur, None)?;
-        if let Some(point) = self.dernier_deplace {
-            if !self.point_ancre(point) && self.graines.contains_key(&point) {
-                if let Ok(epingle) = self.resoudre_passe(solveur, Some(point)) {
-                    if epingle.conflictuelles.is_empty() {
-                        return Ok(CroquisResolu {
-                            positions: epingle.positions,
-                            ..base
-                        });
-                    }
-                }
-            }
+        if let Some(point) = self.dernier_deplace
+            && !self.point_ancre(point)
+            && self.graines.contains_key(&point)
+            && let Ok(epingle) = self.resoudre_passe(solveur, Some(point))
+            && epingle.conflictuelles.is_empty()
+        {
+            return Ok(CroquisResolu {
+                positions: epingle.positions,
+                ..base
+            });
         }
         Ok(base)
     }
