@@ -230,9 +230,8 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
                 Some(vise.id)
             } else {
                 let resolu = resolu_frais(app);
-                ligne_visee(app.session.esquisse(), resolu, pas, x, y).or_else(|| {
-                    courbe_visee(app.session.esquisse(), resolu, pas, x, y)
-                })
+                ligne_visee(app.session.esquisse(), resolu, pas, x, y)
+                    .or_else(|| courbe_visee(app.session.esquisse(), resolu, pas, x, y))
             };
             match cible {
                 Some(id) => {
@@ -307,8 +306,8 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
             // (ADR-0020).
             let centre_mm = (centre.x.millimeters(), centre.y.millimeters());
             app.balayage_arc = 0.0;
-            app.angle_curseur_arc = (vise.y.millimeters() - centre_mm.1)
-                .atan2(vise.x.millimeters() - centre_mm.0);
+            app.angle_curseur_arc =
+                (vise.y.millimeters() - centre_mm.1).atan2(vise.x.millimeters() - centre_mm.0);
             app.geste = Some(GesteEsquisse::ArcDebut {
                 centre,
                 debut: vise,
@@ -660,11 +659,15 @@ pub(crate) fn fenetre_cote(ctx: &egui::Context, app: &mut DemoApp) {
         // pose près du curseur, qui vient de cliquer le bouton
         // Distance — la validation jalon 2 la voyait au centre.
         let premiere = ctx.data_mut(|d| {
-            let deja = d.get_temp::<bool>(egui::Id::new("cote-ouverte")).unwrap_or(false);
+            let deja = d
+                .get_temp::<bool>(egui::Id::new("cote-ouverte"))
+                .unwrap_or(false);
             d.insert_temp(egui::Id::new("cote-ouverte"), true);
             !deja
         });
-        let pos = ctx.pointer_latest_pos().map(|pos| pos + egui::vec2(16.0, 16.0));
+        let pos = ctx
+            .pointer_latest_pos()
+            .map(|pos| pos + egui::vec2(16.0, 16.0));
         let mut fenetre = egui::Window::new(titre)
             .open(&mut visible)
             .default_width(280.0);

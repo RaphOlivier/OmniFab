@@ -79,7 +79,9 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
         d.insert_temp(egui::Id::new("aide-page"), help_id.clone());
         precedente.as_deref() != Some(help_id.as_str())
     });
-    let pos = ctx.pointer_latest_pos().map(|pos| pos + egui::vec2(16.0, 16.0));
+    let pos = ctx
+        .pointer_latest_pos()
+        .map(|pos| pos + egui::vec2(16.0, 16.0));
     let mut visible = true;
     match catalogue.page_aide(&help_id) {
         Ok(page) => {

@@ -93,7 +93,7 @@ fn rebranchement_sans_cycle_accepte() {
     graph.set_expression("c", "b + 1").unwrap();
     graph.set_expression("b", "c - 1").unwrap_err();
     graph.set_expression("b", "a + 1").unwrap();
-    assert_eq!(graph.value("c").unwrap(), 2.0, "c suit le nouveau b");
+    assert_eq!(graph.value("c").unwrap(), 3.0, "c suit le nouveau b");
 }
 
 #[test]

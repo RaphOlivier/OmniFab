@@ -592,8 +592,7 @@ fn touche_les_liaisons(evenement: &str) -> bool {
 fn aide_du_code(message: &str) -> String {
     let code = message
         .split(' ')
-        .filter(|mot| mot.starts_with("OF-"))
-        .next_back()
+        .rfind(|mot| mot.starts_with("OF-"))
         .unwrap_or_else(|| message.split(' ').next().unwrap_or(""));
     format!("aide-{}", code.to_lowercase())
 }
