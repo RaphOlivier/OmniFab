@@ -541,21 +541,26 @@ impl Command for AddConstraint {
             _ => None,
         };
         if let Some((ligne, horizontale)) = orientation
-            && let Some((id_existante, horiz_existante)) = esquisse
-                .contraintes()
-                .iter()
-                .find_map(|(id, contrainte)| match contrainte {
-                    ContrainteEsquisse::Horizontale { ligne: l } if *l == ligne => {
-                        Some((*id, true))
-                    }
-                    ContrainteEsquisse::Verticale { ligne: l } if *l == ligne => {
-                        Some((*id, false))
-                    }
-                    _ => None,
-                })
+            && let Some((id_existante, horiz_existante)) =
+                esquisse
+                    .contraintes()
+                    .iter()
+                    .find_map(|(id, contrainte)| match contrainte {
+                        ContrainteEsquisse::Horizontale { ligne: l } if *l == ligne => {
+                            Some((*id, true))
+                        }
+                        ContrainteEsquisse::Verticale { ligne: l } if *l == ligne => {
+                            Some((*id, false))
+                        }
+                        _ => None,
+                    })
         {
             if horiz_existante == horizontale {
-                let genre = if horizontale { "horizontale" } else { "verticale" };
+                let genre = if horizontale {
+                    "horizontale"
+                } else {
+                    "verticale"
+                };
                 return Err(SessionError::CommandRejected {
                     reason: format!("la ligne {ligne} porte déjà une contrainte {genre}"),
                 });
@@ -642,7 +647,10 @@ impl Command for MovePoint {
         // à une commande scriptée.
         if esquisse.point_ancre(self.point) {
             return Err(SessionError::CommandRejected {
-                reason: format!("le point {} est ancré par une contrainte PointFixe", self.point),
+                reason: format!(
+                    "le point {} est ancré par une contrainte PointFixe",
+                    self.point
+                ),
             });
         }
         if let Some(reason) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {

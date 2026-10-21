@@ -29,9 +29,9 @@ use eframe::egui;
 use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};
 use forge_session::{
-    AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
-    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EsquisseProjection,
-    GenreEntite, MovePoint, ValeurCote,
+    AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EVENT_SKETCH_CONSTRAINT_ADDED,
+    EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse, EsquisseProjection, GenreEntite, MovePoint,
+    ValeurCote,
 };
 use forge_units::{Angle, Length};
 
@@ -704,11 +704,7 @@ pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquis
     };
     let contrainte_posee = evenement.event_type == EVENT_SKETCH_CONSTRAINT_ADDED
         || evenement.event_type == EVENT_SKETCH_CONSTRAINT_UPDATED;
-    let Some(id) = evenement
-        .data
-        .get("id")
-        .and_then(serde_json::Value::as_u64)
-    else {
+    let Some(id) = evenement.data.get("id").and_then(serde_json::Value::as_u64) else {
         return;
     };
     if contrainte_posee {

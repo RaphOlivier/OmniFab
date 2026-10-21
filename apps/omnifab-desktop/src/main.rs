@@ -4224,10 +4224,7 @@ mod tests {
             Some((0, app.instant)),
             "la pose surligne la contrainte"
         );
-        atelier_esquisse::ajouter_contrainte(
-            &mut app,
-            ContrainteEsquisse::Verticale { ligne: 2 },
-        );
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::Verticale { ligne: 2 });
         let contraintes = app.session.esquisse().contraintes();
         assert_eq!(contraintes.len(), 1, "bascule : remplacée, pas ajoutée");
         assert_eq!(contraintes[0].0, 0, "identifiant conservé");
@@ -4242,10 +4239,7 @@ mod tests {
         );
         // Reposer le même genre : refusé, aucune nouvelle
         // surbrillance.
-        atelier_esquisse::ajouter_contrainte(
-            &mut app,
-            ContrainteEsquisse::Verticale { ligne: 2 },
-        );
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::Verticale { ligne: 2 });
         assert!(app.error.is_some(), "le refus s'affiche en message d'état");
         assert_eq!(
             app.derniere_contrainte,
@@ -4269,10 +4263,7 @@ mod tests {
         })
         .expect("point posé");
         app.selection = vec![0];
-        atelier_esquisse::ajouter_contrainte(
-            &mut app,
-            ContrainteEsquisse::PointFixe { point: 0 },
-        );
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::PointFixe { point: 0 });
         atelier_esquisse::saisir_poignee(&mut app, pas, 0.0, 0.0);
         assert!(app.saisie.is_none(), "le point ancré n'est pas saisi");
         // Un déplacement scripté est refusé : la graine tient.
@@ -4281,7 +4272,10 @@ mod tests {
             x: Length::from_millimeters(pas),
             y: Length::from_millimeters(pas),
         });
-        assert!(app.error.is_some(), "le déplacement d'un point ancré est refusé");
+        assert!(
+            app.error.is_some(),
+            "le déplacement d'un point ancré est refusé"
+        );
         let (x, y) = app
             .session
             .esquisse()
