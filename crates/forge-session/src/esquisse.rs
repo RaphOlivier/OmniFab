@@ -705,6 +705,10 @@ pub struct EsquisseProjection {
     /// Dernières positions de départ des points, posées par les
     /// glissements (identifiant du point → position germe).
     graines: BTreeMap<u32, (Length, Length)>,
+    /// Dernier point déplacé par un glissement, dérivé du journal :
+    /// la résolution l'épingle pour qu'il reste où on le lâche, le
+    /// reste du croquis absorbant l'ajustement.
+    dernier_deplace: Option<u32>,
     /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
     unknown: Vec<String>,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
@@ -994,7 +998,41 @@ impl EsquisseProjection {
     /// de forge-gcs) et le résout via le solveur **injecté**
     /// (ADR-0018 D3 : forge-session n'instancie jamais le solveur
     /// natif). Algorithme par défaut : DogLeg, le plus robuste.
+    ///
+    /// Le dernier point déplacé reste où on le lâche : une seconde
+    /// passe l'épingle (paramètres fixes) et laisse le reste du
+    /// croquis absorber l'ajustement. Le diagnostic (degrés de
+    /// liberté, conflits, redondances) reste celui de la passe de
+    /// base ; la passe épinglée n'est retenue que si elle résout
+    /// sans conflit, sinon on revient à la passe de base.
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
+        let base = self.resoudre_passe(solveur, None)?;
+        if let Some(point) = self.dernier_deplace {
+            if !self.point_ancre(point) && self.graines.contains_key(&point) {
+                if let Ok(epingle) = self.resoudre_passe(solveur, Some(point)) {
+                    if epingle.conflictuelles.is_empty() {
+                        return Ok(CroquisResolu {
+                            positions: epingle.positions,
+                            ..base
+                        });
+                    }
+                }
+            }
+        }
+        Ok(base)
+    }
+
+    /// Une passe de résolution : reconstruit le système (solveur
+    /// vidé au préalable — le même solveur peut servir à plusieurs
+    /// passes), pose les contraintes, résout, puis relève positions
+    /// et diagnostic. Si `epingle` désigne un point, il est fixé
+    /// après la reconstruction : il n'est plus une inconnue et
+    /// garde sa position germe.
+    fn resoudre_passe(
+        &self,
+        solveur: &mut dyn Solveur2D,
+        epingle: Option<u32>,
+    ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
                 positions: BTreeMap::new(),
@@ -1006,6 +1044,7 @@ impl EsquisseProjection {
                 tags: BTreeMap::new(),
             });
         }
+        solveur.vider()?;
         let mut reconstruction = Reconstruction::default();
         for (id, entite) in &self.entites {
             match entite {
@@ -1046,6 +1085,9 @@ impl EsquisseProjection {
                     )?;
                 }
             }
+        }
+        if let Some(id) = epingle {
+            solveur.fixer_point(reconstruction.id_point(id)?)?;
         }
         let mut tags = BTreeMap::new();
         for (id, contrainte) in &self.contraintes {
@@ -1274,6 +1316,7 @@ impl Projection for EsquisseProjection {
         self.entites.clear();
         self.contraintes.clear();
         self.graines.clear();
+        self.dernier_deplace = None;
         self.unknown.clear();
         // `edition` n'est jamais remis à zéro : clé de cache monotone —
         // deux contenus différents du croquis portent des éditions
@@ -1357,6 +1400,7 @@ impl Projection for EsquisseProjection {
                     });
                 }
                 self.graines.insert(point, (x, y));
+                self.dernier_deplace = Some(point);
                 self.edition += 1;
                 Ok(())
             }

@@ -532,9 +532,13 @@ impl ValueGraph {
         // Cycle traversé (ADR-0020) : si une référence lit, directement
         // ou non, le nœud redéfini, l'expression posée bouclerait — le
         // refus vient à la définition, la valeur précédente tient.
+        // L'auto-référence directe (`a = a + 1`) est le cycle trivial :
+        // refusée ici aussi, pas seulement à la lecture.
         for dep in &refs {
             if *dep == id {
-                continue;
+                return Err(ValuesError::Cycle {
+                    path: format!("{nom} → {nom}"),
+                });
             }
             let mut vus = BTreeSet::new();
             if let Some(chemin) = self.chemin_vers(*dep, id, &mut vus) {

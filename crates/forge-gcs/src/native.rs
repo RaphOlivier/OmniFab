@@ -265,4 +265,11 @@ impl Solveur2D for Systeme2D {
             ),
         })
     }
+
+    fn vider(&mut self) -> Result<(), GcsError> {
+        // Remplacement par un système neuf : l'affectation à *self
+        // détruit l'ancien handle (Drop → gcs_detruire).
+        *self = Self::new()?;
+        Ok(())
+    }
 }

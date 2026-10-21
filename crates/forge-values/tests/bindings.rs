@@ -71,6 +71,24 @@ fn cycle_traverse_refuse_a_la_definition() {
 }
 
 #[test]
+fn cycle_direct_refuse_a_la_definition() {
+    // Auto-référence directe (`boucle = boucle + 1`) : cycle trivial,
+    // refusé dès la pose de l'expression, pas seulement à la lecture.
+    let mut graph = ValueGraph::new();
+    graph.set_input("a", 7.0).unwrap();
+    let error = graph.set_expression("boucle", "boucle + 1").unwrap_err();
+    assert_code(&error, "OF-VAL-0001");
+    match &error {
+        ValuesError::Cycle { path } => {
+            assert_eq!(path, "boucle → boucle", "chemin du cycle");
+        }
+        other => panic!("cycle attendu, obtenu {other:?}"),
+    }
+    // Le reste du graphe reste sain.
+    assert_eq!(graph.value("a").unwrap(), 7.0, "a reste intacte");
+}
+
+#[test]
 fn cycle_profond_refuse_aussi() {
     // Cycle à trois maillons : la traversée transitive est couverte.
     let mut graph = ValueGraph::new();

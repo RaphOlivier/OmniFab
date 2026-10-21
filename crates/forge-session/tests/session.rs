@@ -1111,3 +1111,80 @@ fn le_clone_de_l_esquisse_resout_identiquement() {
     assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
     assert!(proche(resolu.position(2), 100.0, 50.0));
 }
+
+/// Le point relâché reste où on le lâche (re-validation §7) : une
+/// contrainte de distance relie deux points ; déplacer l'un d'eux
+/// épingle sa position germe, l'autre absorbe l'ajustement — plus
+/// aucune « moyenne » des deux déplacements.
+#[test]
+fn le_point_relache_reste_ou_on_le_lache() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (40.0, 0.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("distance posée");
+    session
+        .execute(&MovePoint {
+            point: 1,
+            x: Length::from_millimeters(90.0),
+            y: Length::from_millimeters(30.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    // Le point relâché garde exactement sa position germe.
+    assert!(
+        proche(resolu.position(1), 90.0, 30.0),
+        "le point relâché reste où on le lâche"
+    );
+    // L'autre point absorbe : la distance reste tenue autour de la
+    // nouvelle position.
+    let (x1, y1) = resolu.position(0).expect("p1 résolu");
+    let dx = x1.millimeters() - 90.0;
+    let dy = y1.millimeters() - 30.0;
+    assert!(
+        (dx * dx + dy * dy - 1600.0).abs() < 1e-6,
+        "la distance de 40 mm reste tenue"
+    );
+}
+
+/// Croquis entièrement contraint : le repli tient — la passe
+/// épinglée du point déplacé crée un conflit (sa position est déjà
+/// déterminée par les contraintes), la résolution de base reste la
+/// réponse : aucun conflit, positions exactes du rectangle.
+#[test]
+fn un_croquis_totalement_contraint_replie_sur_la_passe_de_base() {
+    let mut session = croquis_rectangle();
+    session
+        .execute(&MovePoint {
+            point: 2,
+            x: Length::from_millimeters(130.0),
+            y: Length::from_millimeters(20.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
+    assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
+    assert!(
+        proche(resolu.position(2), 100.0, 50.0),
+        "le coin retombe sur le rectangle exact, pas sur la graine"
+    );
+}

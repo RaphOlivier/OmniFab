@@ -28,7 +28,7 @@
 //!   croquis se dessine par-dessus la scène ;
 //! - **protection du travail** (ADR-0016 C3) : indicateur « non
 //!   enregistré » posé par toute commande effective et levé par la
-//!   sauvegarde — le titre de la fenêtre porte `*`, « Nouveau »,
+//!   sauvegarde — le titre de la fenêtre porte `*`, « Réinitialiser »,
 //!   « Ouvrir » et « Reprendre » demandent confirmation, et
 //!   l'enregistrement ne casse plus la pile redo ;
 //! - **messages d'état fidèles** (ADR-0016 C4) : une commande refusée
@@ -111,7 +111,9 @@ const COULEUR_GRILLE: Couleur = [0.35, 0.40, 0.47, 1.0];
 /// rectangle paramétrique pour éviter la confusion (ADR-0015, phase C2).
 const COULEUR_GRILLE_2D: Couleur = [0.55, 0.62, 0.75, 1.0];
 /// Espacement visé entre deux lignes de grille, en pixels (ADR-0015).
-const GRILLE_CIBLE_PX: f64 = 80.0;
+/// 40 px (re-validation §7) : des cellules plus fines au même niveau
+/// de zoom restent lisibles, le pas s'adapte par puissances de dix.
+const GRILLE_CIBLE_PX: f64 = 40.0;
 /// Seuil de détection d'un export en mètres : un maillage dont la
 /// plus grande dimension est sous ce seuil (en millimètres) propose
 /// l'échelle × 1000 à l'import (ADR-0017).

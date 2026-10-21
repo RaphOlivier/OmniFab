@@ -272,4 +272,10 @@ pub trait Solveur2D {
     /// Analyse le croquis : degrés de liberté, conflits, redondances,
     /// reproductibilité.
     fn diagnostic(&mut self, algorithme: Algorithme) -> Result<Diagnostic, GcsError>;
+
+    /// Vide le croquis : supprime toutes les entités, contraintes,
+    /// paramètres et points fixes, comme un système fraîchement créé.
+    /// Sert aux résolutions en plusieurs passes (forge-session) qui
+    /// reconstruisent le système sans recréer le handle.
+    fn vider(&mut self) -> Result<(), GcsError>;
 }

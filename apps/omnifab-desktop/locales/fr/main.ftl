@@ -17,7 +17,7 @@ top-recalculer = Recalculer tout
 top-enregistrer = Enregistrer
 top-enregistrer-sous = Enregistrer sous…
 top-ouvrir = Ouvrir
-top-nouveau = Nouveau
+top-nouveau = Réinitialiser
 top-bibliotheque = Bibliothèque
 
 # --- Import / export (fichiers choisis par l'utilisateur, ADR-0014) ---
@@ -228,8 +228,8 @@ aide-top-ouvrir =
     .exemple = Après « Enregistrer », redémarrez l'application puis ouvrez le fichier : la largeur, la hauteur et la diagonale reviennent à l'état enregistré.
 
 aide-top-nouveau =
-    .titre = Nouveau
-    .description = Remet le démonstrateur à l'état initial : nouvelle session, journal vidé, dimensions 800 × 600 mm, expression de diagonale par défaut — et retour à l'atelier.
+    .titre = Réinitialiser
+    .description = Remet le démonstrateur à l'état initial : nouvelle session, journal vidé, dimensions 240 × 160 mm, expression de diagonale par défaut — et retour à l'atelier.
     .exemple = Modifiez des valeurs, importez des tracés, puis cliquez : tout revient à l'état de départ.
 
 aide-top-bibliotheque =
@@ -244,7 +244,7 @@ aide-accueil-titre =
 
 aide-accueil-nouveau =
     .titre = Nouveau projet
-    .description = Démarre une session vierge : journal vidé, dimensions 800 × 600 mm, expression de diagonale par défaut, aucun fichier courant. La session précédente est remplacée — pensez à enregistrer avant.
+    .description = Démarre une session vierge : journal vidé, dimensions 240 × 160 mm, expression de diagonale par défaut, aucun fichier courant. La session précédente est remplacée — pensez à enregistrer avant.
     .exemple = Cliquez depuis l'accueil : l'atelier s'ouvre sur le rectangle de démonstration initial.
 
 aide-accueil-ouvrir =
@@ -385,7 +385,7 @@ aide-geom-compteur =
 aide-confirmation-perte =
     .titre = Travail non enregistré
     .description = Confirmation demandée avant une action destructive (nouveau projet, ouverture, reprise) quand des modifications non enregistrées existent : les continuer abandonne définitivement — « Enregistrer sous… » les met à l'abri d'abord.
-    .exemple = Modifiez la largeur puis cliquez « Nouveau » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.
+    .exemple = Modifiez la largeur puis cliquez « Réinitialiser » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.
 
 aide-echelle-metres =
     .titre = Mètres (× 1000)

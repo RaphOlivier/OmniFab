@@ -71,6 +71,44 @@ fn unite_incoherente_refusee_a_la_definition() {
     assert_eq!(session.document().events().len(), 1);
 }
 
+/// Le refus d'unité n'est pas définitif (re-validation §7) : la même
+/// expression `angle` qui lit `largeur` en millimètres est refusée
+/// en degrés (OF-VAL-0007), puis acceptée dès que l'unité déclarée
+/// redevient des millimètres — la reprise du dialogue et du
+/// panneau reste saine.
+#[test]
+fn unite_corrigee_apres_refus_redefinit_l_expression() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&SetInput {
+            name: "largeur".into(),
+            value: 100.0,
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("largeur");
+    let erreur = session
+        .execute(&SetExpression {
+            name: "angle".into(),
+            expression: "largeur".into(),
+            unite: Some(Unite::Degre),
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0002");
+    assert!(
+        erreur.to_string().contains("OF-VAL-0007"),
+        "le message porte le code du moteur : {erreur}"
+    );
+    session
+        .execute(&SetExpression {
+            name: "angle".into(),
+            expression: "largeur".into(),
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("unité corrigée");
+    let noeud = session.graph().noeud("angle").expect("nœud angle");
+    assert_eq!(noeud.unite, Some(Unite::Millimetre));
+}
+
 /// La création utilisateur sous un préfixe réservé est refusée au
 /// plan (OF-VAL-0008, ADR-0019) : les nœuds système ne naissent que
 /// par les cotes d'esquisse.
