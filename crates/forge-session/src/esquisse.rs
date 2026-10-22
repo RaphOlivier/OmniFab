@@ -1525,16 +1525,17 @@ impl Projection for EsquisseProjection {
                         reason,
                     });
                 }
-                self.contraintes.push((id, contrainte));
                 // Capture d'ancrage (ADR-0021 D2, révisée) : le
                 // `PointFixe` du point déplacé à l'événement précédent
-                // fige la position affichée au moment de la pose.
+                // fige la position affichée au moment de la pose —
+                // avant le déplacement de la valeur au vecteur.
                 if let ContrainteEsquisse::PointFixe { point } = &contrainte
                     && let Some((point_deplace, position)) = &capture
                     && *point_deplace == *point
                 {
                     self.ancrages_captures.insert(*point, *position);
                 }
+                self.contraintes.push((id, contrainte));
                 self.edition += 1;
                 Ok(())
             }
