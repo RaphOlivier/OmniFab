@@ -2913,9 +2913,7 @@ fn main() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
-    use forge_session::{
-        AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint,
-    };
+    use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
 
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
