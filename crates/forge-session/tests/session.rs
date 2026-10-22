@@ -1116,6 +1116,94 @@ fn l_ancrage_fige_la_position_affichee_apres_un_geste() {
     assert!(proche(rejoue.position(0), 10.0, 20.0), "le rejeu tient");
 }
 
+/// Un relâchement accroché sur le point ancré ne fait pas échouer
+/// la résolution (re-test du 2026-10-23) : la graine du point
+/// relâché tombe exactement sur la position capturée du point
+/// fixé — deux graines confondues rendent le gradient de la cote
+/// de distance indéfini, DogLeg échoue sur la passe de base. Le
+/// repli la rejoue depuis la graine d'avant geste : la forme
+/// reste exacte, le point relâché ne s'écrase pas sur son ancre.
+#[test]
+fn un_relachement_sur_le_point_fixe_ne_fait_pas_echouer_la_resolution() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("ligne ajoutée");
+    }
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let affiche = session
+        .esquisse()
+        .resoudre(&mut solveur)
+        .expect("résolu");
+    let (x0, y0) = mm(affiche.position(0));
+    // L'ancrage capture la position affichée du coin 0…
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // …puis le relâchement accroche le point 1 exactement dessus :
+    // graine confondue avec le point fixé.
+    session
+        .execute(&MovePoint {
+            point: 1,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("déplacement");
+    let resolu = session
+        .esquisse()
+        .resoudre(&mut solveur)
+        .expect("résolu : le repli rejoue la base");
+    assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
+    forme_exacte(&resolu);
+    assert!(proche(resolu.position(0), x0, y0), "l'ancre tient");
+    assert!(
+        !proche(resolu.position(1), x0, y0),
+        "le point relâché ne s'écrase pas sur son ancre"
+    );
+}
+
 /// Le déplacement pose la graine du point, l'annulation la retire :
 /// la résolution suit la dernière graine au journal (ADR-0018 D1).
 #[test]

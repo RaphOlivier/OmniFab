@@ -1039,8 +1039,14 @@ impl EsquisseProjection {
     /// 2, point 8) — fige son point à la position capturée dès la
     /// passe de base : la forme ne saute pas entre l'affichage
     /// d'avant pose et celui d'après, le reste du croquis absorbe.
+    ///
+    /// Une passe de base que DogLeg ne vient pas à bout — graines
+    /// dégénérées, typiquement un relâchement accroché sur un autre
+    /// point — est rejouée depuis la graine d'avant geste : les
+    /// graines ne sont que des points de départ (re-test du
+    /// 2026-10-23, cf. passe_de_base).
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        let base = self.resoudre_passe(solveur, None, None, None)?;
+        let base = self.passe_de_base(solveur)?;
         let ancres = self.ancrages_resolus(&base);
         let translation = if base.dof() == 2 && ancres.is_empty() {
             self.translation_du_dernier()
@@ -1059,6 +1065,35 @@ impl EsquisseProjection {
             });
         }
         Ok(base)
+    }
+
+    /// Graine d'avant geste du point déplacé : le point de départ
+    /// du repli quand les graines courantes font échouer la passe
+    /// de base (re-test du 2026-10-23). Renvoie None si le journal
+    /// ne détermine ni point déplacé ni graine d'avant.
+    fn graine_avant_geste(&self) -> Option<(u32, (Length, Length))> {
+        let point = self.dernier_deplace?;
+        let avant = self.graine_avant_dernier?;
+        Some((point, avant))
+    }
+
+    /// Passe de base de la résolution, avec repli : si DogLeg
+    /// échoue — graines dégénérées, typiquement un relâchement
+    /// accroché sur un autre point : deux graines confondues
+    /// rendent le gradient d'une cote de distance indéfini — la
+    /// passe est rejouée depuis la graine d'avant geste du point
+    /// déplacé. Les graines ne sont que des points de départ : seul
+    /// l'échec du repli remonte (re-test du 2026-10-23).
+    fn passe_de_base(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
+        match self.resoudre_passe(solveur, None, None, None, None) {
+            Ok(base) => Ok(base),
+            Err(erreur) => match self.graine_avant_geste() {
+                Some(graine) => {
+                    self.resoudre_passe(solveur, None, None, None, Some(graine))
+                }
+                None => Err(erreur),
+            },
+        }
     }
 
     /// Positions résolues des points ancrés (`PointFixe`) dans la
@@ -1091,7 +1126,7 @@ impl EsquisseProjection {
         translation: Option<(Length, Length)>,
         ancres: &[(u32, (Length, Length))],
     ) -> Result<CroquisResolu, GcsError> {
-        self.resoudre_passe(solveur, Some(point), translation, Some(ancres))
+        self.resoudre_passe(solveur, Some(point), translation, Some(ancres), None)
     }
 
     /// Vecteur du dernier geste : de la graine d'avant (graine
@@ -1132,12 +1167,18 @@ impl EsquisseProjection {
     /// de leur position résolue de la passe de base et y restent
     /// figés : un geste qui les contredit fait rejeter la passe
     /// (repli sur la base) — l'ancrage ne suit jamais le geste.
+    ///
+    /// Si graine_substituee désigne un point, sa graine est
+    /// remplacée par la position donnée pour cette passe seulement :
+    /// le repli de la passe de base rejoue la résolution depuis la
+    /// graine d'avant geste du point déplacé (re-test du 2026-10-23).
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
         epingle: Option<u32>,
         translation: Option<(Length, Length)>,
         ancres: Option<&[(u32, (Length, Length))]>,
+        graine_substituee: Option<(u32, (Length, Length))>,
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
@@ -1157,7 +1198,10 @@ impl EsquisseProjection {
                 EntiteEsquisse::Point { x, y } => {
                     let graine = match ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
                         Some((_, position)) => *position,
-                        None => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                        None => match graine_substituee {
+                            Some((point, position)) if point == *id => position,
+                            _ => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                        },
                     };
                     // Suivi du geste : les points non épinglés
                     // partent translatés du vecteur du dernier
