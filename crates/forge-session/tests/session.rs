@@ -1107,7 +1107,7 @@ fn l_ancrage_fige_la_position_affichee_apres_un_geste() {
     // même résolution (ADR-0021 D2 révisée).
     let octets = session.save_to_bytes().expect("octets");
     let document = Document::from_bytes(&octets).expect("document");
-    let mut rejouee = Session::from_document("tests", document).expect("rejeu");
+    let rejouee = Session::from_document("tests", document).expect("rejeu");
     let mut solveur_rejeu = Systeme2D::new().expect("solveur");
     let rejoue = rejouee
         .esquisse()

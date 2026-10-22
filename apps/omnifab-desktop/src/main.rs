@@ -2914,7 +2914,7 @@ mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
     use forge_session::{
-        AddConstraint, AddEntity, AncrerPoint, ContrainteEsquisse, EntiteEsquisse, MovePoint,
+        AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint,
     };
 
     /// SVG minimal de test : un triangle fermé.
