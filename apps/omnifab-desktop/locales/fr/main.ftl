@@ -439,17 +439,17 @@ aide-esquisse-contraintes =
 
 aide-esquisse-contrainte-horizontale =
     .titre = Contrainte Horizontale
-    .description = Force la ligne sélectionnée à l'horizontale. Une ligne déjà orientée bascule : la nouvelle orientation remplace l'ancienne à la pose (ADR-0021), reposer la même orientation est refusé. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
-    .exemple = Tracez une ligne avec l'outil Ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient horizontale au prochain recalcul ; cliquez ensuite Verticale : l'orientation bascule sans écraser la ligne.
+    .description = Force la ligne sélectionnée à l'horizontale. Une ligne portant déjà une orientation (horizontale ou verticale) refuse la pose, comme dans FreeCAD : annulez d'abord la contrainte existante (Ctrl+Z), puis reposez. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne avec l'outil Ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient horizontale au prochain recalcul ; sur une ligne déjà verticale, la pose est refusée.
 
 aide-esquisse-contrainte-verticale =
     .titre = Contrainte Verticale
-    .description = Force la ligne sélectionnée à la verticale. Une ligne déjà orientée bascule : la nouvelle orientation remplace l'ancienne à la pose (ADR-0021), reposer la même orientation est refusé. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
-    .exemple = Tracez une ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient verticale au prochain recalcul ; cliquez ensuite Horizontale : l'orientation bascule sans écraser la ligne.
+    .description = Force la ligne sélectionnée à la verticale. Une ligne portant déjà une orientation (horizontale ou verticale) refuse la pose, comme dans FreeCAD : annulez d'abord la contrainte existante (Ctrl+Z), puis reposez. Le bouton est actif seulement avec une ligne en sélection ; la commande AddConstraint passe par la session (ADR-0018).
+    .exemple = Tracez une ligne, sélectionnez-la en outil Sélection, cliquez : la ligne devient verticale au prochain recalcul ; sur une ligne déjà horizontale, la pose est refusée.
 
 aide-esquisse-contrainte-point-fixe =
     .titre = Fixer le point
-    .description = Ancre le point sélectionné à sa position courante : le croquis gagne sa référence au monde (ADR-0018). Un point ancré ne se saisit plus — le glisser est refusé et un liseré orange le signale (ADR-0021). Le bouton est actif seulement avec un point en sélection.
+    .description = Ancre le point sélectionné à sa position visible : le croquis gagne sa référence au monde (ADR-0018) et la forme ne bouge pas au moment de l'ancrage. Un point ancré ne se saisit plus — le glisser est refusé et un liseré turquoise le signale (ADR-0021). Le bouton est actif seulement avec un point en sélection.
     .exemple = Posez un point, sélectionnez-le, cliquez : un rectangle contraint fixé à ce coin tombe à zéro degré de liberté ; essayez de le glisser : rien ne bouge.
 
 aide-esquisse-contrainte-distance =

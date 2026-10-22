@@ -1058,6 +1058,13 @@ impl EsquisseProjection {
     /// garde sa position germe. Si `translation` est donnée, les
     /// graines de tous les points SAUF l'épinglé partent translatées
     /// de ce vecteur (suivi du geste d'un croquis rigide).
+    ///
+    /// L'ancrage `PointFixe` ne se pose qu'APRÈS la résolution de
+    /// base : il épingle la position RÉSOLUE du point, celle que
+    /// l'utilisateur voit — jamais sa graine, sinon la forme saute
+    /// de plusieurs cases au moment de l'ancrage quand les cotes ont
+    /// tiré le croquis loin de ses graines (retour checklist jalon
+    /// 2, point 8) ; un second passage confirme la solution.
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
@@ -1131,10 +1138,27 @@ impl EsquisseProjection {
             solveur.fixer_point(reconstruction.id_point(id)?)?;
         }
         let mut tags = BTreeMap::new();
+        let mut ancrages = Vec::new();
         for (id, contrainte) in &self.contraintes {
-            if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {
-                tags.insert(*id, tag);
+            match contrainte {
+                // L'ancrage s'épingle après la résolution de base :
+                // il fige la position résolue du point (celle que
+                // l'utilisateur voit), pas sa graine — la forme ne
+                // saute jamais au moment de l'ancrage (retour
+                // checklist jalon 2).
+                ContrainteEsquisse::PointFixe { point } => {
+                    ancrages.push(reconstruction.id_point(*point)?);
+                }
+                _ => {
+                    if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {
+                        tags.insert(*id, tag);
+                    }
+                }
             }
+        }
+        solveur.resoudre(Algorithme::DogLeg)?;
+        for point in ancrages {
+            solveur.fixer_point(point)?;
         }
         solveur.resoudre(Algorithme::DogLeg)?;
         let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;

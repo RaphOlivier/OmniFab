@@ -19,7 +19,8 @@
 //! passe par le dialogue de cote (ADR-0019 §6) : valeur fixe ou
 //! expression pilotée par un alias sous le préfixe réservé
 //! « esquisse. », posée par la commande AddConstraint seulement
-//! au clic sur « Poser ». La bascule d'orientation, la liste des
+//! au clic sur « Poser ». Le refus d'orientation sur une ligne déjà
+//! orientée (alignement FreeCAD, ADR-0021 D1 révisée), la liste des
 //! contraintes posées avec surbrillance momentanée et l'ancrage
 //! non saisissable complètent la reprise de validation (ADR-0021).
 
@@ -743,7 +744,7 @@ fn deux_points_selectionnes(app: &DemoApp) -> Option<(u32, u32)> {
 /// rien au journal et le message d'état reste fidèle (ADR-0016 C4).
 /// Une pose effective marque la contrainte touchée pour la
 /// surbrillance momentanée de la liste (ADR-0021 D2) : l'identifiant
-/// vient du dernier événement du journal, pose neuve comme bascule.
+/// vient du dernier événement du journal — une pose neuve.
 pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquisse) {
     if app.executer(&AddConstraint { contrainte }).is_err() {
         return;

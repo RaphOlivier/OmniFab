@@ -116,8 +116,12 @@ const COULEUR_GRILLE_2D: Couleur = [0.55, 0.62, 0.75, 1.0];
 const GRILLE_CIBLE_PX: f64 = 40.0;
 /// Seuil de détection d'un export en mètres : un maillage dont la
 /// plus grande dimension est sous ce seuil (en millimètres) propose
-/// l'échelle × 1000 à l'import (ADR-0017).
-const SEUIL_METRES: f64 = 1.0;
+/// l'échelle × 1000 à l'import (ADR-0017). 10 mm : un objet de 3 m
+/// exporté en mètres depuis Blender mesure 3,0 « mm » après lecture
+/// (retour checklist jalon 2) — le seuil couvre les objets jusqu'à
+/// ~10 m en mètres ; une pièce réellement plus petite déclenche
+/// aussi le dialogue, au prix d'un clic « Millimètres ».
+const SEUIL_METRES: f64 = 10.0;
 /// Échelle proposée pour un maillage exporté en mètres (Blender) :
 /// les coordonnées sont multipliées par 1000 pour revenir en
 /// millimètres (ADR-0017).
@@ -3598,14 +3602,19 @@ mod tests {
             (false, false)
         );
     }
-    /// L'échelle mètres n'est proposée que pour un maillage
-    /// minuscule : une dimension nulle (maillage vide) ou déjà
-    /// millimétrique ne déclenche rien (ADR-0017).
+    /// L'échelle mètres est proposée pour un maillage dont la plus
+    /// grande dimension reste dans la bande des exports en mètres :
+    /// un objet Blender de 3 m de diamètre exporté en mètres mesure
+    /// 3,0 « mm » après lecture et déclenche le dialogue (retour
+    /// checklist jalon 2) ; une dimension nulle (maillage vide) ou
+    /// franchement millimétrique ne déclenche rien (ADR-0017).
     #[test]
     fn echelle_metres_proposee_sous_le_seuil() {
         assert!(propose_echelle_metres(0.05));
+        assert!(propose_echelle_metres(1.0));
+        assert!(propose_echelle_metres(3.0), "objet Blender de 3 m (retour jalon 2)");
         assert!(!propose_echelle_metres(0.0));
-        assert!(!propose_echelle_metres(1.0));
+        assert!(!propose_echelle_metres(10.0));
         assert!(!propose_echelle_metres(50.0));
     }
 
@@ -4343,12 +4352,13 @@ mod tests {
         assert!(app.error.is_some(), "le refus s'affiche en message d'état");
     }
 
-    /// La bascule d'orientation depuis l'atelier remplace la
-    /// contrainte opposée au même identifiant et la liste
-    /// surligne la contrainte touchée (ADR-0021 D1/D2) ;
-    /// reposer le même genre est refusé sans rien écrire.
+    /// L'orientation opposée depuis l'atelier est refusée, comme
+    /// dans FreeCAD (ADR-0021 D1 révisée le 2026-10-22) : une ligne
+    /// déjà orientée refuse toute pose d'orientation — même genre
+    /// (redondance) ou genre opposé — sans rien écrire ; seule la
+    /// pose effective surligne dans la liste (ADR-0021 D2).
     #[test]
-    fn la_bascule_depuis_l_atelier_remplace_et_surligne() {
+    fn l_orientation_opposee_depuis_l_atelier_est_refusee() {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         for (x, y) in [(0.0, 0.0), (40.0, 25.0)] {
             app.executer(&AddEntity {
@@ -4373,18 +4383,20 @@ mod tests {
             Some((0, app.instant)),
             "la pose surligne la contrainte"
         );
+        // Genre opposé : refusé (alignement FreeCAD), la
+        // contrainte posée tient, rien d'autre au journal.
         atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::Verticale { ligne: 2 });
         let contraintes = app.session.esquisse().contraintes();
-        assert_eq!(contraintes.len(), 1, "bascule : remplacée, pas ajoutée");
-        assert_eq!(contraintes[0].0, 0, "identifiant conservé");
+        assert_eq!(contraintes.len(), 1, "refus : rien d'ajouté");
         assert!(matches!(
             contraintes[0].1,
-            ContrainteEsquisse::Verticale { ligne: 2 }
+            ContrainteEsquisse::Horizontale { ligne: 2 }
         ));
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
         assert_eq!(
             app.derniere_contrainte,
             Some((0, app.instant)),
-            "la bascule surligne la contrainte remplacée"
+            "rien de neuf à surligner"
         );
         // Reposer le même genre : refusé, aucune nouvelle
         // surbrillance.

@@ -823,14 +823,13 @@ fn une_contrainte_sur_entite_absente_est_refusee() {
     assert_eq!(session.esquisse().contraintes().len(), 0);
 }
 
-/// La bascule d'orientation remplace la contrainte opposée au
-/// même identifiant (ADR-0021 D1) : jamais deux orientations
-/// contradictoires sur une ligne, reposer le même genre est
-/// refusé sans rien écrire — la ligne ne s'écrase plus à la
-/// résolution. L'annulation de la bascule restaure l'orientation
-/// précédente.
+/// L'orientation sur une ligne déjà orientée est refusée, comme
+/// dans FreeCAD (ADR-0021 D1 révisée le 2026-10-22 — retour
+/// checklist jalon 2) : même genre (redondance) ou genre opposé,
+/// rien au journal dans les deux cas ; annuler la contrainte
+/// existante puis reposer reste le chemin pour réorienter.
 #[test]
-fn la_bascule_d_orientation_remplace_l_opposee() {
+fn l_orientation_opposee_est_refusee() {
     let mut session = Session::new("tests");
     for (x, y) in [(0.0, 0.0), (40.0, 25.0)] {
         session
@@ -853,26 +852,7 @@ fn la_bascule_d_orientation_remplace_l_opposee() {
         })
         .expect("orientation posée");
     let journal_avant = session.document().events().len();
-    // Bascule : la verticale remplace l'horizontale, identifiant
-    // conservé, un seul événement de mise à jour.
-    session
-        .execute(&AddConstraint {
-            contrainte: ContrainteEsquisse::Verticale { ligne: 2 },
-        })
-        .expect("bascule");
-    let contraintes = session.esquisse().contraintes();
-    assert_eq!(contraintes.len(), 1, "remplacée, pas ajoutée");
-    assert_eq!(contraintes[0].0, 0, "identifiant conservé");
-    assert!(matches!(
-        contraintes[0].1,
-        ContrainteEsquisse::Verticale { ligne: 2 }
-    ));
-    assert_eq!(
-        session.document().events().len(),
-        journal_avant + 1,
-        "un événement de mise à jour"
-    );
-    // Reposer le même genre : refusé, rien au journal.
+    // Genre opposé : refusé (alignement FreeCAD), rien au journal.
     let erreur = session
         .execute(&AddConstraint {
             contrainte: ContrainteEsquisse::Verticale { ligne: 2 },
@@ -881,17 +861,91 @@ fn la_bascule_d_orientation_remplace_l_opposee() {
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert_eq!(
         session.document().events().len(),
-        journal_avant + 1,
+        journal_avant,
         "le refus n'écrit rien"
     );
-    // L'annulation de la bascule restaure l'horizontale.
+    // Reposer le même genre : refusé aussi.
+    let erreur = session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .unwrap_err();
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    // Annuler l'orientation existante puis reposer : le chemin
+    // FreeCAD pour réorienter la ligne.
     session.undo().expect("undo");
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Verticale { ligne: 2 },
+        })
+        .expect("repose après annulation");
     let contraintes = session.esquisse().contraintes();
-    assert_eq!(contraintes.len(), 1, "la contrainte originale tient");
+    assert_eq!(contraintes.len(), 1, "une seule orientation");
     assert!(matches!(
         contraintes[0].1,
-        ContrainteEsquisse::Horizontale { ligne: 2 }
+        ContrainteEsquisse::Verticale { ligne: 2 }
     ));
+}
+
+/// L'ancrage épingle la position RÉSOLUE du point, pas sa graine
+/// (retour checklist jalon 2, point 8) : un point que les
+/// contraintes ont tiré loin de sa graine reste là où
+/// l'utilisateur le voit au moment de l'ancrage — la forme ne
+/// saute jamais. Ancien comportement : `fixer_point` posé avant
+/// la résolution épinglait la graine, et tout le croquis bondissait
+/// pour la rejoindre.
+#[test]
+fn l_ancrage_epingle_la_position_resolue() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (50.0, 30.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne ajoutée");
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 3 },
+        })
+        .expect("orientation posée");
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointSurLigne { point: 2, ligne: 3 },
+        })
+        .expect("point sur la ligne");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let avant = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    // La contrainte a tiré le point 2 loin de sa graine (50, 30).
+    assert!(proche(avant.position(2), 50.0, 0.0), "le point est sur la ligne");
+    assert!(proche(avant.position(0), 0.0, 0.0));
+    assert!(proche(avant.position(1), 100.0, 0.0));
+    // Ancrage : le point reste à sa position résolue — la forme ne
+    // saute pas.
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 2 },
+        })
+        .expect("ancrage posé");
+    let apres = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(
+        proche(apres.position(2), 50.0, 0.0),
+        "l'ancrage fige la position résolue"
+    );
+    assert!(proche(apres.position(0), 0.0, 0.0), "aucun bond de la forme");
+    assert!(proche(apres.position(1), 100.0, 0.0), "aucun bond de la forme");
+    assert!(
+        apres.dof() < avant.dof(),
+        "l'ancrage retire des degrés de liberté"
+    );
 }
 
 /// Le déplacement d'un point ancré est refusé (ADR-0021 D3) : la

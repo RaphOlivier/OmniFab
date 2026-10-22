@@ -1,6 +1,6 @@
 # ADR-0021 : bascule d'orientation, ancrage non saisissable, liste des contraintes posées
 
-- **Statut :** accepté
+- **Statut :** accepté — D1 révisée le 2026-10-22 (voir « Révision D1 »)
 - **Date :** 2026-10-21
 - **Décideurs :** Raphaël Olivier (re-validation manuelle §7 du jalon 2, choix tranchés en réponse au diagnostic)
 
@@ -31,3 +31,12 @@ La re-validation manuelle §7 (après le lot ADR-0020) a rapporté trois comport
 - Le liseré d'ancrage (turquoise 64, 224, 208) se distingue des entités et de la sélection (orange) : l'une cerne la poignée, l'autre habite le trait — les deux coexistent à l'écran sans confusion.
 - La surbrillance momentanée demande un rafraîchissement egui tant qu'elle vit : `request_repaint_after(100 ms)` borné à la fenêtre de surbrillance.
 - Les demandes du jalon 3 restent ouvertes : arithmétique d'unités longueur↔angle, indicateur d'unité par alias, inspection/édition des contraintes de la liste.
+
+## Révision D1 — 2026-10-22 (retour checklist jalon 2, demande explicite de Raphaël)
+
+**La bascule est retirée.** Poser une orientation (horizontale ou verticale) sur une ligne qui porte déjà une contrainte d'orientation est désormais **refusé** — même genre (redondance) ou genre opposé — au nom de l'alignement sur FreeCAD, à la demande explicite de Raphaël (checklist de validation du jalon 2, point 7). Rien au journal dans les deux cas ; le message d'état désigne la contrainte existante et invite à l'annuler (Ctrl+Z) avant d'en poser une autre.
+
+- `AddConstraint` n'émet plus `sketch.constraint.updated` ; l'événement reste émis par la substitution d'alias (ADR-0019) et **se rejoue tel quel** pour les journaux hérités — un projet sauvé avec une bascule s'ouvre et se comporte sans changement.
+- La surbrillance de la liste (D2) garde son sens : elle signale la dernière contrainte **touchée**, la pose d'une contrainte neuve l'active encore.
+- Le rejet de l'alternative « refuser la seconde pose » (§ Alternatives) est caduc : c'est désormais la décision retenue. Le workflow « réorienter une ligne » passe par l'annulation de l'orientation existante puis une nouvelle pose ; l'inspection/édition par contrainte de la liste reste un souhait du jalon 3.
+- L'ancrage `PointFixe` reçoit dans la même ride une correction d'exécution : il épingle la position **résolue** du point (celle que l'utilisateur voit), pas sa graine — la forme ne saute plus au moment de l'ancrage (retour checklist jalon 2, point 8). La décision D3 (refus du glissement, liseré turquoise) est inchangée.

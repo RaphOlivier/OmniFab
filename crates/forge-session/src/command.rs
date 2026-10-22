@@ -506,10 +506,13 @@ impl Command for AddEntity {
 /// Ajoute une contrainte au croquis contraint (ADR-0018 D1) : les
 /// onze genres du solveur plus l'ancrage d'un point. Un refus
 /// (entités référencées absentes, cote invalide) ne laisse rien au
-/// journal (OF-SES-0001). Bascule d'orientation (ADR-0021 D1) :
-/// poser `Horizontale` sur une ligne déjà `Verticale` (ou
-/// inversement) remplace la contrainte existante à identifiant
-/// conservé ; reposer le même genre est refusé.
+/// journal (OF-SES-0001). Orientation (ADR-0021 D1, révisée le
+/// 2026-10-22 — retour checklist jalon 2, alignement FreeCAD) :
+/// une ligne portant déjà une contrainte d'orientation refuse
+/// toute pose d'orientation — même genre (redondance) ou genre
+/// opposé ; l'ancienne décision de bascule est retirée, et cette
+/// commande n'émet plus `sketch.constraint.updated` (les anciens
+/// journaux qui l'ont porté se rejouent tels quels).
 ///
 /// Cote pilotée (ADR-0019 décision 4) : une `Distance` en expression
 /// crée AUSSI le nœud `esquisse.<alias>` dans le graphe des liaisons
@@ -529,19 +532,19 @@ impl Command for AddConstraint {
         if let Some(reason) = esquisse.raison_refus_contrainte(&self.contrainte) {
             return Err(SessionError::CommandRejected { reason });
         }
-        // Bascule d'orientation (ADR-0021 D1) : une ligne porte au
-        // plus une contrainte d'orientation. La pose du genre opposé
-        // remplace l'existante à identifiant conservé — jamais deux
-        // orientations contradictoires, la ligne ne s'écrase plus à
-        // la résolution ; reposer le même genre est refusé
-        // (redondance) sans rien écrire au journal.
+        // Orientation (ADR-0021 D1, révisée le 2026-10-22 — retour
+        // checklist jalon 2, alignement FreeCAD) : une ligne porte
+        // au plus une contrainte d'orientation, et toute pose
+        // d'orientation sur une ligne déjà orientée est REFUSÉE —
+        // même genre (redondance) ou genre opposé (la bascule est
+        // retirée). Rien au journal dans les deux cas.
         let orientation = match &self.contrainte {
             ContrainteEsquisse::Horizontale { ligne } => Some((*ligne, true)),
             ContrainteEsquisse::Verticale { ligne } => Some((*ligne, false)),
             _ => None,
         };
         if let Some((ligne, horizontale)) = orientation
-            && let Some((id_existante, horiz_existante)) =
+            && let Some((_, horiz_existante)) =
                 esquisse
                     .contraintes()
                     .iter()
@@ -555,22 +558,17 @@ impl Command for AddConstraint {
                         _ => None,
                     })
         {
+            let existant = if horiz_existante { "horizontale" } else { "verticale" };
             if horiz_existante == horizontale {
-                let genre = if horizontale {
-                    "horizontale"
-                } else {
-                    "verticale"
-                };
                 return Err(SessionError::CommandRejected {
-                    reason: format!("la ligne {ligne} porte déjà une contrainte {genre}"),
+                    reason: format!("la ligne {ligne} porte déjà une contrainte {existant}"),
                 });
             }
-            return Ok(CommandPlan::new(vec![NewEvent::new(
-                EVENT_SKETCH_CONSTRAINT_UPDATED,
-                1,
-                "",
-                crate::esquisse::contrainte_en_json(id_existante, &self.contrainte),
-            )]));
+            let demande = if horizontale { "horizontale" } else { "verticale" };
+            let raison = format!("la ligne {ligne} porte déjà une contrainte {existant}");
+            return Err(SessionError::CommandRejected {
+                reason: format!("{raison} : annulez-la (Ctrl+Z) avant d'en poser une {demande}"),
+            });
         }
         let id = esquisse.prochaine_id_contrainte();
         let valeur = match &self.contrainte {
