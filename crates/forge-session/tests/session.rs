@@ -1520,3 +1520,125 @@ fn le_croquis_rigide_suit_le_geste() {
     assert!(proche(resolu.position(1), 130.0, 20.0), "coin 1 suit");
     assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
 }
+
+/// Des graines confondues ne font pas échouer la résolution (re-test
+/// du 2026-10-23) : un carré affaissé par deux orientations posées
+/// sur des côtés opposés laisse des points exactement superposés —
+/// le gradient d'une cote de distance est indéfini aux graines,
+/// DogLeg échouait alors que le croquis a une solution. La passe
+/// répare en écartant les graines confondues d'un epsilon
+/// déterministe : la cote tient, sans conflit.
+#[test]
+fn des_graines_confondues_ne_font_pas_echouer_la_resolution() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (0.0, 0.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(50.0),
+                },
+            },
+        })
+        .expect("contrainte ajoutée");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session
+        .esquisse()
+        .resoudre(&mut solveur)
+        .expect("résolu : les graines confondues sont réparées");
+    assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
+    let (x0, y0) = mm(resolu.position(0));
+    let (x1, y1) = mm(resolu.position(1));
+    assert!(
+        ((x1 - x0).hypot(y1 - y0) - 50.0).abs() < 1e-6,
+        "la cote de distance tient"
+    );
+}
+
+/// L'aperçu de glissement suit le geste sans écrire au journal
+/// (re-test du 2026-10-23) : la projection d'aperçu reçoit la
+/// position visée comme relâchement provisoire — un croquis rigide
+/// suit en entier, exactement comme au relâchement — et le journal
+/// de la session reste inchangé.
+#[test]
+fn l_apercu_de_glissement_suite_le_geste_sans_ecrire_au_journal() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("ligne ajoutée");
+    }
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let _ = session
+        .esquisse()
+        .resoudre(&mut solveur)
+        .expect("résolu : le rectangle de départ tient");
+    let edition = session.esquisse().edition();
+    // Aperçu du point 1 visé à (130, 20) : rien au journal, la
+    // forme suit en entier, comme au relâchement.
+    let apercu = session
+        .esquisse()
+        .apercu_de_glissement(
+            1,
+            Length::from_millimeters(130.0),
+            Length::from_millimeters(20.0),
+        )
+        .expect("point saisi");
+    let resolu = apercu.resoudre(&mut solveur).expect("aperçu résolu");
+    assert_eq!(session.esquisse().edition(), edition, "rien au journal");
+    assert!(
+        proche(resolu.position(1), 130.0, 20.0),
+        "le point saisi tient la visée"
+    );
+    assert!(proche(resolu.position(0), 30.0, 20.0), "coin 0 suit");
+    assert!(proche(resolu.position(2), 130.0, 70.0), "coin 2 suit");
+    assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
+}

@@ -1172,16 +1172,23 @@ pub(crate) fn redondances_stables(
 /// (ADR-0018 D7) — état dérivé d'affichage, jamais sérialisé.
 /// L'outil Sélection montre les poignées des points et le marqueur
 /// de la sélection (ADR-0018 D5) ; la surcharge du glissement
-/// déplace localement le point saisi, sans écrire (D4).
+/// déplace localement le point saisi, sans écrire (D4). Pendant un
+/// glissement, la résolution d'aperçu prime sur le cache : la
+/// forme liée suit le point saisi en direct (re-test du
+/// 2026-10-23).
 pub(crate) fn dessiner(
     painter: &egui::Painter,
     app: &DemoApp,
     rect: egui::Rect,
     surcharge: Option<(u32, Length, Length)>,
+    resolu_apercu: Option<&CroquisResolu>,
 ) {
     // Affichage : la dernière résolution connue reste montrée
-    // pendant le vol d'une résolution fraîche (anti-flash).
-    let resolu = resolu_affichage(app);
+    // pendant le vol d'une résolution fraîche (anti-flash) ;
+    // pendant un glissement, la résolution d'aperçu prime — la
+    // forme liée suit le point saisi en direct (re-test du
+    // 2026-10-23).
+    let resolu = resolu_apercu.or_else(|| resolu_affichage(app));
     let esquisse = app.session.esquisse();
     let camera = &app.camera;
     for (id, entite) in esquisse.entites() {

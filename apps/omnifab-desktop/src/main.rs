@@ -236,6 +236,18 @@ enum Travail {
         /// et graines du journal.
         croquis: EsquisseProjection,
     },
+    /// Aperçu de glissement du croquis (re-test du 2026-10-23) : la
+    /// forme liée suit le point saisi PENDANT le glissement — la
+    /// projection clonée porte la position visée comme relâchement
+    /// provisoire, jamais écrit au journal ; le résultat sert
+    /// l'affichage seul, l'échec n'y remonte jamais.
+    ResoudreApercu {
+        /// Génération de l’état au moment de l’envoi.
+        generation: u64,
+        /// Clone de la projection du croquis, graine du point saisi
+        /// posée à la position visée.
+        croquis: EsquisseProjection,
+    },
 }
 
 impl Travail {
@@ -350,6 +362,16 @@ impl Travail {
                     resultat,
                 }
             }
+            Travail::ResoudreApercu {
+                generation,
+                croquis,
+            } => {
+                let resultat = esquisse::resoudre(&croquis);
+                Retour::EsquisseApercue {
+                    generation,
+                    resultat,
+                }
+            }
         }
     }
 }
@@ -409,6 +431,15 @@ enum Retour {
         /// Positions et diagnostic, ou message d’échec.
         resultat: Result<CroquisResolu, String>,
     },
+    /// Aperçu de glissement résolu (re-test du 2026-10-23) : la
+    /// forme suit le point saisi pendant le glissement —
+    /// affichage seul, l'échec ne remonte jamais comme erreur.
+    EsquisseApercue {
+        /// Génération de l’état au moment de l’envoi du travail.
+        generation: u64,
+        /// Positions et diagnostic, ou message d'échec muet.
+        resultat: Result<CroquisResolu, String>,
+    },
 }
 
 impl Retour {
@@ -420,6 +451,7 @@ impl Retour {
             | Retour::Export { generation, .. }
             | Retour::Erreur { generation, .. } => *generation,
             Retour::EsquisseResolue { generation, .. } => *generation,
+            Retour::EsquisseApercue { generation, .. } => *generation,
         }
     }
 }
@@ -718,6 +750,19 @@ struct DemoApp {
     /// journal, le frais la remplace — état dérivé d'affichage,
     /// jamais sérialisé.
     surcharge_relachee: Option<(u64, u32, Length, Length)>,
+    /// Aperçu de glissement : dernière résolution d'affichage du
+    /// point saisi pendant le glissement (re-test du 2026-10-23) —
+    /// la forme liée suit le geste en direct, la sémantique est
+    /// exactement celle du relâchement ; l'échec est silencieux,
+    /// le dessin retombe sur la surcharge seule. État dérivé
+    /// d'affichage, jamais sérialisé.
+    croquis_apercu: Option<Result<CroquisResolu, String>>,
+    /// Clé du dernier aperçu envoyé au fil de travail : point saisi
+    /// et position visée en millimètres — la même position ne
+    /// repart pas, un seul aperçu en vol.
+    apercu_envoye: Option<(u32, f64, f64)>,
+    /// Aperçu en vol au fil de travail.
+    apercu_en_attente: bool,
     /// Balayage signé accumulé du geste de l'arc en cours (ADR-0020)
     /// : positif dans le sens trigonométrique, négatif dans le sens
     /// horaire — état de l'app UI, jamais un événement.
@@ -823,6 +868,9 @@ impl DemoApp {
             selection: Vec::new(),
             saisie: None,
             surcharge_relachee: None,
+            croquis_apercu: None,
+            apercu_envoye: None,
+            apercu_en_attente: false,
             balayage_arc: 0.0,
             angle_curseur_arc: 0.0,
             redondances_affichees: None,
@@ -867,6 +915,9 @@ impl DemoApp {
         self.selection = Vec::new();
         self.saisie = None;
         self.surcharge_relachee = None;
+        self.croquis_apercu = None;
+        self.apercu_envoye = None;
+        self.apercu_en_attente = false;
         self.balayage_arc = 0.0;
         self.angle_curseur_arc = 0.0;
         self.redondances_affichees = None;
@@ -1319,6 +1370,13 @@ impl DemoApp {
                     self.surcharge_relachee = None;
                 }
             }
+            Retour::EsquisseApercue { resultat, .. } => {
+                // Aperçu de glissement (re-test du 2026-10-23) :
+                // affichage seul — l'échec ne remonte jamais, le
+                // dessin retombe sur la surcharge du glissement.
+                self.apercu_en_attente = false;
+                self.croquis_apercu = Some(resultat);
+            }
         }
     }
     /// Demande la résolution du croquis contraint au fil de travail
@@ -1365,6 +1423,42 @@ impl DemoApp {
         };
         if emetteur.send(travail).is_ok() {
             self.resolution_en_attente = Some(cle);
+            self.travaux_en_attente += 1;
+        }
+    }
+
+    /// Demande l'aperçu de glissement du croquis au fil de travail
+    /// (re-test du 2026-10-23) : la projection clonée reçoit la
+    /// position visée comme relâchement provisoire — la forme
+    /// liée suit le point saisi pendant le glissement, exactement
+    /// comme au relâchement. Un seul aperçu en vol ; la même
+    /// position ne repart pas ; l'échec est silencieux — le
+    /// résultat sert l'affichage seul.
+    fn demande_apercu_glissement(&mut self, point: u32, x: Length, y: Length) {
+        let cle = (point, x.millimeters(), y.millimeters());
+        if self.apercu_en_attente || self.apercu_envoye == Some(cle) {
+            return;
+        }
+        let Some(emetteur) = &self.travaux else {
+            return;
+        };
+        // Cotes pilotées figées comme pour toute résolution
+        // (ADR-0019) : le fil de travail ne voit jamais
+        // d'expression.
+        let croquis = match self.session.croquis_pour_resolution() {
+            Ok(croquis) => croquis,
+            Err(_) => return,
+        };
+        let Some(croquis) = croquis.apercu_de_glissement(point, x, y) else {
+            return;
+        };
+        let travail = Travail::ResoudreApercu {
+            generation: self.generation,
+            croquis,
+        };
+        if emetteur.send(travail).is_ok() {
+            self.apercu_en_attente = true;
+            self.apercu_envoye = Some(cle);
             self.travaux_en_attente += 1;
         }
     }
@@ -2474,6 +2568,13 @@ impl DemoApp {
                         .depuis_ecran((decalage.x as f64, decalage.y as f64));
                     let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
                     surcharge_drag = atelier_esquisse::surcharge_du_drag(self, pas, x, y);
+                    // La forme liée suit le point saisi pendant le
+                    // glissement (re-test du 2026-10-23) : la
+                    // résolution d'aperçu part à la position visée
+                    // — sémantique du relâchement, affichage seul.
+                    if let Some((id, vise_x, vise_y)) = surcharge_drag {
+                        self.demande_apercu_glissement(id, vise_x, vise_y);
+                    }
                 } else if let Some(surcharge) = atelier_esquisse::surcharge_du_relachement(self) {
                     // Anti-flash du relâchement (re-validation §7)
                     // : le point lâché reste affiché à sa position
@@ -2482,7 +2583,25 @@ impl DemoApp {
                     // d'avant le glissement.
                     surcharge_drag = Some(surcharge);
                 }
-                atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag);
+                if self.saisie.is_none() {
+                    // Fin de glissement : l'aperçu se vide, la
+                    // résolution du relâchement prend le relais.
+                    self.croquis_apercu = None;
+                    self.apercu_envoye = None;
+                    self.apercu_en_attente = false;
+                }
+                // Aperçu de glissement (re-test du 2026-10-23) : la
+                // résolution d'aperçu prime sur l'affichage tant
+                // que le glissement tient et qu'elle a réussi — la
+                // forme liée suit le point saisi en direct.
+                let resolu_apercu = if self.saisie.is_some() {
+                    self.croquis_apercu
+                        .as_ref()
+                        .and_then(|resultat| resultat.as_ref().ok())
+                } else {
+                    None
+                };
+                atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag, resolu_apercu);
                 // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
                 // point visé suit le curseur, accroché à la grille
                 // et aux points existants — état dérivé d'affichage,
@@ -4216,6 +4335,69 @@ mod tests {
             .expect("graine du point déplacé");
         assert_eq!(x.millimeters(), pas * 2.0, "graine à l'abscisse visée");
         assert_eq!(y.millimeters(), pas, "graine à l'ordonnée visée");
+    }
+
+    /// L'aperçu de glissement suit le geste en direct (re-test du
+    /// 2026-10-23) : la résolution d'aperçu part au fil de travail
+    /// à la position visée — une seule par position — le point
+    /// saisi y est résolu et le journal ne bouge pas ; l'échec est
+    /// silencieux, il ne remonte jamais comme erreur.
+    #[test]
+    fn l_apercu_de_glissement_suite_le_geste_en_direct() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.saisie = Some(0);
+        let empreinte_avant = app.empreinte_journal();
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(20.0),
+            Length::from_millimeters(10.0),
+        );
+        assert!(app.apercu_en_attente, "l'aperçu est parti au fil de travail");
+        // La même position ne repart pas : un seul aperçu en vol.
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(20.0),
+            Length::from_millimeters(10.0),
+        );
+        assert_eq!(
+            app.travaux_en_attente,
+            1,
+            "une seule résolution d'aperçu en vol"
+        );
+        // Pompage du retour : la résolution d'aperçu revient.
+        for _ in 0..2_000 {
+            if !app.apercu_en_attente {
+                break;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(!app.apercu_en_attente, "l'aperçu est revenu du fil de travail");
+        let resolu = app
+            .croquis_apercu
+            .as_ref()
+            .and_then(|resultat| resultat.as_ref().ok())
+            .expect("aperçu résolu");
+        assert!(
+            proche(resolu.position(0), 20.0, 10.0),
+            "le point saisi est à la visée"
+        );
+        assert_eq!(
+            app.empreinte_journal(),
+            empreinte_avant,
+            "l'aperçu n'écrit rien au journal"
+        );
     }
 
     /// Le relâchement s'accroche aux autres points, jamais au

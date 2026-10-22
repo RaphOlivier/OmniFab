@@ -58,6 +58,17 @@ const VERSION_SCHEMA_CONTRAINTE: u32 = 2;
 /// les journaux v1 non migrés rejouent, le registre les aligne en v2.
 const VERSIONS_CONTRAINTE: &[u32] = &[1, VERSION_SCHEMA_CONTRAINTE];
 
+/// Seuil de coincidence de deux graines d'une même passe (re-test
+/// du 2026-10-23) : en dessous, le gradient d'une cote de distance
+/// aux graines devient indéfini — la passe répare la paire.
+const SEUIL_GRAINES_CONFONDUES_MM: f64 = 1e-6;
+
+/// Écart déterministe de la réparation des graines confondues
+/// (re-test du 2026-10-23) : la paire est écartée vers +x, un
+/// écart invisible à l'écran — les graines ne sont que des points
+/// de départ.
+const ECART_GRAINES_CONFONDUES_MM: f64 = 1e-3;
+
 /// Version de schéma de `sketch.constraint.updated` : type nouveau de
 /// la phase E, né en v1 — son champ `valeur` suit le schéma des
 /// contraintes (objet typé en pratique, jamais un nombre nu émis).
@@ -1067,6 +1078,29 @@ impl EsquisseProjection {
         Ok(base)
     }
 
+    /// Aperçu de glissement (re-test du 2026-10-23) : une
+    /// projection où la position visée devient la graine du point
+    /// pour une résolution d'affichage SEULEMENT — rien au
+    /// journal. La sémantique est exactement celle du relâchement
+    /// (`MovePoint` puis [`EsquisseProjection::resoudre`]) :
+    /// suivi du geste d'un croquis rigide, ancrages respectés,
+    /// repli sur la passe de base. La forme liée suit le point
+    /// saisi PENDANT le glissement au lieu d'attendre le
+    /// relâchement. `None` si le point n'existe pas.
+    pub fn apercu_de_glissement(
+        &self,
+        point: u32,
+        x: Length,
+        y: Length,
+    ) -> Option<EsquisseProjection> {
+        let avant = self.position_graine(point)?;
+        let mut apercu = self.clone();
+        apercu.graine_avant_dernier = Some(avant);
+        apercu.graines.insert(point, (x, y));
+        apercu.dernier_deplace = Some(point);
+        Some(apercu)
+    }
+
     /// Graine d'avant geste du point déplacé : le point de départ
     /// du repli quand les graines courantes font échouer la passe
     /// de base (re-test du 2026-10-23). Renvoie None si le journal
@@ -1091,6 +1125,58 @@ impl EsquisseProjection {
                 Some(graine) => self.resoudre_passe(solveur, None, None, None, Some(graine)),
                 None => Err(erreur),
             },
+        }
+    }
+
+    /// Répare les graines confondues d'une passe (re-test du
+    /// 2026-10-23) : deux graines exactement superposées — un
+    /// relâchement accroché sur un autre point, un carré affaissé
+    /// par deux orientations posées sur des côtés opposés —
+    /// rendent le gradient d'une cote de distance indéfini
+    /// ((p1 − p2)/‖p1 − p2‖ = NaN) et DogLeg échoue alors que le
+    /// croquis a une solution. Les graines ne sont que des points
+    /// de départ : toute paire liée par une cote de distance,
+    /// comme toute ligne de longueur nulle, part écartée d'un
+    /// epsilon déterministe vers +x — jamais l'épinglé ni un point
+    /// ancré, jamais le journal.
+    fn reparer_graines_confondues(
+        &self,
+        graines: &mut BTreeMap<u32, (Length, Length)>,
+        epingle: Option<u32>,
+        ancres: Option<&[(u32, (Length, Length))]>,
+    ) {
+        let fige = |point: u32| {
+            epingle.is_some_and(|e| e == point)
+                || ancres.is_some_and(|a| a.iter().any(|(p, _)| *p == point))
+        };
+        let mut paires: Vec<(u32, u32)> = Vec::new();
+        for (_, contrainte) in &self.contraintes {
+            if let ContrainteEsquisse::Distance { p1, p2, .. } = contrainte {
+                paires.push((*p1, *p2));
+            }
+        }
+        for (_, entite) in &self.entites {
+            if let EntiteEsquisse::Ligne { p1, p2 } = entite {
+                paires.push((*p1, *p2));
+            }
+        }
+        for (p1, p2) in paires {
+            let Some((x1, y1)) = graines.get(&p1) else {
+                continue;
+            };
+            let Some((x2, y2)) = graines.get(&p2) else {
+                continue;
+            };
+            let ecart = (x2.millimeters() - x1.millimeters())
+                .hypot(y2.millimeters() - y1.millimeters());
+            if ecart >= SEUIL_GRAINES_CONFONDUES_MM {
+                continue;
+            }
+            let cible = if fige(p2) { p1 } else { p2 };
+            if let Some((graine_x, _)) = graines.get_mut(&cible) {
+                let ecarte = graine_x.millimeters() + ECART_GRAINES_CONFONDUES_MM;
+                *graine_x = Length::from_millimeters(ecarte);
+            }
         }
     }
 
@@ -1170,6 +1256,12 @@ impl EsquisseProjection {
     /// remplacée par la position donnée pour cette passe seulement :
     /// le repli de la passe de base rejoue la résolution depuis la
     /// graine d'avant geste du point déplacé (re-test du 2026-10-23).
+    ///
+    /// Les graines confondues d'une paire liée par une cote de
+    /// distance — ou d'une ligne de longueur nulle — sont écartées
+    /// d'un epsilon déterministe avant la résolution : leur
+    /// gradient est indéfini aux graines, DogLeg échouerait alors
+    /// que le croquis a une solution (re-test du 2026-10-23).
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
@@ -1191,16 +1283,28 @@ impl EsquisseProjection {
         }
         solveur.vider()?;
         let mut reconstruction = Reconstruction::default();
+        // Graines de la passe (re-test du 2026-10-23) : journal — ou
+        // position résolue de la passe de base pour un point ancré,
+        // graine substituée du repli — puis translation du suivi du
+        // geste ; la réparation des graines confondues s'applique en
+        // dernier, une fois la translation posée.
+        let mut graines_passe: BTreeMap<u32, (Length, Length)> = BTreeMap::new();
+        for (id, entite) in &self.entites {
+            if let EntiteEsquisse::Point { x, y } = entite {
+                let graine = match ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
+                    Some((_, position)) => *position,
+                    None => match graine_substituee {
+                        Some((point, position)) if point == *id => position,
+                        _ => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                    },
+                };
+                graines_passe.insert(*id, graine);
+            }
+        }
+        self.reparer_graines_confondues(&mut graines_passe, epingle, ancres);
         for (id, entite) in &self.entites {
             match entite {
-                EntiteEsquisse::Point { x, y } => {
-                    let graine = match ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
-                        Some((_, position)) => *position,
-                        None => match graine_substituee {
-                            Some((point, position)) if point == *id => position,
-                            _ => self.graines.get(id).copied().unwrap_or((*x, *y)),
-                        },
-                    };
+                EntiteEsquisse::Point { .. } => {
                     // Suivi du geste : les points non épinglés
                     // partent translatés du vecteur du dernier
                     // geste, l'épinglé reste à sa graine.
@@ -1208,9 +1312,13 @@ impl EsquisseProjection {
                         (Some((dx, dy)), Some(e)) if *id != e => (dx, dy),
                         _ => (Length::from_millimeters(0.0), Length::from_millimeters(0.0)),
                     };
+                    let (graine_x, graine_y) = graines_passe
+                        .get(id)
+                        .copied()
+                        .expect("graine de passe de tout point");
                     let identifiant = solveur.ajouter_point(
-                        Length::from_millimeters(graine.0.millimeters() + dx.millimeters()),
-                        Length::from_millimeters(graine.1.millimeters() + dy.millimeters()),
+                        Length::from_millimeters(graine_x.millimeters() + dx.millimeters()),
+                        Length::from_millimeters(graine_y.millimeters() + dy.millimeters()),
                     )?;
                     reconstruction.points.insert(*id, identifiant);
                 }
