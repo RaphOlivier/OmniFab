@@ -1,4 +1,3 @@
-successfully downloaded text file (SHA: 5c227382f7166eee548474f8f1a34894fc68be5e)
 //! Tests du moteur de liaisons en phase E (ADR-0019) : unités
 //! déclarées (ADR-0007 phase 1), préfixes réservés et suppression
 //! d'alias en trois modes (OF-VAL-0008/0009), cotes d'esquisse
