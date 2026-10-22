@@ -1110,7 +1110,7 @@ impl EsquisseProjection {
         solveur: &mut dyn Solveur2D,
         epingle: Option<u32>,
         translation: Option<(Length, Length)>,
-        ancres: Option<&[(u32, (Length, Length))]>
+        ancres: Option<&[(u32, (Length, Length))]>,
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {

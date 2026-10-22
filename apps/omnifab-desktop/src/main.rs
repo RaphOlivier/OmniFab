@@ -3842,10 +3842,13 @@ mod tests {
         );
         let resolu = atelier_esquisse::resolu_affichage(&app)
             .expect("dernière résolution tenue pendant le vol");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
         let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
         assert!(
-            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
-            "l'affichage tient la résolution, pas la graine (80, -3)"
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "l'affichage tient la résolution, pas la graine"
         );
     }
 
