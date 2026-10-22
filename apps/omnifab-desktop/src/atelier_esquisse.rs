@@ -221,23 +221,20 @@ fn resolu_frais(app: &DemoApp) -> Option<&CroquisResolu> {
 
 /// Résolution affichable (retour de la re-validation §7) : celle de
 /// l'édition courante si le cache la tient, sinon la dernière
-/// résolution connue tant qu'une résolution fraîche est en vol —
-/// le croquis contraint ne « saute » jamais aux graines pendant le
-/// recalcul, la déformation au moment du clic disparaît. L'accroche
-/// et les cotes restent sur la résolution fraîche : eux ne doivent
-/// pas mentir sur l'état courant.
+/// résolution connue — même dans la trame du clic, avant que la
+/// demande de résolution ne soit partie. Le croquis contraint ne
+/// « saute » jamais aux graines pendant le recalcul : la déformation
+/// au moment du clic disparaît. Les visées et accroches suivent
+/// l'affichage (on clique là où le croquis est DESSINÉ) ; seuls les
+/// degrés de liberté du panneau restent sur la résolution fraîche.
 pub(crate) fn resolu_affichage(app: &DemoApp) -> Option<&CroquisResolu> {
     let frais = resolu_frais(app);
     if frais.is_some() {
         return frais;
     }
-    if app.resolution_en_attente.is_some() {
-        return app
-            .croquis_resolu
-            .as_ref()
-            .and_then(|(_, resultat)| resultat.as_ref().ok());
-    }
-    None
+    app.croquis_resolu
+        .as_ref()
+        .and_then(|(_, resultat)| resultat.as_ref().ok())
 }
 
 /// Traite un clic du viewport 2D selon l'outil actif et le geste
@@ -246,7 +243,7 @@ pub(crate) fn resolu_affichage(app: &DemoApp) -> Option<&CroquisResolu> {
 /// `AddEntity` — jamais de commande de résolution, jamais de
 /// position résolue sérialisée (ADR-0018 D3).
 pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
-    let resolu = resolu_frais(app);
+    let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     match (app.outil, app.geste.take()) {
         (OutilEsquisse::Selection, _) => {
@@ -259,7 +256,7 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
             let cible = if vise.id != app.session.esquisse().prochaine_id_entite() {
                 Some(vise.id)
             } else {
-                let resolu = resolu_frais(app);
+                let resolu = resolu_affichage(app);
                 ligne_visee(app.session.esquisse(), resolu, pas, x, y)
                     .or_else(|| courbe_visee(app.session.esquisse(), resolu, pas, x, y))
             };
@@ -280,7 +277,7 @@ pub(crate) fn traiter_clic(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
             // sélectionnés démarrent à leur distance affichable
             // courante (graine ou position résolue).
             if let Some((p1, p2)) = deux_points_selectionnes(app) {
-                let resolu = resolu_frais(app);
+                let resolu = resolu_affichage(app);
                 if let (Some((x1, y1)), Some((x2, y2))) = (
                     position_point(app.session.esquisse(), resolu, p1),
                     position_point(app.session.esquisse(), resolu, p2),
@@ -416,7 +413,7 @@ fn balaie(balayage: f64, precedent: f64, angle: f64) -> f64 {
 /// états de l'app UI, jamais des événements. Sans point visé, rien
 /// ne se passe : le glissement déplace la vue.
 pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
-    let resolu = resolu_frais(app);
+    let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     // Un point ancré ne se saisit pas (ADR-0021 D3) : le grab est
     // refusé — pas de glissement fantôme qui suivrait le curseur
@@ -440,7 +437,7 @@ pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let Some(id) = app.saisie.take() else {
         return;
     };
-    let resolu = resolu_frais(app);
+    let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
     // La graine ne change pas : rien à écrire au journal
     // (ADR-0011) — la comparaison porte sur la graine courante,
@@ -469,7 +466,7 @@ pub(crate) fn surcharge_du_drag(
     y: f64,
 ) -> Option<(u32, Length, Length)> {
     let id = app.saisie?;
-    let resolu = resolu_frais(app);
+    let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
     Some((id, vise.x, vise.y))
 }

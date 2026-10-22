@@ -3776,6 +3776,16 @@ mod tests {
             },
         })
         .expect("point posé");
+        // Trame du clic elle-même : la demande n'est pas encore
+        // partie — l'affichage garde déjà la dernière résolution,
+        // il ne saute pas aux graines.
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("l'ancienne résolution est montrée dès le clic");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        assert!(
+            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
+            "l'affichage ne flashe pas les graines dès le clic"
+        );
         app.demande_resolution_esquisse();
         assert_eq!(app.travaux_en_attente, 1, "résolution fraîche en vol");
         assert!(
