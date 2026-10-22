@@ -23,6 +23,10 @@
 //! orientée (alignement FreeCAD, ADR-0021 D1 révisée), la liste des
 //! contraintes posées avec surbrillance momentanée et l'ancrage
 //! non saisissable complètent la reprise de validation (ADR-0021).
+//! L'ancre posée depuis l'atelier capture la position affichée à
+//! la pose (ADR-0021 D2, révisée le 2026-10-23 — re-test jalon 2,
+//! point 8) : le point reste là où il est dessiné, le reste du
+//! croquis absorbe (alignement FreeCAD).
 
 use crate::DemoApp;
 use crate::aide::{avec_aide, avec_aide_sur_calque};
@@ -30,9 +34,9 @@ use eframe::egui;
 use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};
 use forge_session::{
-    AddConstraint, AddEntity, ContrainteEsquisse, CroquisResolu, EVENT_SKETCH_CONSTRAINT_ADDED,
-    EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse, EsquisseProjection, GenreEntite, MovePoint,
-    ValeurCote,
+    AddConstraint, AddEntity, AncrerPoint, ContrainteEsquisse, CroquisResolu,
+    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse,
+    EsquisseProjection, GenreEntite, MovePoint, ValeurCote,
 };
 use forge_units::{Angle, Length};
 
@@ -606,7 +610,7 @@ pub(crate) fn panneau(ui: &mut egui::Ui, app: &mut DemoApp) {
         if reponse.clicked()
             && let Some(point) = point_selectionne(app)
         {
-            ajouter_contrainte(app, ContrainteEsquisse::PointFixe { point });
+            ancrer_point(app, point);
         }
         avec_aide_sur_calque(
             ui,
@@ -749,6 +753,14 @@ pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquis
     if app.executer(&AddConstraint { contrainte }).is_err() {
         return;
     }
+    marquer_derniere_contrainte(app);
+}
+
+/// Marque la contrainte posée en dernier pour la surbrillance
+/// momentanée de la liste (ADR-0021 D2) : l'identifiant vient du
+/// dernier événement du journal — une pose neuve ; rien si le
+/// dernier événement n'est pas une pose de contrainte.
+fn marquer_derniere_contrainte(app: &mut DemoApp) {
     let Some(evenement) = app.session.document().events().last() else {
         return;
     };
@@ -760,6 +772,25 @@ pub(crate) fn ajouter_contrainte(app: &mut DemoApp, contrainte: ContrainteEsquis
     if contrainte_posee {
         app.derniere_contrainte = Some((id as u32, app.instant));
     }
+}
+
+/// Ancre un point à sa position affichée (ADR-0021 D2, révisée le
+/// 2026-10-23 — re-test jalon 2, point 8) : la commande
+/// `AncrerPoint` capture la position DESSINÉE — résolue du cache
+/// d'affichage si elle existe, graine du journal sinon — et la fige
+/// avant la première résolution. La forme ne saute jamais : le
+/// point reste là où l'utilisateur le voit, le reste du croquis
+/// absorbe (alignement FreeCAD). La contrainte posée reçoit la
+/// surbrillance momentanée de la liste (ADR-0021 D2).
+pub(crate) fn ancrer_point(app: &mut DemoApp, point: u32) {
+    let position = position_point(app.session.esquisse(), resolu_affichage(app), point);
+    let Some((x, y)) = position else {
+        return;
+    };
+    if app.executer(&AncrerPoint { point, x, y }).is_err() {
+        return;
+    }
+    marquer_derniere_contrainte(app);
 }
 
 /// La contrainte est-elle celle posée en dernier, encore dans sa

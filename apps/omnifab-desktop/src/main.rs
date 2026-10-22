@@ -2913,7 +2913,9 @@ fn main() -> eframe::Result<()> {
 mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
-    use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
+    use forge_session::{
+        AddConstraint, AddEntity, AncrerPoint, ContrainteEsquisse, EntiteEsquisse, MovePoint,
+    };
 
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
@@ -4458,6 +4460,69 @@ mod tests {
             .expect("graine du point");
         assert_eq!(x.millimeters(), 0.0, "la graine tient");
         assert_eq!(y.millimeters(), 0.0, "la graine tient");
+    }
+
+    /// Fixer un point glissé ne le fait pas sauter (ADR-0021 D2,
+    /// révisée le 2026-10-23 — re-test jalon 2, point 8) : le bouton
+    /// « Point fixe » capture la position DESSINÉE — la résolution
+    /// épinglée du cache, pas la passe de base — et l'ancre la fige :
+    /// après re-résolution, le point reste exactement là où
+    /// l'utilisateur le voyait.
+    #[test]
+    fn fixer_un_point_glisse_ne_le_fait_pas_sauter() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("point posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("distance posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Le geste : le point 0 part à (10, 20) — l'affichage
+        // l'épingle là où on le lâche.
+        app.executer(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(10.0),
+            y: Length::from_millimeters(20.0),
+        })
+        .expect("déplacement");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        assert!(proche(resolu.position(0), 10.0, 20.0), "l'affichage épingle");
+        // Fixer : la position DESSINÉE est capturée et figée.
+        atelier_esquisse::ancrer_point(&mut app, 0);
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((1, app.instant)),
+            "la contrainte d'ancrage posée se surligne"
+        );
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let ancre = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        assert!(
+            proche(ancre.position(0), 10.0, 20.0),
+            "le point fixé ne saute pas : la position affichée tient"
+        );
     }
 
     /// Le rectangle contraint tombe à zéro degré de liberté

@@ -716,6 +716,19 @@ pub struct EsquisseProjection {
     graine_avant_dernier: Option<(Length, Length)>,
     /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
     unknown: Vec<String>,
+    /// Ancrages capturés à la pose (ADR-0021 D2, révisée le
+    /// 2026-10-23) : identifiant du point ancré → position affichée
+    /// au moment de la pose, portée au journal par le
+    /// `sketch.point.moved` qui précède immédiatement la contrainte
+    /// de la même transaction (commande AncrerPoint). La graine du
+    /// point EST la position capturée : la passe de base le fige
+    /// avant la première résolution — la forme ne saute jamais.
+    ancrages_captures: BTreeMap<u32, (Length, Length)>,
+    /// Déplacement en attente de capture : posé par le dernier
+    /// `sketch.point.moved` appliqué, consommé par la contrainte
+    /// `PointFixe` du même point qui suit immédiatement — tout autre
+    /// événement appliqué l'abandonne.
+    capture_en_attente: Option<(u32, (Length, Length))>,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
     /// remis à zéro (clé de cache monotone pour l'application).
     edition: u64,
@@ -1020,6 +1033,12 @@ impl EsquisseProjection {
     /// Les points ancrés (`PointFixe`) ne bougent jamais d'une passe
     /// à l'autre : la passe épinglée fige leur position résolue de
     /// la passe de base (révision d'ADR-0021 du 2026-10-22, CI #275).
+    ///
+    /// Un ancrage posé par `AncrerPoint` — qui capture la position
+    /// affichée (ADR-0021 D2, révisée le 2026-10-23 — re-test jalon
+    /// 2, point 8) — fige son point à la position capturée dès la
+    /// passe de base : la forme ne saute pas entre l'affichage
+    /// d'avant pose et celui d'après, le reste du croquis absorbe.
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
         let base = self.resoudre_passe(solveur, None, None, None)?;
         let ancres = self.ancrages_resolus(&base);
@@ -1046,7 +1065,10 @@ impl EsquisseProjection {
     /// passe de base : la passe épinglée fige ces positions — un
     /// point ancré ne bouge jamais d'une passe à l'autre, même
     /// quand le geste tire la forme (révision d'ADR-0021 du
-    /// 2026-10-22, CI #275).
+    /// 2026-10-22, CI #275). Les ancrages capturés (ADR-0021 D2,
+    /// révisée le 2026-10-23) ne changent rien ici : leur position
+    /// capturée est déjà leur position résolue de la passe de base,
+    /// le point étant figé à sa graine avant la résolution.
     fn ancrages_resolus(&self, base: &CroquisResolu) -> Vec<(u32, (Length, Length))> {
         let mut ancres = Vec::new();
         for (_, contrainte) in &self.contraintes {
@@ -1094,12 +1116,17 @@ impl EsquisseProjection {
     /// graines de tous les points SAUF l'épinglé partent translatées
     /// de ce vecteur (suivi du geste d'un croquis rigide).
     ///
-    /// L'ancrage `PointFixe` ne se pose qu'APRÈS la résolution de
-    /// base : il épingle la position RÉSOLUE du point, celle que
-    /// l'utilisateur voit — jamais sa graine, sinon la forme saute
-    /// de plusieurs cases au moment de l'ancrage quand les cotes ont
-    /// tiré le croquis loin de ses graines (retour checklist jalon
-    /// 2, point 8) ; un second passage confirme la solution.
+    /// L'ancrage `PointFixe` non capturé (journaux hérités) se pose
+    /// APRÈS la résolution de base : il épingle la position RÉSOLUE
+    /// du point, celle que l'utilisateur voit — jamais sa graine,
+    /// sinon la forme saute de plusieurs cases au moment de
+    /// l'ancrage quand les cotes ont tiré le croquis loin de ses
+    /// graines (retour checklist jalon 2, point 8) ; un second
+    /// passage confirme la solution. L'ancrage CAPTURÉ (posé par
+    /// `AncrerPoint`, ADR-0021 D2 révisée le 2026-10-23) se fige
+    /// avant la première résolution : sa graine est la position
+    /// affichée capturée à la pose — la forme ne saute jamais, le
+    /// reste du croquis absorbe.
     ///
     /// En passe épinglée (`ancres` fourni), les points ancrés partent
     /// de leur position résolue de la passe de base et y restent
@@ -1190,14 +1217,23 @@ impl EsquisseProjection {
         let mut ancrages = Vec::new();
         for (id, contrainte) in &self.contraintes {
             match contrainte {
-                // L'ancrage s'épingle après la résolution de base :
-                // il fige la position résolue du point (celle que
-                // l'utilisateur voit), pas sa graine — la forme ne
-                // saute jamais au moment de l'ancrage (retour
+                // L'ancrage capturé (ADR-0021 D2, révisée le
+                // 2026-10-23 — re-test jalon 2, point 8) se fige avant
+                // la première résolution : la graine du point EST la
+                // position affichée capturée à la pose, la forme ne
+                // saute pas, le reste absorbe. L'ancrage non capturé
+                // (journaux hérités) s'épingle après la résolution de
+                // base : il fige la position résolue du point (celle
+                // que l'utilisateur voit), pas sa graine — la forme
+                // ne saute jamais au moment de l'ancrage (retour
                 // checklist jalon 2).
                 ContrainteEsquisse::PointFixe { point } => {
                     if ancres.is_none() {
-                        ancrages.push(reconstruction.id_point(*point)?);
+                        if self.ancrages_captures.contains_key(point) {
+                            solveur.fixer_point(reconstruction.id_point(*point)?)?;
+                        } else {
+                            ancrages.push(reconstruction.id_point(*point)?);
+                        }
                     }
                 }
                 _ => {
@@ -1441,12 +1477,19 @@ impl Projection for EsquisseProjection {
         self.dernier_deplace = None;
         self.graine_avant_dernier = None;
         self.unknown.clear();
+        self.ancrages_captures.clear();
+        self.capture_en_attente = None;
         // `edition` n'est jamais remis à zéro : clé de cache monotone —
         // deux contenus différents du croquis portent des éditions
         // différentes, même après un rejeu complet.
     }
 
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
+        // Capture d'ancrage (ADR-0021 D2, révisée) : le déplacement
+        // posé par l'événement précédent ne survit qu'à la contrainte
+        // `PointFixe` du même point qui le suit immédiatement — tout
+        // autre événement l'abandonne.
+        let capture = self.capture_en_attente.take();
         match event.event_type.as_str() {
             EVENT_SKETCH_ENTITY_ADDED => {
                 verifie_schema_parmi(event, VERSIONS_ENTITE)?;
@@ -1483,6 +1526,15 @@ impl Projection for EsquisseProjection {
                     });
                 }
                 self.contraintes.push((id, contrainte));
+                // Capture d'ancrage (ADR-0021 D2, révisée) : le
+                // `PointFixe` du point déplacé à l'événement précédent
+                // fige la position affichée au moment de la pose.
+                if let ContrainteEsquisse::PointFixe { point } = &contrainte
+                    && let Some((point_deplace, position)) = &capture
+                    && *point_deplace == *point
+                {
+                    self.ancrages_captures.insert(*point, *position);
+                }
                 self.edition += 1;
                 Ok(())
             }
@@ -1525,6 +1577,10 @@ impl Projection for EsquisseProjection {
                 self.graine_avant_dernier = self.position_graine(point);
                 self.graines.insert(point, (x, y));
                 self.dernier_deplace = Some(point);
+                // Capture d'ancrage (ADR-0021 D2, révisée) : le
+                // déplacement reste en attente de la contrainte
+                // `PointFixe` qui suit immédiatement, s'il vient.
+                self.capture_en_attente = Some((point, (x, y)));
                 self.edition += 1;
                 Ok(())
             }

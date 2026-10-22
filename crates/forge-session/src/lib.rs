@@ -35,8 +35,8 @@ mod esquisse;
 mod projection;
 
 pub use command::{
-    AddConstraint, AddEntity, Command, CommandPlan, EVENT_ALIAS_REMOVED, EVENT_EXPRESSION_SET,
-    EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED,
+    AddConstraint, AddEntity, AncrerPoint, Command, CommandPlan, EVENT_ALIAS_REMOVED,
+    EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED,
     EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
     EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint, RemoveAlias, SetExpression,
     SetInput,

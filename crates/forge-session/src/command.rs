@@ -629,6 +629,70 @@ impl Command for AddConstraint {
     }
 }
 
+/// Ancre un point à sa position affichée (ADR-0021 D2, révisée le
+/// 2026-10-23 — re-test jalon 2, point 8) : la pose capture la
+/// position que l'utilisateur voit — résolue de la passe épinglée
+/// après un geste, graine du journal sinon — et la fige avant la
+/// première résolution : la forme ne saute jamais, le point reste
+/// là où il est dessiné, le reste du croquis absorbe (alignement
+/// FreeCAD). Deux événements dans la même transaction — la graine
+/// part à la position capturée puis la contrainte l'épingle (même
+/// mécanique que la cote pilotée, ADR-0019 décision 4) : contrainte
+/// et déplacement s'annulent et se rétablissent ensemble, et le
+/// journal rejoué reconstruit la capture. Un refus (point absent,
+/// point déjà ancré, coordonnées non finies) ne laisse rien au
+/// journal (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct AncrerPoint {
+    /// Identifiant du point ancré.
+    pub point: u32,
+    /// Abscisse affichée capturée (millimètres).
+    pub x: Length,
+    /// Ordonnée affichée capturée (millimètres).
+    pub y: Length,
+}
+
+impl Command for AncrerPoint {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        let esquisse = session.esquisse();
+        // L'ancrage est unique par point : reposer un ancrage sur
+        // un point déjà fixé est refusé, rien au journal.
+        if esquisse.point_ancre(self.point) {
+            return Err(SessionError::CommandRejected {
+                reason: format!(
+                    "le point {} est déjà ancré par une contrainte PointFixe",
+                    self.point
+                ),
+            });
+        }
+        if let Some(reason) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
+            return Err(SessionError::CommandRejected { reason });
+        }
+        let id = esquisse.prochaine_id_contrainte();
+        Ok(CommandPlan::new(vec![
+            NewEvent::new(
+                EVENT_SKETCH_POINT_MOVED,
+                1,
+                "",
+                serde_json::json!({
+                    "point": self.point,
+                    "x": self.x.millimeters(),
+                    "y": self.y.millimeters(),
+                }),
+            ),
+            NewEvent::new(
+                EVENT_SKETCH_CONSTRAINT_ADDED,
+                2,
+                "",
+                crate::esquisse::contrainte_en_json(
+                    id,
+                    &ContrainteEsquisse::PointFixe { point: self.point },
+                ),
+            ),
+        ]))
+    }
+}
+
 /// Pose la graine de position d'un point du croquis (ADR-0018 D1) :
 /// la nouvelle position devient le point de départ de la prochaine
 /// résolution — jamais une position résolue au journal. Un refus

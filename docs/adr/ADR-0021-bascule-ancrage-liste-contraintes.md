@@ -1,6 +1,6 @@
 # ADR-0021 : bascule d'orientation, ancrage non saisissable, liste des contraintes posées
 
-- **Statut :** accepté — D1 révisée le 2026-10-22 (voir « Révision D1 »)
+- **Statut :** accepté — D1 révisée le 2026-10-22, D2 révisée le 2026-10-23 (voir « Révision D1 », « Révision D2 »)
 - **Date :** 2026-10-21
 - **Décideurs :** Raphaël Olivier (re-validation manuelle §7 du jalon 2, choix tranchés en réponse au diagnostic)
 
@@ -40,3 +40,11 @@ La re-validation manuelle §7 (après le lot ADR-0020) a rapporté trois comport
 - La surbrillance de la liste (D2) garde son sens : elle signale la dernière contrainte **touchée**, la pose d'une contrainte neuve l'active encore.
 - Le rejet de l'alternative « refuser la seconde pose » (§ Alternatives) est caduc : c'est désormais la décision retenue. Le workflow « réorienter une ligne » passe par l'annulation de l'orientation existante puis une nouvelle pose ; l'inspection/édition par contrainte de la liste reste un souhait du jalon 3.
 - L'ancrage `PointFixe` reçoit dans la même ride une correction d'exécution : il épingle la position **résolue** du point (celle que l'utilisateur voit), pas sa graine — la forme ne saute plus au moment de l'ancrage (retour checklist jalon 2, point 8). La décision D3 (refus du glissement, liseré turquoise) est inchangée.
+
+## Révision D2 — 2026-10-23 (re-test jalon 2, point 8)
+
+**L'ancrage fige la position affichée, pas celle de la passe de base.** Le re-test de `7404a02b` a montré le bug résiduel du correctif du 2026-10-22 : l'ancre s'épingle sur la position résolue de la passe de **base** — or dès qu'un glissement précède la pose (dessiner, ajuster au glisser, puis fixer), l'affichage montre la passe **épinglée** (le point là où on le lâche) : cliquer « fixer » fige le point à une position que l'utilisateur ne voit pas, la forme saute.
+
+- **Décision** : « fixer » capture la position affichée au moment de la pose. La commande `AncrerPoint { point, x, y }` émet deux événements dans la même transaction — `sketch.point.moved` (la graine part à la position affichée) puis `sketch.constraint.added` v2 (`PointFixe`) — même mécanique transactionnelle que la cote pilotée (ADR-0019 décision 4). La projection reconnaît la capture (un déplacement immédiatement suivi du `PointFixe` du même point) et la passe de base fige le point capturé **pendant** la résolution : le point reste là où il est dessiné, le reste du croquis absorbe (sémantique FreeCAD).
+- **Rejeu** : l'ordre des événements du journal fait foi — un journal rejoué reconstruit la capture, la résolution reste déterministe. Les schémas de format sont inchangés (les deux événements existent déjà, aucun v3) : les journaux v2 hérités sans capture se rejouent tel quel et gardent le comportement du 2026-10-22 (épinglage de la position résolue de la passe de base, après résolution).
+- **D3 inchangée** : le point ancré reste non saisissable, `MovePoint` refusé, liseré turquoise. `AncrerPoint` sur un point déjà ancré est refusé, rien au journal ; le bouton « Point fixe » de l'atelier passe par `AncrerPoint` avec la position du cache d'affichage.

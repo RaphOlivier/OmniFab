@@ -8,7 +8,8 @@
 use forge_doc::{Document, FixedClock, NewEvent};
 use forge_gcs::Systeme2D;
 use forge_session::{
-    AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint, ValeurCote,
+    AddConstraint, AddEntity, AncrerPoint, ContrainteEsquisse, EntiteEsquisse, MovePoint,
+    ValeurCote,
 };
 use forge_session::{
     Command, CommandPlan, EVENT_INPUT_SET, EVENT_TRACES_IMPORTED, ImportTraces, Projection,
@@ -1029,6 +1030,87 @@ fn le_deplacement_d_un_point_ancre_est_refuse() {
         .expect("déplacement");
     assert_eq!(session.document().events().len(), 4, "le déplacement écrit");
     assert!(proche(session.esquisse().position_graine(1), 60.0, 10.0));
+}
+
+/// L'ancrage posé après un geste fige la position affichée
+/// (ADR-0021 D2, révisée le 2026-10-23 — re-test jalon 2, point 8) :
+/// la commande `AncrerPoint` capture la position de la passe épinglée
+/// — celle que l'utilisateur voit — et la passe de base fige le
+/// point capturé avant la première résolution : la forme ne saute
+/// pas, le reste absorbe. Le journal rejoué reconstruit la capture.
+#[test]
+fn l_ancrage_fige_la_position_affichee_apres_un_geste() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+    session
+        .execute(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("point posé");
+    session
+        .execute(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("distance posée");
+    // Le geste : le point 0 part à (10, 20) — la passe épinglée
+    // le maintient exactement là.
+    session
+        .execute(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(10.0),
+            y: Length::from_millimeters(20.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    let (x0, y0) = mm(resolu.position(0));
+    assert!((x0 - 10.0).abs() < 1e-9, "l'affichage épingle (10, 20)");
+    assert!((y0 - 20.0).abs() < 1e-9, "l'affichage épingle (10, 20)");
+    // L'ancrage capture la position affichée…
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // …et la résolution la tient exactement : la forme ne saute pas.
+    let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(proche(ancre.position(0), 10.0, 20.0), "l'ancre fige l'affiché");
+    let (x1, y1) = mm(ancre.position(1));
+    let dx = x1 - 10.0;
+    let dy = y1 - 20.0;
+    assert!(
+        (dx * dx + dy * dy - 1600.0).abs() < 1e-6,
+        "la distance de 40 mm reste tenue : le reste absorbe"
+    );
+    // Le journal rejoué reconstruit la capture : mêmes événements,
+    // même résolution (ADR-0021 D2 révisée).
+    let octets = session.save_to_bytes().expect("octets");
+    let document = Document::from_bytes(&octets).expect("document");
+    let mut rejouee = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+    let rejoue = rejouee
+        .esquisse()
+        .resoudre(&mut solveur_rejeu)
+        .expect("résolu");
+    assert!(proche(rejoue.position(0), 10.0, 20.0), "le rejeu tient");
 }
 
 /// Le déplacement pose la graine du point, l'annulation la retire :
