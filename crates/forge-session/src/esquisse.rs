@@ -1167,8 +1167,8 @@ impl EsquisseProjection {
             let Some((x2, y2)) = graines.get(&p2) else {
                 continue;
             };
-            let ecart = (x2.millimeters() - x1.millimeters())
-                .hypot(y2.millimeters() - y1.millimeters());
+            let ecart =
+                (x2.millimeters() - x1.millimeters()).hypot(y2.millimeters() - y1.millimeters());
             if ecart >= SEUIL_GRAINES_CONFONDUES_MM {
                 continue;
             }

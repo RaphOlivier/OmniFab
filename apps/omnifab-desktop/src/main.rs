@@ -4359,7 +4359,10 @@ mod tests {
             Length::from_millimeters(20.0),
             Length::from_millimeters(10.0),
         );
-        assert!(app.apercu_en_attente, "l'aperçu est parti au fil de travail");
+        assert!(
+            app.apercu_en_attente,
+            "l'aperçu est parti au fil de travail"
+        );
         // La même position ne repart pas : un seul aperçu en vol.
         app.demande_apercu_glissement(
             0,
@@ -4367,8 +4370,7 @@ mod tests {
             Length::from_millimeters(10.0),
         );
         assert_eq!(
-            app.travaux_en_attente,
-            1,
+            app.travaux_en_attente, 1,
             "une seule résolution d'aperçu en vol"
         );
         // Pompage du retour : la résolution d'aperçu revient.
@@ -4383,7 +4385,10 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert!(!app.apercu_en_attente, "l'aperçu est revenu du fil de travail");
+        assert!(
+            !app.apercu_en_attente,
+            "l'aperçu est revenu du fil de travail"
+        );
         let resolu = app
             .croquis_apercu
             .as_ref()
