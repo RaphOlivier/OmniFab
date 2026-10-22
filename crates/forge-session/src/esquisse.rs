@@ -1016,9 +1016,14 @@ impl EsquisseProjection {
     /// entier : les graines de la passe épinglée partent translatées
     /// du vecteur du dernier geste — le carré suit le coin tiré, il
     /// ne s'arrête plus « à mi-chemin ».
+    ///
+    /// Les points ancrés (`PointFixe`) ne bougent jamais d'une passe
+    /// à l'autre : la passe épinglée fige leur position résolue de
+    /// la passe de base (révision d'ADR-0021 du 2026-10-22, CI #275).
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        let base = self.resoudre_passe(solveur, None, None)?;
-        let translation = if base.dof() == 2 {
+        let base = self.resoudre_passe(solveur, None, None, None)?;
+        let ancres = self.ancrages_resolus(&base);
+        let translation = if base.dof() == 2 && ancres.is_empty() {
             self.translation_du_dernier()
         } else {
             None
@@ -1026,7 +1031,7 @@ impl EsquisseProjection {
         if let Some(point) = self.dernier_deplace
             && !self.point_ancre(point)
             && self.graines.contains_key(&point)
-            && let Ok(epingle) = self.resoudre_passe(solveur, Some(point), translation)
+            && let Ok(epingle) = self.passe_epinglee(solveur, point, translation, &ancres)
             && epingle.conflictuelles.is_empty()
         {
             return Ok(CroquisResolu {
@@ -1035,6 +1040,36 @@ impl EsquisseProjection {
             });
         }
         Ok(base)
+    }
+
+    /// Positions résolues des points ancrés (`PointFixe`) dans la
+    /// passe de base : la passe épinglée fige ces positions — un
+    /// point ancré ne bouge jamais d'une passe à l'autre, même
+    /// quand le geste tire la forme (révision d'ADR-0021 du
+    /// 2026-10-22, CI #275).
+    fn ancrages_resolus(&self, base: &CroquisResolu) -> Vec<(u32, (Length, Length))> {
+        let mut ancres = Vec::new();
+        for (_, contrainte) in &self.contraintes {
+            if let ContrainteEsquisse::PointFixe { point } = contrainte
+                && let Some(position) = base.position(*point)
+            {
+                ancres.push((*point, position));
+            }
+        }
+        ancres
+    }
+
+    /// Passe épinglée : le point tiré garde sa graine et les points
+    /// ancrés restent figés à leur position résolue de la passe de
+    /// base — le conflit éventuel fait rejeter la passe (repli).
+    fn passe_epinglee(
+        &self,
+        solveur: &mut dyn Solveur2D,
+        point: u32,
+        translation: Option<(Length, Length)>,
+        ancres: &[(u32, (Length, Length))],
+    ) -> Result<CroquisResolu, GcsError> {
+        self.resoudre_passe(solveur, Some(point), translation, Some(ancres))
     }
 
     /// Vecteur du dernier geste : de la graine d'avant (graine
@@ -1065,11 +1100,17 @@ impl EsquisseProjection {
     /// de plusieurs cases au moment de l'ancrage quand les cotes ont
     /// tiré le croquis loin de ses graines (retour checklist jalon
     /// 2, point 8) ; un second passage confirme la solution.
+    ///
+    /// En passe épinglée (`ancres` fourni), les points ancrés partent
+    /// de leur position résolue de la passe de base et y restent
+    /// figés : un geste qui les contredit fait rejeter la passe
+    /// (repli sur la base) — l'ancrage ne suit jamais le geste.
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
         epingle: Option<u32>,
         translation: Option<(Length, Length)>,
+        ancres: Option<&[(u32, (Length, Length))]>
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
@@ -1087,7 +1128,10 @@ impl EsquisseProjection {
         for (id, entite) in &self.entites {
             match entite {
                 EntiteEsquisse::Point { x, y } => {
-                    let graine = self.graines.get(id).copied().unwrap_or((*x, *y));
+                    let graine = match ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
+                        Some((_, position)) => *position,
+                        None => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                    };
                     // Suivi du geste : les points non épinglés
                     // partent translatés du vecteur du dernier
                     // geste, l'épinglé reste à sa graine.
@@ -1137,6 +1181,11 @@ impl EsquisseProjection {
         if let Some(id) = epingle {
             solveur.fixer_point(reconstruction.id_point(id)?)?;
         }
+        if let Some(ancres) = ancres {
+            for (point, _) in ancres {
+                solveur.fixer_point(reconstruction.id_point(*point)?)?;
+            }
+        }
         let mut tags = BTreeMap::new();
         let mut ancrages = Vec::new();
         for (id, contrainte) in &self.contraintes {
@@ -1147,7 +1196,9 @@ impl EsquisseProjection {
                 // saute jamais au moment de l'ancrage (retour
                 // checklist jalon 2).
                 ContrainteEsquisse::PointFixe { point } => {
-                    ancrages.push(reconstruction.id_point(*point)?);
+                    if ancres.is_none() {
+                        ancrages.push(reconstruction.id_point(*point)?);
+                    }
                 }
                 _ => {
                     if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {

@@ -742,9 +742,41 @@ fn proche(position: Option<(Length, Length)>, x: f64, y: f64) -> bool {
     }
 }
 
+/// Position résolue en millimètres, pour les asserts RELATIFS à la
+/// forme : l'ancrage fige la position de la passe de base, la
+/// translation absolue du croquis n'est pas déterminée (CI #275).
+fn mm(position: Option<(Length, Length)>) -> (f64, f64) {
+    let (x, y) = position.expect("position résolue");
+    (x.millimeters(), y.millimeters())
+}
+
+/// La forme du rectangle de référence est exacte — bords
+/// horizontaux et verticaux, largeur 100, hauteur 50 — SANS préjuger
+/// de la position absolue : seul l'ancrage la détermine (CI #275).
+fn forme_exacte(resolu: &forge_session::CroquisResolu) {
+    let (x0, y0) = mm(resolu.position(0));
+    let (x1, y1) = mm(resolu.position(1));
+    let (x2, y2) = mm(resolu.position(2));
+    let (x3, y3) = mm(resolu.position(3));
+    assert!((y1 - y0).abs() < 1e-6, "bord haut horizontal");
+    assert!((x2 - x1).abs() < 1e-6, "flanc droit vertical");
+    assert!((y3 - y2).abs() < 1e-6, "bord bas horizontal");
+    assert!((x3 - x0).abs() < 1e-6, "flanc gauche vertical");
+    assert!(
+        ((x1 - x0).hypot(y1 - y0) - 100.0).abs() < 1e-6,
+        "largeur exacte de 100 mm"
+    );
+    assert!(
+        ((x2 - x1).hypot(y2 - y1) - 50.0).abs() < 1e-6,
+        "hauteur exacte de 50 mm"
+    );
+}
+
 /// Le croquis rectangle de référence est résolu exactement : degrés
-/// de liberté à zéro, reproductibilité garantie, positions exactes —
-/// et aucune position résolue au journal (ADR-0018 D3).
+/// de liberté à zéro, reproductibilité garantie, forme exacte — et
+/// aucune position résolue au journal (ADR-0018 D3). La position
+/// absolue n'est pas assertée : l'ancrage fige la position résolue
+/// de la passe de base, pas l'origine (CI #275).
 #[test]
 fn le_rectangle_est_resolu_exactement() {
     let session = croquis_rectangle();
@@ -753,10 +785,7 @@ fn le_rectangle_est_resolu_exactement() {
     let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
     assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
     assert!(resolu.reproductible(), "l'arène garantit le rejeu");
-    assert!(proche(resolu.position(0), 0.0, 0.0));
-    assert!(proche(resolu.position(1), 100.0, 0.0));
-    assert!(proche(resolu.position(2), 100.0, 50.0));
-    assert!(proche(resolu.position(3), 0.0, 50.0));
+    forme_exacte(&resolu);
     assert_eq!(
         session.document().events().len(),
         15,
@@ -893,7 +922,9 @@ fn l_orientation_opposee_est_refusee() {
 /// l'utilisateur le voit au moment de l'ancrage — la forme ne
 /// saute jamais. Ancien comportement : `fixer_point` posé avant
 /// la résolution épinglait la graine, et tout le croquis bondissait
-/// pour la rejoindre.
+/// pour la rejoindre. Croquis sous-déterminé : la position du point
+/// le long de la ligne n'est pas déterminée, les asserts sont
+/// relatifs à la forme (CI #275).
 #[test]
 fn l_ancrage_epingle_la_position_resolue() {
     let mut session = Session::new("tests");
@@ -924,13 +955,14 @@ fn l_ancrage_epingle_la_position_resolue() {
         .expect("point sur la ligne");
     let mut solveur = Systeme2D::new().expect("solveur");
     let avant = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    // La contrainte a tiré le point 2 loin de sa graine (50, 30).
-    assert!(
-        proche(avant.position(2), 50.0, 0.0),
-        "le point est sur la ligne"
-    );
-    assert!(proche(avant.position(0), 0.0, 0.0));
-    assert!(proche(avant.position(1), 100.0, 0.0));
+    // Croquis sous-déterminé : la position du point 2 LE LONG de la
+    // ligne n'est pas déterminée — les asserts sont relatifs à la
+    // forme (CI #275).
+    let (x0, y0) = mm(avant.position(0));
+    let (x1, y1) = mm(avant.position(1));
+    let (x2, y2) = mm(avant.position(2));
+    assert!((y2 - y0).abs() < 1e-6, "le point est sur la ligne");
+    assert!((y1 - y0).abs() < 1e-6, "la ligne est horizontale");
     // Ancrage : le point reste à sa position résolue — la forme ne
     // saute pas.
     session
@@ -939,18 +971,13 @@ fn l_ancrage_epingle_la_position_resolue() {
         })
         .expect("ancrage posé");
     let apres = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    let (xa, ya) = mm(apres.position(2));
     assert!(
-        proche(apres.position(2), 50.0, 0.0),
+        (xa - x2).abs() < 1e-9 && (ya - y2).abs() < 1e-9,
         "l'ancrage fige la position résolue"
     );
-    assert!(
-        proche(apres.position(0), 0.0, 0.0),
-        "aucun bond de la forme"
-    );
-    assert!(
-        proche(apres.position(1), 100.0, 0.0),
-        "aucun bond de la forme"
-    );
+    assert!(proche(apres.position(0), x0, y0), "le point 0 ne bouge pas");
+    assert!(proche(apres.position(1), x1, y1), "le point 1 ne bouge pas");
     assert!(
         apres.dof() < avant.dof(),
         "l'ancrage retire des degrés de liberté"
@@ -1065,7 +1092,8 @@ fn l_annulation_vide_le_croquis_le_retablissement_le_restaure() {
     assert_eq!(session.esquisse().contraintes().len(), 7);
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    assert!(proche(resolu.position(2), 100.0, 50.0));
+    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
+    forme_exacte(&resolu);
 }
 
 /// Les entités et contraintes invalides (références absentes, valeurs
@@ -1160,8 +1188,8 @@ fn les_tags_des_contraintes_sont_exposes() {
 
 /// Le croquis est clonable en un instantané détaché de la session :
 /// l’annulation dans la session ne touche pas l’instantané, et la
-/// résolution du clone sur un solveur frais retombe sur les
-/// positions exactes (pattern C1 du lot 3 : la résolution part sur
+/// résolution du clone sur un solveur frais retombe sur la
+/// forme exacte (pattern C1 du lot 3 : la résolution part sur
 /// le fil de travail avec une copie du croquis).
 #[test]
 fn le_clone_de_l_esquisse_resout_identiquement() {
@@ -1172,7 +1200,7 @@ fn le_clone_de_l_esquisse_resout_identiquement() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = instantane.resoudre(&mut solveur).expect("résolu");
     assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
-    assert!(proche(resolu.position(2), 100.0, 50.0));
+    forme_exacte(&resolu);
 }
 
 /// Le point relâché reste où on le lâche (re-validation §7) : une
@@ -1229,9 +1257,10 @@ fn le_point_relache_reste_ou_on_le_lache() {
 }
 
 /// Croquis entièrement contraint : le repli tient — la passe
-/// épinglée du point déplacé crée un conflit (sa position est déjà
-/// déterminée par les contraintes), la résolution de base reste la
-/// réponse : aucun conflit, positions exactes du rectangle.
+/// épinglée du point déplacé entre en conflit avec les contraintes
+/// ET l'ancrage figé à sa position de base (CI #275) ; la
+/// résolution de base reste la réponse : aucun conflit, forme
+/// exacte du rectangle, le coin tiré ne ré-ancre pas la forme.
 #[test]
 fn un_croquis_totalement_contraint_replie_sur_la_passe_de_base() {
     let mut session = croquis_rectangle();
@@ -1247,9 +1276,10 @@ fn un_croquis_totalement_contraint_replie_sur_la_passe_de_base() {
     assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
     assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
     assert!(
-        proche(resolu.position(2), 100.0, 50.0),
-        "le coin retombe sur le rectangle exact, pas sur la graine"
+        !proche(resolu.position(2), 130.0, 20.0),
+        "le coin tiré ne ré-ancre pas le rectangle sur sa graine"
     );
+    forme_exacte(&resolu);
 }
 
 /// Croquis rigide en translation (DoF 2, aucun ancrage) : le geste
