@@ -3612,7 +3612,10 @@ mod tests {
     fn echelle_metres_proposee_sous_le_seuil() {
         assert!(propose_echelle_metres(0.05));
         assert!(propose_echelle_metres(1.0));
-        assert!(propose_echelle_metres(3.0), "objet Blender de 3 m (retour jalon 2)");
+        assert!(
+            propose_echelle_metres(3.0),
+            "objet Blender de 3 m (retour jalon 2)"
+        );
         assert!(!propose_echelle_metres(0.0));
         assert!(!propose_echelle_metres(10.0));
         assert!(!propose_echelle_metres(50.0));
@@ -3793,13 +3796,18 @@ mod tests {
         .expect("cote");
         app.demande_resolution_esquisse();
         pomper_les_retours(&mut app);
-        // Cache à jour : l'affichage montre la position résolue
-        // (sur le cercle de rayon 40), pas la graine (80, -3).
+        // Cache à jour : l'affichage montre la position résolue (à
+        // 40 mm de l'ancré), pas la graine (80, -3) — l'ancrage
+        // épingle la position résolue du point (ADR-0021, révision
+        // du 2026-10-22), la distance se lit autour de l'ancré.
         let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        let (x0, y0) = resolu.position(0).expect("point ancré résolu");
         let (x, y) = resolu.position(1).expect("point mobile résolu");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
         assert!(
-            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
-            "position résolue sur le cercle, pas la graine"
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "position résolue à 40 mm de l'ancré, pas à la graine"
         );
         // Un point de plus : l'édition avance, la résolution
         // repart — l'affichage garde la dernière connue pendant le
@@ -3816,9 +3824,12 @@ mod tests {
         // il ne saute pas aux graines.
         let resolu = atelier_esquisse::resolu_affichage(&app)
             .expect("l'ancienne résolution est montrée dès le clic");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
         let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
         assert!(
-            (x.millimeters().hypot(y.millimeters()) - 40.0).abs() < 1e-6,
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
             "l'affichage ne flashe pas les graines dès le clic"
         );
         app.demande_resolution_esquisse();

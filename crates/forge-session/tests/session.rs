@@ -925,7 +925,10 @@ fn l_ancrage_epingle_la_position_resolue() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let avant = session.esquisse().resoudre(&mut solveur).expect("résolu");
     // La contrainte a tiré le point 2 loin de sa graine (50, 30).
-    assert!(proche(avant.position(2), 50.0, 0.0), "le point est sur la ligne");
+    assert!(
+        proche(avant.position(2), 50.0, 0.0),
+        "le point est sur la ligne"
+    );
     assert!(proche(avant.position(0), 0.0, 0.0));
     assert!(proche(avant.position(1), 100.0, 0.0));
     // Ancrage : le point reste à sa position résolue — la forme ne
@@ -940,8 +943,14 @@ fn l_ancrage_epingle_la_position_resolue() {
         proche(apres.position(2), 50.0, 0.0),
         "l'ancrage fige la position résolue"
     );
-    assert!(proche(apres.position(0), 0.0, 0.0), "aucun bond de la forme");
-    assert!(proche(apres.position(1), 100.0, 0.0), "aucun bond de la forme");
+    assert!(
+        proche(apres.position(0), 0.0, 0.0),
+        "aucun bond de la forme"
+    );
+    assert!(
+        proche(apres.position(1), 100.0, 0.0),
+        "aucun bond de la forme"
+    );
     assert!(
         apres.dof() < avant.dof(),
         "l'ancrage retire des degrés de liberté"

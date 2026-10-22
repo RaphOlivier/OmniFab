@@ -1157,10 +1157,16 @@ impl EsquisseProjection {
             }
         }
         solveur.resoudre(Algorithme::DogLeg)?;
-        for point in ancrages {
-            solveur.fixer_point(point)?;
+        // L'ancrage n'altère le résultat que s'il existe : sans
+        // PointFixe, un second passage ne servirait à rien et le
+        // comportement reste exactement celui d'avant l'ancrage
+        // post-résolution.
+        if !ancrages.is_empty() {
+            for point in ancrages {
+                solveur.fixer_point(point)?;
+            }
+            solveur.resoudre(Algorithme::DogLeg)?;
         }
-        solveur.resoudre(Algorithme::DogLeg)?;
         let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
         let mut positions = BTreeMap::new();
         for (id, identifiant) in &reconstruction.points {

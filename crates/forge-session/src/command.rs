@@ -558,13 +558,21 @@ impl Command for AddConstraint {
                         _ => None,
                     })
         {
-            let existant = if horiz_existante { "horizontale" } else { "verticale" };
+            let existant = if horiz_existante {
+                "horizontale"
+            } else {
+                "verticale"
+            };
             if horiz_existante == horizontale {
                 return Err(SessionError::CommandRejected {
                     reason: format!("la ligne {ligne} porte déjà une contrainte {existant}"),
                 });
             }
-            let demande = if horizontale { "horizontale" } else { "verticale" };
+            let demande = if horizontale {
+                "horizontale"
+            } else {
+                "verticale"
+            };
             let raison = format!("la ligne {ligne} porte déjà une contrainte {existant}");
             return Err(SessionError::CommandRejected {
                 reason: format!("{raison} : annulez-la (Ctrl+Z) avant d'en poser une {demande}"),

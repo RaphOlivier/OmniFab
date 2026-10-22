@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 5c227382f7166eee548474f8f1a34894fc68be5e)
 //! Tests du moteur de liaisons en phase E (ADR-0019) : unités
 //! déclarées (ADR-0007 phase 1), préfixes réservés et suppression
 //! d'alias en trois modes (OF-VAL-0008/0009), cotes d'esquisse
@@ -412,12 +413,17 @@ fn cote_pilotee_se_fige_pour_la_resolution() {
     assert!(croquis.alias_des_cotes().is_empty(), "toutes figées");
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
-    let (x, y) = resolu.position(1).expect("point mobile résolu");
+    // L'ancrage épingle la position résolue du point (ADR-0021,
+    // révision du 2026-10-22) : la cote figée se lit autour de
+    // l'ancré, quelle que soit sa position résolue.
+    let (x0, y0) = resolu.position(0).expect("point ancré résolu");
+    let (x1, y1) = resolu.position(1).expect("point mobile résolu");
+    let dx = x1.millimeters() - x0.millimeters();
+    let dy = y1.millimeters() - y0.millimeters();
     assert!(
-        x.approx_eq(Length::from_millimeters(50.0)),
-        "x = w / 2 = 50"
+        (dx * dx + dy * dy - 2500.0).abs() < 1e-6,
+        "la cote figée w / 2 = 50 tient autour de l'ancrage"
     );
-    assert!(y.approx_eq(Length::from_millimeters(0.0)), "y inchangé");
 }
 
 /// Une cote pilotée qui n'évalue pas en longueur finie et positive
@@ -576,10 +582,13 @@ fn mise_a_jour_de_contrainte_survit_au_journal() {
     let croquis = session.croquis_pour_resolution().expect("cotes figées");
     let mut solveur = Systeme2D::new().expect("solveur");
     let resolu = croquis.resoudre(&mut solveur).expect("résolu");
-    let (x, _) = resolu.position(1).expect("point mobile");
+    let (x0, y0) = resolu.position(0).expect("point ancré");
+    let (x1, y1) = resolu.position(1).expect("point mobile");
+    let dx = x1.millimeters() - x0.millimeters();
+    let dy = y1.millimeters() - y0.millimeters();
     assert!(
-        x.approx_eq(Length::from_millimeters(20.0)),
-        "x = b / 2 = 20"
+        (dx * dx + dy * dy - 400.0).abs() < 1e-6,
+        "la cote substituée b / 2 = 20 tient après le rejeu"
     );
 }
 
