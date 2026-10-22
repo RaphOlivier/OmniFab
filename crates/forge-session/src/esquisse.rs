@@ -1088,9 +1088,7 @@ impl EsquisseProjection {
         match self.resoudre_passe(solveur, None, None, None, None) {
             Ok(base) => Ok(base),
             Err(erreur) => match self.graine_avant_geste() {
-                Some(graine) => {
-                    self.resoudre_passe(solveur, None, None, None, Some(graine))
-                }
+                Some(graine) => self.resoudre_passe(solveur, None, None, None, Some(graine)),
                 None => Err(erreur),
             },
         }

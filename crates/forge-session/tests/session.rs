@@ -1169,10 +1169,7 @@ fn un_relachement_sur_le_point_fixe_ne_fait_pas_echouer_la_resolution() {
             .expect("contrainte ajoutée");
     }
     let mut solveur = Systeme2D::new().expect("solveur");
-    let affiche = session
-        .esquisse()
-        .resoudre(&mut solveur)
-        .expect("résolu");
+    let affiche = session.esquisse().resoudre(&mut solveur).expect("résolu");
     let (x0, y0) = mm(affiche.position(0));
     // L'ancrage capture la position affichée du coin 0…
     session
