@@ -704,6 +704,16 @@ struct DemoApp {
     /// l'aperçu local le suit sans écrire, le relâchement pose sa
     /// graine — état de l'app UI, jamais un événement.
     saisie: Option<u32>,
+    /// Surcharge d'affichage du point relâché, pendant le vol de sa
+    /// résolution (anti-flash du relâchement, re-validation §7) :
+    /// le relâchement pose la graine par `MovePoint` et la
+    /// résolution repart au fil de travail — sans elle, l'affichage
+    /// retomberait sur la résolution d'avant le glissement et la
+    /// forme bondirait en arrière le temps du vol. L'édition du
+    /// relâchement la caducise dès qu'une autre écriture touche le
+    /// journal, le frais la remplace — état dérivé d'affichage,
+    /// jamais sérialisé.
+    surcharge_relachee: Option<(u64, u32, Length, Length)>,
     /// Balayage signé accumulé du geste de l'arc en cours (ADR-0020)
     /// : positif dans le sens trigonométrique, négatif dans le sens
     /// horaire — état de l'app UI, jamais un événement.
@@ -808,6 +818,7 @@ impl DemoApp {
             geste: None,
             selection: Vec::new(),
             saisie: None,
+            surcharge_relachee: None,
             balayage_arc: 0.0,
             angle_curseur_arc: 0.0,
             redondances_affichees: None,
@@ -851,6 +862,7 @@ impl DemoApp {
         self.geste = None;
         self.selection = Vec::new();
         self.saisie = None;
+        self.surcharge_relachee = None;
         self.balayage_arc = 0.0;
         self.angle_curseur_arc = 0.0;
         self.redondances_affichees = None;
@@ -1002,6 +1014,7 @@ impl DemoApp {
         self.camera3d = Camera3D::nouvelle();
         self.croquis_resolu = None;
         self.resolution_en_attente = None;
+        self.surcharge_relachee = None;
         self.redondances_affichees = None;
         self.redondances_precedentes = None;
         self.chemin_projet = Some(chemin.to_path_buf());
@@ -1295,6 +1308,12 @@ impl DemoApp {
                     self.error = Some(message.clone());
                 }
                 self.croquis_resolu = Some((cle, resultat));
+                // La surcharge du relâchement a tenu le vol : le
+                // frais la remplace (anti-flash du relâchement,
+                // re-validation §7).
+                if cle == (self.session.esquisse().edition(), self.generation_liaisons) {
+                    self.surcharge_relachee = None;
+                }
             }
         }
     }
@@ -2451,6 +2470,13 @@ impl DemoApp {
                         .depuis_ecran((decalage.x as f64, decalage.y as f64));
                     let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
                     surcharge_drag = atelier_esquisse::surcharge_du_drag(self, pas, x, y);
+                } else if let Some(surcharge) = atelier_esquisse::surcharge_du_relachement(self) {
+                    // Anti-flash du relâchement (re-validation §7)
+                    // : le point lâché reste affiché à sa position
+                    // visée pendant le vol de sa résolution —
+                    // l'affichage ne retombe pas sur la résolution
+                    // d'avant le glissement.
+                    surcharge_drag = Some(surcharge);
                 }
                 atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag);
                 // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
@@ -4201,6 +4227,44 @@ mod tests {
             .expect("graine du point déplacé");
         assert_eq!(x.millimeters(), pas, "graine collée au second point");
         assert_eq!(y.millimeters(), pas, "graine collée au second point");
+    }
+
+    /// Le relâchement ne fait pas flasher le croquis en arrière
+    /// pendant le vol de sa résolution (anti-flash du relâchement,
+    /// re-validation §7) : le point lâché reste affiché à sa
+    /// position visée jusqu'à l'arrivée du frais — l'affichage ne
+    /// retombe pas sur la résolution d'avant le glissement.
+    #[test]
+    fn le_relachement_ne_fait_pas_flasher_le_croquis_en_arriere() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Glissement puis relâchement sur (2·pas, pas) : la graine
+        // part au journal, la résolution repart au fil de travail.
+        app.saisie = Some(0);
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        // Trame du relâchement : le frais n'est pas encore là — le
+        // point lâché reste affiché à sa position visée.
+        let (id, x, y) = atelier_esquisse::surcharge_du_relachement(&app)
+            .expect("surcharge du point relâché pendant le vol");
+        assert_eq!(id, 0, "le point relâché");
+        assert_eq!(x.millimeters(), pas * 2.0, "abscisse visée au relâchement");
+        assert_eq!(y.millimeters(), pas, "ordonnée visée au relâchement");
+        // Fin du vol : la résolution fraîche remplace la surcharge.
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_none(),
+            "le frais remplace la surcharge du relâchement"
+        );
     }
 
     /// La sélection garde au plus deux entités et retire celle

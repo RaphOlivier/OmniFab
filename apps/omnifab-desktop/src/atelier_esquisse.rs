@@ -432,7 +432,9 @@ pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
 /// saisi exclu de l'accroche — devient sa graine par `MovePoint`,
 /// la résolution repart au fil de travail. Un relâchement sans
 /// changement effectif de la graine n'écrit rien au journal
-/// (ADR-0011) ; sans point saisi, rien ne se passe.
+/// (ADR-0011) ; sans point saisi, rien ne se passe. Le point lâché
+/// reste affiché à sa position visée pendant le vol de la
+/// résolution (anti-flash du relâchement, re-validation §7).
 pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let Some(id) = app.saisie.take() else {
         return;
@@ -448,11 +450,20 @@ pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     {
         return;
     }
+    let edition_avant = app.session.esquisse().edition();
     let _ = app.executer(&MovePoint {
         point: id,
         x: vise.x,
         y: vise.y,
     });
+    // Anti-flash du relâchement (re-validation §7) : le point lâché
+    // reste affiché à sa position visée pendant le vol de la
+    // résolution — l'affichage ne retombe pas sur la résolution
+    // d'avant le glissement.
+    if app.session.esquisse().edition() != edition_avant {
+        let edition = app.session.esquisse().edition();
+        app.surcharge_relachee = Some((edition, id, vise.x, vise.y));
+    }
 }
 
 /// Surcharge d'affichage du point saisi pendant le glissement
@@ -469,6 +480,26 @@ pub(crate) fn surcharge_du_drag(
     let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
     Some((id, vise.x, vise.y))
+}
+
+/// Surcharge d'affichage du point relâché pendant le vol de sa
+/// résolution (anti-flash du relâchement, re-validation §7) : le
+/// relâchement pose la graine par `MovePoint` et la résolution
+/// repart au fil de travail — sans elle, l'affichage retomberait
+/// sur la dernière résolution connue, celle d'AVANT le glissement,
+/// et la forme bondirait en arrière le temps du vol. Le point
+/// lâché reste dessiné à sa position visée jusqu'à l'arrivée du
+/// frais ; toute autre écriture au journal la rend caduque. `None`
+/// sans relâchement en vol.
+pub(crate) fn surcharge_du_relachement(app: &DemoApp) -> Option<(u32, Length, Length)> {
+    let (edition_relachee, id, x, y) = app.surcharge_relachee?;
+    if app.session.esquisse().edition() != edition_relachee {
+        return None;
+    }
+    if resolu_frais(app).is_some() {
+        return None;
+    }
+    Some((id, x, y))
 }
 
 /// Pose le point visé s'il n'existe pas encore : l'identifiant
