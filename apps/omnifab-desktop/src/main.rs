@@ -4508,7 +4508,10 @@ mod tests {
         app.demande_resolution_esquisse();
         pomper_les_retours(&mut app);
         let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
-        assert!(proche(resolu.position(0), 10.0, 20.0), "l'affichage épingle");
+        assert!(
+            proche(resolu.position(0), 10.0, 20.0),
+            "l'affichage épingle"
+        );
         // Fixer : la position DESSINÉE est capturée et figée.
         atelier_esquisse::ancrer_point(&mut app, 0);
         assert_eq!(

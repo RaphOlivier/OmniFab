@@ -1092,7 +1092,10 @@ fn l_ancrage_fige_la_position_affichee_apres_un_geste() {
         .expect("ancrage posé");
     // …et la résolution la tient exactement : la forme ne saute pas.
     let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    assert!(proche(ancre.position(0), 10.0, 20.0), "l'ancre fige l'affiché");
+    assert!(
+        proche(ancre.position(0), 10.0, 20.0),
+        "l'ancre fige l'affiché"
+    );
     let (x1, y1) = mm(ancre.position(1));
     let dx = x1 - 10.0;
     let dy = y1 - 20.0;
