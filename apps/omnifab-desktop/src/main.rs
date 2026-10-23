@@ -765,9 +765,12 @@ struct DemoApp {
     /// Aperçu de glissement : dernière résolution d'affichage du
     /// point saisi pendant le glissement (re-test du 2026-10-23) —
     /// la forme liée suit le geste en direct, la sémantique est
-    /// exactement celle du relâchement ; l'échec est silencieux,
-    /// le dessin retombe sur la surcharge seule. État dérivé
-    /// d'affichage, jamais sérialisé.
+    /// exactement celle du relâchement ; l'échec est silencieux.
+    /// Depuis le re-test du 24-10, l'aperçu tient AUSSI le vol du
+    /// relâchement (purge seulement quand le frais est arrivé) :
+    /// le dessin ne montre que des états résolus, jamais une
+    /// position brute du curseur. État dérivé d'affichage, jamais
+    /// sérialisé.
     croquis_apercu: Option<Result<CroquisResolu, String>>,
     /// Clé du dernier aperçu envoyé au fil de travail : point saisi
     /// et position visée en millimètres — la même position ne
@@ -1483,6 +1486,29 @@ impl DemoApp {
             self.apercu_en_attente = true;
             self.apercu_envoye = Some(cle);
             self.travaux_en_attente += 1;
+        }
+    }
+
+    /// Résolution d'affichage du geste de poignée (re-test du
+    /// 24-10) : l'aperçu de glissement reste la résolution
+    /// d'affichage tant que le glissement tient OU que le vol du
+    /// relâchement dure — il est l'état résolu du relâchement, le
+    /// frais le remplace à son arrivée. La purge n'a lieu qu'une
+    /// fois les deux finis : pendant un glissement, le dessin ne
+    /// montre ainsi que des états résolus — jamais une position
+    /// brute du curseur qui violerait une contrainte.
+    fn resolution_du_geste(&mut self) -> Option<&CroquisResolu> {
+        if self.saisie.is_none() && atelier_esquisse::surcharge_du_relachement(self).is_none() {
+            self.croquis_apercu = None;
+            self.apercu_envoye = None;
+            self.apercu_en_attente = false;
+        }
+        if self.saisie.is_some() || atelier_esquisse::surcharge_du_relachement(self).is_some() {
+            self.croquis_apercu
+                .as_ref()
+                .and_then(|resultat| resultat.as_ref().ok())
+        } else {
+            None
         }
     }
 
@@ -2577,53 +2603,32 @@ impl DemoApp {
                 // Entités du croquis contraint (ADR-0018, lot 3c) :
                 // positions résolues du cache si fraîches, graines du
                 // journal sinon — par-dessus la scène, sous la cote.
-                // Surcharge locale du glissement (ADR-0018 D4, lot
-                // 3c-3) : le point saisi s'affiche à la position
-                // visée du curseur, les entités liées suivent —
-                // état dérivé d'affichage, jamais écrit au journal.
-                let mut surcharge_drag = None;
-                if self.saisie.is_some()
-                    && let Some(curseur) = response.interact_pointer_pos()
-                {
-                    let decalage = curseur - response.rect.center();
-                    let (x, y) = self
-                        .camera
-                        .depuis_ecran((decalage.x as f64, decalage.y as f64));
-                    let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
-                    surcharge_drag = atelier_esquisse::surcharge_du_drag(self, pas, x, y);
-                    // La forme liée suit le point saisi pendant le
-                    // glissement (re-test du 2026-10-23) : la
-                    // résolution d'aperçu part à la position visée
-                    // — sémantique du relâchement, affichage seul.
-                    if let Some((id, vise_x, vise_y)) = surcharge_drag {
-                        self.demande_apercu_glissement(id, vise_x, vise_y);
-                    }
-                } else if let Some(surcharge) = atelier_esquisse::surcharge_du_relachement(self) {
-                    // Anti-flash du relâchement (re-validation §7)
-                    // : le point lâché reste affiché à sa position
-                    // visée pendant le vol de sa résolution —
-                    // l'affichage ne retombe pas sur la résolution
-                    // d'avant le glissement.
-                    surcharge_drag = Some(surcharge);
+                // Geste de poignée (re-test du 24-10) : pendant le
+                // glissement, la position brute du curseur ne
+                // s'affiche plus — le dessin ne montre que des états
+                // résolus, une ligne contrainte horizontalement ou
+                // verticalement ne devient jamais une diagonale, même
+                // le temps d'un aller-retour de résolution. La
+                // surcharge ne survit qu'au vol du relâchement
+                // (anti-flash §7).
+                let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
+                let curseur = response.interact_pointer_pos().map(|position| {
+                    let decalage = position - response.rect.center();
+                    self.camera.depuis_ecran((decalage.x as f64, decalage.y as f64))
+                });
+                let (surcharge_drag, cible_du_geste) =
+                    atelier_esquisse::affichage_du_geste(self, pas, curseur);
+                // La forme liée suit le point saisi pendant le
+                // glissement (re-test du 2026-10-23) : la
+                // résolution d'aperçu part à la position visée
+                // — sémantique du relâchement, affichage seul.
+                if let Some((id, vise_x, vise_y)) = cible_du_geste {
+                    self.demande_apercu_glissement(id, vise_x, vise_y);
                 }
-                if self.saisie.is_none() {
-                    // Fin de glissement : l'aperçu se vide, la
-                    // résolution du relâchement prend le relais.
-                    self.croquis_apercu = None;
-                    self.apercu_envoye = None;
-                    self.apercu_en_attente = false;
-                }
-                // Aperçu de glissement (re-test du 2026-10-23) : la
-                // résolution d'aperçu prime sur l'affichage tant
-                // que le glissement tient et qu'elle a réussi — la
-                // forme liée suit le point saisi en direct.
-                let resolu_apercu = if self.saisie.is_some() {
-                    self.croquis_apercu
-                        .as_ref()
-                        .and_then(|resultat| resultat.as_ref().ok())
-                } else {
-                    None
-                };
+                // Résolution d'affichage du geste (re-test du
+                // 24-10) : l'aperçu tient le glissement ET le vol
+                // du relâchement — purgé quand les deux sont finis.
+                let resolu_apercu = self.resolution_du_geste();
                 atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag, resolu_apercu);
                 // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
                 // point visé suit le curseur, accroché à la grille
@@ -4066,10 +4071,7 @@ mod tests {
         .expect("cote posée");
         app.demande_resolution_esquisse();
         pomper_les_retours(&mut app);
-        let frais = app
-            .croquis_resolu
-            .as_ref()
-            .expect("résolution fraîche");
+        let frais = app.croquis_resolu.as_ref().expect("résolution fraîche");
         assert!(frais.1.is_err(), "la résolution fraîche échoue");
         assert!(app.error.is_some(), "l'échec est signalé");
         // La dernière résolution réussie tient l'affichage : la
@@ -4426,8 +4428,8 @@ mod tests {
         let empreinte_avant = app.empreinte_journal();
         // Aperçu du glissement : le point saisi suit le curseur,
         // la graine du journal ne bouge pas.
-        let (id, x, y) = atelier_esquisse::surcharge_du_drag(&app, pas, pas * 2.0, pas)
-            .expect("surcharge du point saisi");
+        let (id, x, y) = atelier_esquisse::cible_du_geste(&app, pas, pas * 2.0, pas)
+            .expect("visée du point saisi");
         assert_eq!(id, 0, "le point saisi");
         assert_eq!(x.millimeters(), pas * 2.0, "abscisse visée en aperçu");
         assert_eq!(y.millimeters(), pas, "ordonnée visée en aperçu");
@@ -4518,6 +4520,164 @@ mod tests {
             app.empreinte_journal(),
             empreinte_avant,
             "l'aperçu n'écrit rien au journal"
+        );
+    }
+
+    /// Pendant le glissement, aucune position brute du curseur ne
+    /// s'affiche (re-test du 24-10) : la visée reste la graine de
+    /// l'aperçu, jamais une position d'affichage — le dessin ne
+    /// montre que des états résolus, une ligne contrainte
+    /// horizontalement ou verticalement ne devient jamais une
+    /// diagonale, même le temps d'un aller-retour de résolution.
+    #[test]
+    fn pendant_le_glissement_aucune_position_brute_ne_s_affiche() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas * 4.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .expect("contrainte horizontale");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Glissement diagonal du second point : la visée part à
+        // l'aperçu, aucune surcharge d'affichage ne la montre.
+        app.saisie = Some(1);
+        let (surcharge, cible) =
+            atelier_esquisse::affichage_du_geste(&app, pas, Some((pas * 5.0, pas * 2.0)));
+        assert!(
+            surcharge.is_none(),
+            "aucune position brute du curseur ne s'affiche pendant le glissement"
+        );
+        let (id, vise_x, vise_y) = cible.expect("visée du geste à l'aperçu");
+        assert_eq!(id, 1, "le point saisi");
+        assert_eq!(vise_x.millimeters(), pas * 5.0, "abscisse visée");
+        assert_eq!(vise_y.millimeters(), pas * 2.0, "ordonnée visée");
+    }
+
+    /// L'aperçu d'un geste sur une ligne contrainte horizontale
+    /// garde la ligne horizontale (re-test du 24-10) : la
+    /// résolution d'aperçu épingle le point saisi à la visée et la
+    /// contrainte entraîne l'autre extrémité — la forme affichée
+    /// ne montre jamais une diagonale.
+    #[test]
+    fn l_apercu_du_geste_sur_une_ligne_horizontale_reste_horizontale() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas * 4.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .expect("contrainte horizontale");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Geste diagonal : l'aperçu épingle le point saisi à la
+        // visée, la contrainte tient l'ordonnée des deux bouts.
+        app.saisie = Some(1);
+        app.demande_apercu_glissement(
+            1,
+            Length::from_millimeters(pas * 5.0),
+            Length::from_millimeters(pas * 2.0),
+        );
+        pomper_les_retours(&mut app);
+        let resolu = app
+            .croquis_apercu
+            .as_ref()
+            .and_then(|resultat| resultat.as_ref().ok())
+            .expect("aperçu résolu");
+        assert!(
+            proche(resolu.position(1), pas * 5.0, pas * 2.0),
+            "le point saisi est épinglé à la visée"
+        );
+        let (_, y0) = resolu.position(0).expect("premier point résolu");
+        let (_, y1) = resolu.position(1).expect("second point résolu");
+        assert!(
+            y0.approx_eq(y1),
+            "la contrainte horizontale tient : même ordonnée aux deux bouts"
+        );
+    }
+
+    /// Le vol du relâchement garde l'aperçu du geste comme
+    /// résolution d'affichage (re-test du 24-10) : l'aperçu n'est
+    /// purgé qu'une fois le frais du relâchement arrivé —
+    /// l'affichage ne retombe jamais sur la résolution d'avant le
+    /// glissement, même le temps du vol.
+    #[test]
+    fn le_vol_du_relachement_affiche_l_apercu_du_geste() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Geste : l'aperçu résout le croquis à la visée.
+        app.saisie = Some(0);
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(pas * 2.0),
+            Length::from_millimeters(pas),
+        );
+        pomper_les_retours(&mut app);
+        // Relâchement : la graine part au journal, le frais vole —
+        // l'aperçu du geste reste l'affichage du vol.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_some(),
+            "le vol du relâchement tient la surcharge anti-flash"
+        );
+        assert!(
+            app.resolution_du_geste().is_some(),
+            "l'aperçu du geste reste la résolution d'affichage pendant le vol"
+        );
+        // Fin du vol : le frais remplace l'aperçu, la purge suit.
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_none(),
+            "le frais remplace la surcharge du relâchement"
+        );
+        assert!(
+            app.resolution_du_geste().is_none(),
+            "l'aperçu se purge une fois le frais arrivé"
         );
     }
 

@@ -477,11 +477,15 @@ pub(crate) fn relacher_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     }
 }
 
-/// Surcharge d'affichage du point saisi pendant le glissement
-/// (ADR-0018 D4, lot 3c-3) : le point se dessine à la position
-/// visée du curseur, les entités liées suivent — état dérivé
-/// d'affichage, jamais écrit au journal. Sans point saisi, `None`.
-pub(crate) fn surcharge_du_drag(
+/// Visée du geste de poignée (ADR-0018 D4, lot 3c-3 ; re-test du
+/// 24-10) : le point saisi vise la position du curseur, accrochée
+/// à la grille et aux points existants (le point saisi exclu de
+/// l'accroche) — état dérivé d'affichage, jamais écrit au journal.
+/// Depuis le re-test du 24-10, la visée n'est plus une position
+/// d'AFFICHAGE : elle est la graine de l'aperçu de glissement, la
+/// seule à suivre le curseur en direct — le dessin ne montre que
+/// des états résolus. Sans point saisi, `None`.
+pub(crate) fn cible_du_geste(
     app: &DemoApp,
     pas: f64,
     x: f64,
@@ -491,6 +495,30 @@ pub(crate) fn surcharge_du_drag(
     let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, Some(id));
     Some((id, vise.x, vise.y))
+}
+
+/// Décision d'affichage du croquis pendant un geste de poignée
+/// (re-test du 24-10) : pendant le glissement, la position brute
+/// du curseur ne s'affiche PLUS — le dessin ne montre que des
+/// états résolus (la résolution d'aperçu, ou la dernière
+/// résolution connue en attendant son retour) : une ligne
+/// contrainte horizontalement ou verticalement ne devient jamais
+/// une diagonale, même le temps d'un aller-retour de résolution.
+/// La visée reste la graine de l'aperçu ; la surcharge
+/// d'affichage ne survit qu'au vol du relâchement (anti-flash
+/// §7). Renvoie (surcharge d'affichage, cible d'aperçu).
+pub(crate) fn affichage_du_geste(
+    app: &DemoApp,
+    pas: f64,
+    curseur: Option<(f64, f64)>,
+) -> (Option<(u32, Length, Length)>, Option<(u32, Length, Length)>) {
+    if app.saisie.is_some()
+        && let Some((x, y)) = curseur
+    {
+        (None, cible_du_geste(app, pas, x, y))
+    } else {
+        (surcharge_du_relachement(app), None)
+    }
 }
 
 /// Surcharge d'affichage du point relâché pendant le vol de sa
@@ -1177,11 +1205,14 @@ pub(crate) fn redondances_stables(
 /// résolues du cache quand il est frais, graines du journal sinon
 /// (ADR-0018 D7) — état dérivé d'affichage, jamais sérialisé.
 /// L'outil Sélection montre les poignées des points et le marqueur
-/// de la sélection (ADR-0018 D5) ; la surcharge du glissement
-/// déplace localement le point saisi, sans écrire (D4). Pendant un
-/// glissement, la résolution d'aperçu prime sur le cache : la
-/// forme liée suit le point saisi en direct (re-test du
-/// 2026-10-23).
+/// de la sélection (ADR-0018 D5) ; la surcharge d'affichage ne
+/// survit qu'au vol du relâchement (anti-flash §7), sans écrire
+/// (D4). Pendant un glissement, seuls des états RÉSOLUS
+/// s'affichent : la résolution d'aperçu suit le point saisi en
+/// direct (re-test du 2026-10-23) et une ligne contrainte
+/// horizontalement ou verticalement ne devient jamais une
+/// diagonale, même le temps d'un aller-retour de résolution
+/// (re-test du 24-10).
 pub(crate) fn dessiner(
     painter: &egui::Painter,
     app: &DemoApp,
@@ -1391,9 +1422,10 @@ fn marqueur_apercu(painter: &egui::Painter, camera: &Camera2D, rect: egui::Rect,
     );
 }
 
-/// Position d'affichage avec surcharge du glissement (ADR-0018
-/// D4, lot 3c-3) : le point saisi s'affiche à la position visée,
-/// les autres suivent [`position_point`].
+/// Position d'affichage avec surcharge du vol du relâchement
+/// (anti-flash §7, re-test du 24-10) : le point relâché s'affiche
+/// à sa position visée pendant le vol de sa résolution, les
+/// autres suivent [`position_point`].
 fn position_affichee(
     esquisse: &EsquisseProjection,
     resolu: Option<&CroquisResolu>,
