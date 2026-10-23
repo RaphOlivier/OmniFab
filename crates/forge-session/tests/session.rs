@@ -1223,6 +1223,131 @@ fn l_ancrage_apres_un_geste_ne_fait_pas_sauter_la_forme() {
     }
 }
 
+/// L'ancrage posé en DERNIER, après toutes les cotes, sans aucun
+/// geste (re-test du 24-10) : le point fixé fige sa position
+/// affichée pendant que les autres points partent des graines
+/// dessinées — DogLeg peut échouer sur ces graines mélangées et
+/// l'erreur remontait alors que le croquis a une solution, le DoF
+/// du panneau disparaissait avec elle. Le repli d'ancrage différé
+/// résout d'abord le croquis SANS point figé — le système d'avant
+/// pose, celui qui tenait l'affichage — puis fige l'ancre à sa
+/// position résolue : la résolution ne fait jamais échouer, le DoF
+/// tombe à zéro et la forme ne saute pas.
+#[test]
+fn l_ancrage_apres_les_cotes_ne_fait_pas_echouer_la_resolution() {
+    let mut session = Session::new("tests");
+    // Rectangle volontairement de travers, loin des cotes : la
+    // résolution tire la forme depuis les graines dessinées.
+    for (x, y) in [(0.0, 0.0), (200.0, -8.0), (212.0, 150.0), (10.0, 142.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté ajouté");
+    }
+    let orientations = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+    ];
+    for contrainte in orientations {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("orientation ajoutée");
+    }
+    let cotes = [
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(60.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(40.0),
+            },
+        },
+    ];
+    for cote in cotes {
+        session
+            .execute(&AddConstraint { contrainte: cote })
+            .expect("cote ajoutée");
+    }
+    // L'affichage d'avant pose : la forme résolue sans geste, la
+    // référence de continuité de l'ancrage.
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let avant = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(avant.dof(), 2, "rectangle coté non ancré : deux DoF");
+    // La pose du point fixé sur le coin 0, à sa position affichée,
+    // la toute dernière contrainte du croquis.
+    let (x0, y0) = mm(avant.position(0));
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // La résolution d'après la pose ne fait jamais échouer, quelle
+    // que soit la paire de graines que le figeage mélange.
+    let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(ancre.dof(), 0, "le croquis est entièrement contraint");
+    for point in 0..4 {
+        let (xa, ya) = mm(avant.position(point));
+        assert!(
+            proche(ancre.position(point), xa, ya),
+            "le point {point} ne saute pas à la pose du point fixé"
+        );
+    }
+    // Un déplacement d'après ancrage ne fait pas non plus échouer :
+    // la forme reste, l'ancre tient sa capture, le DoF reste nul.
+    session
+        .execute(&MovePoint {
+            point: 2,
+            x: Length::from_millimeters(90.0),
+            y: Length::from_millimeters(60.0),
+        })
+        .expect("déplacement");
+    let apres = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(apres.dof(), 0, "le croquis reste entièrement contraint");
+    assert!(
+        proche(apres.position(0), x0, y0),
+        "l'ancre tient sa capture malgré le déplacement"
+    );
+    // Le rejeu reconstruit le même état : les replis sont dérivés
+    // du journal, la conservation est déterministe.
+    let octets = session.save_to_bytes().expect("octets");
+    let document = Document::from_bytes(&octets).expect("document");
+    let rejouee = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+    let rejoue = rejouee
+        .esquisse()
+        .resoudre(&mut solveur_rejeu)
+        .expect("résolu");
+    for point in 0..4 {
+        let (xa, ya) = mm(apres.position(point));
+        let (xb, yb) = mm(rejoue.position(point));
+        assert!(
+            (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
+            "le rejeu tient la continuité du point {point}"
+        );
+    }
+}
+
 /// Un relâchement accroché sur le point ancré ne fait pas échouer
 /// la résolution (re-test du 2026-10-23) : la graine du point
 /// relâché tombe exactement sur la position capturée du point

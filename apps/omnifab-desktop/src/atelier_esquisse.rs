@@ -224,22 +224,19 @@ fn resolu_frais(app: &DemoApp) -> Option<&CroquisResolu> {
         .and_then(|(_, resultat)| resultat.as_ref().ok())
 }
 
-/// Résolution affichable (retour de la re-validation §7) : celle de
-/// l'édition courante si le cache la tient, sinon la dernière
-/// résolution connue — même dans la trame du clic, avant que la
-/// demande de résolution ne soit partie. Le croquis contraint ne
-/// « saute » jamais aux graines pendant le recalcul : la déformation
-/// au moment du clic disparaît. Les visées et accroches suivent
-/// l'affichage (on clique là où le croquis est DESSINÉ) ; seuls les
+/// Résolution affichable (retour de la re-validation §7, révisée
+/// le 24-10) : celle de l'édition courante si le cache la tient,
+/// sinon la dernière résolution RÉUSSIE, même périmée — jamais les
+/// graines du journal. Un échec de résolution ne fait pas sauter
+/// le croquis aux graines périmées : la dernière forme saine reste
+/// dessinée (l'erreur est signalée par le message d'état), les
+/// visées et accroches suivent ce qui est DESSINÉ ; seuls les
 /// degrés de liberté du panneau restent sur la résolution fraîche.
 pub(crate) fn resolu_affichage(app: &DemoApp) -> Option<&CroquisResolu> {
-    let frais = resolu_frais(app);
-    if frais.is_some() {
-        return frais;
+    if let Some(frais) = resolu_frais(app) {
+        return Some(frais);
     }
-    app.croquis_resolu
-        .as_ref()
-        .and_then(|(_, resultat)| resultat.as_ref().ok())
+    app.derniere_resolution_bonne.as_ref()
 }
 
 /// Traite un clic du viewport 2D selon l'outil actif et le geste

@@ -1081,7 +1081,12 @@ impl EsquisseProjection {
     /// dégénérées, typiquement un relâchement accroché sur un autre
     /// point — est rejouée depuis la graine d'avant geste : les
     /// graines ne sont que des points de départ (re-test du
-    /// 2026-10-23, cf. passe_de_base).
+    /// 2026-10-23, cf. passe_de_base). Un ancrage capturé posé en
+    /// dernier peut seul mixer les graines — le point figé à sa
+    /// position affichée, les autres aux graines du journal : sa
+    /// passe est d'abord rejouée en difféant l'ancrage, la
+    /// résolution ne doit jamais échouer quand le croquis a une
+    /// solution (re-test du 24-10, cf. passe_de_base).
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
         let base = self.passe_de_base(solveur)?;
         let ancres = self.ancrages_resolus(&base);
@@ -1137,20 +1142,38 @@ impl EsquisseProjection {
         Some((point, avant))
     }
 
-    /// Passe de base de la résolution, avec repli : si DogLeg
-    /// échoue — graines dégénérées, typiquement un relâchement
-    /// accroché sur un autre point : deux graines confondues
-    /// rendent le gradient d'une cote de distance indéfini — la
-    /// passe est rejouée depuis la graine d'avant geste du point
-    /// déplacé. Les graines ne sont que des points de départ : seul
-    /// l'échec du repli remonte (re-test du 2026-10-23).
+    /// Passe de base de la résolution, avec replis : les graines ne
+    /// sont que des points de départ, seul l'échec du DERNIER repli
+    /// remonte. (1) Repli d'ancrage différé (re-test du 24-10) :
+    /// l'ancrage capturé fige son point à sa position affichée
+    /// AVANT la résolution — quand les autres points partent des
+    /// graines du journal, DogLeg peut échouer sur ces graines
+    /// mélangées et l'erreur remontait alors que le croquis a une
+    /// solution ; la passe est rejouée en difféant l'ancrage : le
+    /// croquis se résout d'abord SANS point figé (le système
+    /// d'avant pose, celui qui tenait l'affichage), l'ancre est
+    /// figée à sa position résolue — la capture — puis un second
+    /// passage la confirme. (2) Repli de graine d'avant geste :
+    /// graines dégénérées, typiquement un relâchement accroché sur
+    /// un autre point — deux graines confondues rendent le gradient
+    /// d'une cote de distance indéfini — la passe est rejouée
+    /// depuis la graine d'avant geste du point déplacé.
     fn passe_de_base(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        match self.resoudre_passe(solveur, None, None, None, None) {
+        match self.resoudre_passe(solveur, None, None, None, None, false) {
             Ok(base) => Ok(base),
-            Err(erreur) => match self.graine_avant_geste() {
-                Some(graine) => self.resoudre_passe(solveur, None, None, None, Some(graine)),
-                None => Err(erreur),
-            },
+            Err(erreur) => {
+                if !self.ancrages_captures.is_empty()
+                    && let Ok(differee) = self.resoudre_passe(solveur, None, None, None, None, true)
+                {
+                    return Ok(differee);
+                }
+                match self.graine_avant_geste() {
+                    Some(graine) => {
+                        self.resoudre_passe(solveur, None, None, None, Some(graine), false)
+                    }
+                    None => Err(erreur),
+                }
+            }
         }
     }
 
@@ -1236,7 +1259,7 @@ impl EsquisseProjection {
         translation: Option<(Length, Length)>,
         ancres: &[(u32, (Length, Length))],
     ) -> Result<CroquisResolu, GcsError> {
-        self.resoudre_passe(solveur, Some(point), translation, Some(ancres), None)
+        self.resoudre_passe(solveur, Some(point), translation, Some(ancres), None, false)
     }
 
     /// Vecteur du dernier geste : de la graine d'avant (graine
@@ -1283,6 +1306,14 @@ impl EsquisseProjection {
     /// le repli de la passe de base rejoue la résolution depuis la
     /// graine d'avant geste du point déplacé (re-test du 2026-10-23).
     ///
+    /// Si differe_captures est vrai, les ancrages capturés ne sont
+    /// PAS figés avant la résolution : ils suivent le sort des
+    /// ancres non capturées — figés à leur position résolue après
+    /// un premier passage, confirmés par un second. C'est le repli
+    /// d'ancrage différé de la passe de base (re-test du 24-10) :
+    /// la position résolue du premier passage est celle que tenait
+    /// l'affichage avant la pose — la capture.
+    ///
     /// Les graines confondues d'une paire liée par une cote de
     /// distance — ou d'une ligne de longueur nulle — sont écartées
     /// d'un epsilon déterministe avant la résolution : leur
@@ -1295,6 +1326,7 @@ impl EsquisseProjection {
         translation: Option<(Length, Length)>,
         ancres: Option<&[(u32, (Length, Length))]>,
         graine_substituee: Option<(u32, (Length, Length))>,
+        differe_captures: bool,
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
@@ -1402,10 +1434,16 @@ impl EsquisseProjection {
                 // base : il fige la position résolue du point (celle
                 // que l'utilisateur voit), pas sa graine — la forme
                 // ne saute jamais au moment de l'ancrage (retour
-                // checklist jalon 2).
+                // checklist jalon 2). Le repli d'ancrage différé
+                // (re-test du 24-10) fait suivre aux ancrages
+                // capturés le sort des hérités : figés à leur
+                // position résolue après un premier passage sans
+                // point figé — la résolution ne doit jamais échouer
+                // sur des graines mélangées quand le croquis a une
+                // solution.
                 ContrainteEsquisse::PointFixe { point } => {
                     if ancres.is_none() {
-                        if self.ancrages_captures.contains_key(point) {
+                        if !differe_captures && self.ancrages_captures.contains_key(point) {
                             solveur.fixer_point(reconstruction.id_point(*point)?)?;
                         } else {
                             ancrages.push(reconstruction.id_point(*point)?);

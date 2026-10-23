@@ -721,6 +721,18 @@ struct DemoApp {
     /// affichable (ADR-0018 D7). Une cote pilotée re-figée repart
     /// en résolution même sans changement du croquis.
     croquis_resolu: Option<((u64, u64), Result<CroquisResolu, String>)>,
+    /// Dernière résolution RÉUSSIE du croquis, toute édition
+    /// confondue (re-test du 24-10) : l'affichage y retombe quand
+    /// la résolution fraîche du journal courant échoue. Un échec
+    /// ne doit jamais effacer la dernière forme saine — sinon le
+    /// croquis saute aux graines du journal au moment même de la
+    /// pose (l'ancre figée loin des graines fait échouer DogLeg,
+    /// l'erreur remplace la dernière réussite au cache et
+    /// l'affichage retombe sur des graines périmées). L'erreur
+    /// reste signalée par le message d'état, le DoF du panneau
+    /// reste sur la résolution fraîche — seule l'affichage garde la
+    /// forme.
+    derniere_resolution_bonne: Option<CroquisResolu>,
     /// Clé (édition, liaisons) en cours de résolution au fil de
     /// travail : une seule résolution en vol (ADR-0016 C1).
     resolution_en_attente: Option<(u64, u64)>,
@@ -862,6 +874,7 @@ impl DemoApp {
             demande: None,
             demande_echelle: None,
             croquis_resolu: None,
+            derniere_resolution_bonne: None,
             resolution_en_attente: None,
             outil: atelier_esquisse::OutilEsquisse::Selection,
             geste: None,
@@ -909,6 +922,7 @@ impl DemoApp {
         self.aide = None;
         self.demande_echelle = None;
         self.croquis_resolu = None;
+        self.derniere_resolution_bonne = None;
         self.resolution_en_attente = None;
         self.outil = atelier_esquisse::OutilEsquisse::Selection;
         self.geste = None;
@@ -1068,6 +1082,7 @@ impl DemoApp {
         self.camera_cle = None;
         self.camera3d = Camera3D::nouvelle();
         self.croquis_resolu = None;
+        self.derniere_resolution_bonne = None;
         self.resolution_en_attente = None;
         self.surcharge_relachee = None;
         self.redondances_affichees = None;
@@ -1356,11 +1371,18 @@ impl DemoApp {
                     }
                 }
                 // L’échec est mémorisé à sa clé (ADR-0018 D7) : le
-                // journal est intact, les graines du croquis restent
-                // affichables — et la résolution ne repart pas à
-                // chaque frame (ADR-0016 C1).
+                // journal est intact — et la résolution ne repart
+                // pas à chaque frame (ADR-0016 C1).
                 if let Err(message) = &resultat {
                     self.error = Some(message.clone());
+                }
+                // La dernière résolution RÉUSSIE survit à l’échec
+                // (re-test du 24-10) : l’affichage ne retombe
+                // jamais sur les graines périmées du journal — la
+                // forme saine reste dessinée, l’erreur est
+                // signalée par le message d’état.
+                if let Ok(croquis) = &resultat {
+                    self.derniere_resolution_bonne = Some(croquis.clone());
                 }
                 self.croquis_resolu = Some((cle, resultat));
                 // La surcharge du relâchement a tenu le vol : le
@@ -1389,6 +1411,7 @@ impl DemoApp {
     fn demande_resolution_esquisse(&mut self) {
         if self.session.esquisse().entites().is_empty() {
             self.croquis_resolu = None;
+            self.derniere_resolution_bonne = None;
             self.resolution_en_attente = None;
             return;
         }
@@ -3968,6 +3991,96 @@ mod tests {
         assert!(
             (dx.hypot(dy) - 40.0).abs() < 1e-6,
             "l'affichage tient la résolution, pas la graine"
+        );
+    }
+
+    /// L'affichage garde la dernière résolution RÉUSSIE quand la
+    /// fraîche ÉCHOUE (re-test du 24-10) : une résolution qui
+    /// échoue ne doit jamais effacer la dernière forme saine —
+    /// sinon le croquis saute aux graines du journal et paraît se
+    /// déformer au moment même de la pose fautive. L'erreur est
+    /// signalée, le DoF du panneau disparaît avec la résolution
+    /// fraîche, mais la forme saine reste dessinée.
+    #[test]
+    fn l_affichage_garde_la_derniere_resolution_bonne_quand_le_frais_echoue() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("origine posée");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("mobile posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("ancrage posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Une cote impossible : à 40 mm de l'origine ET à 200 mm du
+        // point déjà à 40 mm de l'origine — le triangle ne peut pas
+        // exister, la résolution fraîche échoue.
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(120.0),
+                y: Length::from_millimeters(90.0),
+            },
+        })
+        .expect("troisième point posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(200.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("résolution fraîche");
+        assert!(resultat.is_err(), "la résolution fraîche échoue");
+        assert!(app.error.is_some(), "l'échec est signalé");
+        // La dernière résolution réussie tient l'affichage : la
+        // forme saine d'avant la cote impossible reste dessinée,
+        // le croquis ne saute pas aux graines.
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("la dernière résolution réussie reste affichable");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
+        assert!(
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "l'affichage tient la forme saine, pas les graines"
         );
     }
 
