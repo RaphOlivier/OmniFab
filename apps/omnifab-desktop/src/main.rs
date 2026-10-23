@@ -4647,6 +4647,82 @@ mod tests {
         assert_eq!(y.millimeters(), 0.0, "la graine tient");
     }
 
+    /// Un croquis entièrement contraint ne saisit pas ses poignées
+    /// (re-test du 24-10) : zéro degré de liberté ne donne rien à
+    /// absorber — FreeCAD épingle le point tiré par une contrainte
+    /// temporaire et la forme ne suit jamais un geste impossible.
+    /// Le glissement cède au pan de vue, comme pour un point ancré.
+    #[test]
+    fn un_croquis_entierement_contraint_ne_saisit_pas_ses_poignees() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [
+            (0.0, 0.0),
+            (pas * 4.0, 0.0),
+            (pas * 4.0, pas * 3.0),
+            (0.0, pas * 3.0),
+        ] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin posé");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté posé");
+        }
+        for (ligne, horizontale) in [(4, true), (5, false), (6, true), (7, false)] {
+            let contrainte = if horizontale {
+                ContrainteEsquisse::Horizontale { ligne }
+            } else {
+                ContrainteEsquisse::Verticale { ligne }
+            };
+            app.executer(&AddConstraint { contrainte })
+                .expect("contrainte posée");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 4.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 3.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("coin fixé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
+        // Le coin 2 n'est ni ancré ni absent : seule l'absence de
+        // degré de liberté doit refuser la saisie.
+        atelier_esquisse::saisir_poignee(&mut app, pas, pas * 4.0, pas * 3.0);
+        assert!(
+            app.saisie.is_none(),
+            "un croquis entièrement contraint ne saisit pas ses poignées"
+        );
+    }
+
     /// Fixer un point glissé ne le fait pas sauter (ADR-0021 D2,
     /// révisée le 2026-10-23 — re-test jalon 2, point 8) : le bouton
     /// « Point fixe » capture la position DESSINÉE — la résolution

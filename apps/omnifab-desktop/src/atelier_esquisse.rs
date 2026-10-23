@@ -416,16 +416,25 @@ fn balaie(balayage: f64, precedent: f64, angle: f64) -> f64 {
 /// (ADR-0018 D4/D5, lot 3c-3) : le point le plus proche sous le
 /// seuil d'un quart de pas devient le point saisi et la sélection —
 /// états de l'app UI, jamais des événements. Sans point visé, rien
-/// ne se passe : le glissement déplace la vue.
+/// ne se passe : le glissement déplace la vue. Un point ancré ne
+/// se saisit pas (ADR-0021 D3), ni aucune poignée d'un croquis
+/// entièrement contraint (re-test du 24-10).
 pub(crate) fn saisir_poignee(app: &mut DemoApp, pas: f64, x: f64, y: f64) {
     let resolu = resolu_affichage(app);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     // Un point ancré ne se saisit pas (ADR-0021 D3) : le grab est
     // refusé — pas de glissement fantôme qui suivrait le curseur
     // avant d'être repoussé au relâchement ; le clic seul reste
-    // libre de le sélectionner.
+    // libre de le sélectionner. Un croquis entièrement contraint
+    // ne saisit pas non plus ses poignées (re-test du 24-10) :
+    // zéro degré de liberté ne donne rien à absorber — FreeCAD
+    // épingle le point tiré par une contrainte temporaire et la
+    // forme ne suit jamais un geste impossible ; le glissement
+    // cède au pan de vue.
+    let entierement_contraint = resolu_frais(app).is_some_and(|croquis| croquis.dof() == 0);
     if vise.id != app.session.esquisse().prochaine_id_entite()
         && !app.session.esquisse().point_ancre(vise.id)
+        && !entierement_contraint
     {
         app.saisie = Some(vise.id);
         app.selection = vec![vise.id];
