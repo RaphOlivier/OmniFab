@@ -1199,7 +1199,10 @@ fn l_ancrage_apres_un_geste_ne_fait_pas_sauter_la_forme() {
         proche(ancre.position(3), 0.0, 100.0),
         "le coin 3 ne saute pas à la pose du point fixé"
     );
-    assert!(proche(ancre.position(0), x0, y0), "l'ancre tient sa capture");
+    assert!(
+        proche(ancre.position(0), x0, y0),
+        "l'ancre tient sa capture"
+    );
     // Le rejeu reconstruit la même continuité : l'état de geste est
     // dérivé du journal, la conservation est déterministe.
     let octets = session.save_to_bytes().expect("octets");
