@@ -500,10 +500,7 @@ pub(crate) fn cible_du_geste(
 /// Décision d'affichage du geste de poignée (re-test du 24-10) :
 /// surcharge d'affichage et cible d'aperçu — la surcharge ne
 /// survit qu'au vol du relâchement, la cible n'est qu'une graine.
-type AffichageGeste = (
-    Option<(u32, Length, Length)>,
-    Option<(u32, Length, Length)>,
-);
+type AffichageGeste = (Option<(u32, Length, Length)>, Option<(u32, Length, Length)>);
 
 /// Décision d'affichage du croquis pendant un geste de poignée
 /// (re-test du 24-10) : pendant le glissement, la position brute
