@@ -4066,8 +4066,11 @@ mod tests {
         .expect("cote posée");
         app.demande_resolution_esquisse();
         pomper_les_retours(&mut app);
-        let (_, resultat) = app.croquis_resolu.expect("résolution fraîche");
-        assert!(resultat.is_err(), "la résolution fraîche échoue");
+        let frais = app
+            .croquis_resolu
+            .as_ref()
+            .expect("résolution fraîche");
+        assert!(frais.1.is_err(), "la résolution fraîche échoue");
         assert!(app.error.is_some(), "l'échec est signalé");
         // La dernière résolution réussie tient l'affichage : la
         // forme saine d'avant la cote impossible reste dessinée,
@@ -4824,8 +4827,14 @@ mod tests {
         .expect("coin fixé");
         app.demande_resolution_esquisse();
         pomper_les_retours(&mut app);
-        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
-        let resolu = resultat.expect("résolution réussie");
+        // Emprunt, pas déplacement : le test saisit une poignée
+        // APRÈS la lecture du cache — `app` ne doit être que
+        // partiellement emprunté, jamais déplacé (E0382).
+        let resolu = app
+            .croquis_resolu
+            .as_ref()
+            .and_then(|(_, resultat)| resultat.as_ref().ok())
+            .expect("résolution réussie");
         assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
         // Le coin 2 n'est ni ancré ni absent : seule l'absence de
         // degré de liberté doit refuser la saisie.
