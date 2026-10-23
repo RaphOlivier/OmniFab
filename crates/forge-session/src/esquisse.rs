@@ -720,6 +720,46 @@ struct CaptureAncrage {
     graine_avant_dernier: Option<(Length, Length)>,
 }
 
+/// Paramètres d'une passe de résolution (cf.
+/// [`EsquisseProjection::resoudre`]) : point épinglé au geste,
+/// translation de suivi du geste, ancrages figés à leur position
+/// résolue, graine substituée du repli, positions initiales
+/// d'une reproduction d'affichage, ancrage différé et ancrage
+/// exclu du système (re-test du 24-10).
+#[derive(Clone, Copy)]
+struct PasseDeResolution<'a> {
+    /// Point épinglé au geste : sa graine tient, le reste absorbe.
+    epingle: Option<u32>,
+    /// Vecteur du geste : translate les graines non épinglées.
+    translation: Option<(Length, Length)>,
+    /// Ancrages figés à leur position résolue de la passe de base.
+    ancres: Option<&'a [(u32, (Length, Length))]>,
+    /// Graine substituée du repli de graine d'avant geste.
+    graine_substituee: Option<(u32, (Length, Length))>,
+    /// Positions résolues d'un affichage reproduit : graines de passe.
+    positions_initiales: Option<&'a BTreeMap<u32, (Length, Length)>>,
+    /// Les ancrages capturés ne sont figés qu'après la résolution.
+    differe_captures: bool,
+    /// Point dont la contrainte `PointFixe` est hors du système.
+    exclu: Option<u32>,
+}
+
+impl PasseDeResolution<'_> {
+    /// Passe neutre : aucune épingle, aucune translation, aucun
+    /// ancrage figé — seules les graines du journal et l'exclusion.
+    fn neutre(exclu: Option<u32>) -> Self {
+        Self {
+            epingle: None,
+            translation: None,
+            ancres: None,
+            graine_substituee: None,
+            positions_initiales: None,
+            differe_captures: false,
+            exclu,
+        }
+    }
+}
+
 /// Projection du croquis contraint (ADR-0018) : entités, contraintes
 /// et graines de position rejouées depuis le journal ; les positions
 /// résolues sont un état dérivé, calculé à la demande via
@@ -764,6 +804,18 @@ pub struct EsquisseProjection {
     /// 24-10 : la passe épinglée du vrai geste disparaissait au
     /// profit de la seule passe de base).
     capture_en_attente: Option<CaptureAncrage>,
+    /// Pose d'ancrage capturé pas encore suivie d'un autre événement
+    /// de croquis (re-test du 24-10 : le rectangle flippe en
+    /// symétrie autour du point fixé) : point ancré → position
+    /// capturée. La résolution qui suit la pose reproduit d'abord
+    /// l'affichage d'avant pose — le système sans cet ancrage,
+    /// exactement la résolution qui tenait l'écran — puis fige
+    /// l'ancre à sa capture sur ces positions : les graines du
+    /// journal des autres points peuvent être loin de l'affiché
+    /// (croquis rigide translaté par le geste) et DogLeg retiendrait
+    /// la branche miroir la plus proche de ces graines périmées.
+    /// Tout événement de croquis appliqué efface la fraîcheur.
+    pose_ancrage_fraiche: Option<(u32, (Length, Length))>,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
     /// remis à zéro (clé de cache monotone pour l'application).
     edition: u64,
@@ -1087,18 +1139,48 @@ impl EsquisseProjection {
     /// passe est d'abord rejouée en difféant l'ancrage, la
     /// résolution ne doit jamais échouer quand le croquis a une
     /// solution (re-test du 24-10, cf. passe_de_base).
+    ///
+    /// La pose d'un ancrage capturé ne flippe jamais le croquis en
+    /// symétrie autour du point fixé (re-test du 24-10) : la
+    /// résolution reproduit d'abord l'affichage d'avant pose — le
+    /// système sans l'ancrage frais, exactement la résolution qui
+    /// tenait l'écran — puis fige l'ancre à sa capture sur ces
+    /// positions ; les graines périmées du journal ne peuvent plus
+    /// faire retenir la branche miroir (cf. `pose_ancrage_fraiche`).
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        let base = self.passe_de_base(solveur)?;
-        let ancres = self.ancrages_resolus(&base);
+        self.resoudre_interne(solveur, None)
+    }
+
+    /// Résolution interne : `exclu` sort un ancrage `PointFixe` du
+    /// système pour cette résolution seulement — la reproduction de
+    /// l'affichage d'avant pose d'un ancrage frais (re-test du
+    /// 24-10, cf. `pose_ancrage_fraiche`).
+    fn resoudre_interne(
+        &self,
+        solveur: &mut dyn Solveur2D,
+        exclu: Option<u32>,
+    ) -> Result<CroquisResolu, GcsError> {
+        // Pose fraîche d'un ancrage capturé : reproduire l'affichage
+        // d'avant pose, puis figer l'ancre à sa capture dessus. Le
+        // moindre échec retombe sur le comportement ordinaire.
+        if exclu.is_none()
+            && let Some((point, position)) = self.pose_ancrage_fraiche
+            && let Ok(avant_pose) = self.resoudre_interne(solveur, Some(point))
+            && let Some(figee) = self.figee_l_ancrage_frais(solveur, point, position, &avant_pose)
+        {
+            return Ok(figee);
+        }
+        let base = self.passe_de_base(solveur, exclu)?;
+        let ancres = self.ancrages_resolus(&base, exclu);
         let translation = if base.dof() == 2 && ancres.is_empty() {
             self.translation_du_dernier()
         } else {
             None
         };
         if let Some(point) = self.dernier_deplace
-            && !self.point_ancre(point)
+            && !(self.point_ancre(point) && exclu != Some(point))
             && self.graines.contains_key(&point)
-            && let Ok(epingle) = self.passe_epinglee(solveur, point, translation, &ancres)
+            && let Ok(epingle) = self.passe_epinglee(solveur, point, translation, &ancres, exclu)
             && epingle.conflictuelles.is_empty()
         {
             return Ok(CroquisResolu {
@@ -1107,6 +1189,39 @@ impl EsquisseProjection {
             });
         }
         Ok(base)
+    }
+
+    /// Fige l'ancrage frais sur l'affichage d'avant pose (re-test du
+    /// 24-10 : le rectangle flippe en symétrie autour du point
+    /// fixé) : les positions résolues de l'affichage reconstitué
+    /// deviennent les graines de la passe, l'ancre part figée à sa
+    /// capture, les autres ancrages à leur position affichée — le
+    /// solveur ne peut plus retenir une branche miroir, la forme ne
+    /// bouge pas d'un poil. `None` si la passe figée échoue ou
+    /// conflictue : le comportement ordinaire reprend.
+    fn figee_l_ancrage_frais(
+        &self,
+        solveur: &mut dyn Solveur2D,
+        point: u32,
+        position: (Length, Length),
+        avant_pose: &CroquisResolu,
+    ) -> Option<CroquisResolu> {
+        let mut ancres = self.ancrages_resolus(avant_pose, None);
+        match ancres.iter_mut().find(|(ancre, _)| *ancre == point) {
+            Some(ancre) => ancre.1 = position,
+            None => ancres.push((point, position)),
+        }
+        let figee = PasseDeResolution {
+            ancres: Some(&ancres),
+            positions_initiales: Some(&avant_pose.positions),
+            ..PasseDeResolution::neutre(None)
+        };
+        let resolu = self.resoudre_passe(solveur, &figee).ok()?;
+        if resolu.conflictuelles.is_empty() {
+            Some(resolu)
+        } else {
+            None
+        }
     }
 
     /// Aperçu de glissement (re-test du 2026-10-23) : une
@@ -1129,6 +1244,10 @@ impl EsquisseProjection {
         apercu.graine_avant_dernier = Some(avant);
         apercu.graines.insert(point, (x, y));
         apercu.dernier_deplace = Some(point);
+        // L'aperçu est un geste à lui tout seul : sa résolution suit
+        // le comportement ordinaire, pas la fraîcheur de pose d'un
+        // ancrage (re-test du 24-10, cf. `pose_ancrage_fraiche`).
+        apercu.pose_ancrage_fraiche = None;
         Some(apercu)
     }
 
@@ -1157,20 +1276,38 @@ impl EsquisseProjection {
     /// graines dégénérées, typiquement un relâchement accroché sur
     /// un autre point — deux graines confondues rendent le gradient
     /// d'une cote de distance indéfini — la passe est rejouée
-    /// depuis la graine d'avant geste du point déplacé.
-    fn passe_de_base(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
-        match self.resoudre_passe(solveur, None, None, None, None, false) {
+    /// depuis la graine d'avant geste du point déplacé. Un ancrage
+    /// `exclu` (reproduction de l'affichage d'avant pose d'un
+    /// ancrage frais, re-test du 24-10) ne fait partie du système
+    /// d'aucune de ces passes.
+    fn passe_de_base(
+        &self,
+        solveur: &mut dyn Solveur2D,
+        exclu: Option<u32>,
+    ) -> Result<CroquisResolu, GcsError> {
+        let neutre = PasseDeResolution::neutre(exclu);
+        match self.resoudre_passe(solveur, &neutre) {
             Ok(base) => Ok(base),
             Err(erreur) => {
                 if !self.ancrages_captures.is_empty()
-                    && let Ok(differee) = self.resoudre_passe(solveur, None, None, None, None, true)
+                    && let Ok(differee) = self.resoudre_passe(
+                        solveur,
+                        &PasseDeResolution {
+                            differe_captures: true,
+                            ..neutre
+                        },
+                    )
                 {
                     return Ok(differee);
                 }
                 match self.graine_avant_geste() {
-                    Some(graine) => {
-                        self.resoudre_passe(solveur, None, None, None, Some(graine), false)
-                    }
+                    Some(graine) => self.resoudre_passe(
+                        solveur,
+                        &PasseDeResolution {
+                            graine_substituee: Some(graine),
+                            ..neutre
+                        },
+                    ),
                     None => Err(erreur),
                 }
             }
@@ -1236,11 +1373,19 @@ impl EsquisseProjection {
     /// 2026-10-22, CI #275). Les ancrages capturés (ADR-0021 D2,
     /// révisée le 2026-10-23) ne changent rien ici : leur position
     /// capturée est déjà leur position résolue de la passe de base,
-    /// le point étant figé à sa graine avant la résolution.
-    fn ancrages_resolus(&self, base: &CroquisResolu) -> Vec<(u32, (Length, Length))> {
+    /// le point étant figé à sa graine avant la résolution. Un
+    /// ancrage `exclu` (re-test du 24-10, reproduction de
+    /// l'affichage d'avant pose d'un ancrage frais) n'y figure
+    /// pas : il ne fait pas partie du système de la passe.
+    fn ancrages_resolus(
+        &self,
+        base: &CroquisResolu,
+        exclu: Option<u32>,
+    ) -> Vec<(u32, (Length, Length))> {
         let mut ancres = Vec::new();
         for (_, contrainte) in &self.contraintes {
             if let ContrainteEsquisse::PointFixe { point } = contrainte
+                && Some(*point) != exclu
                 && let Some(position) = base.position(*point)
             {
                 ancres.push((*point, position));
@@ -1258,8 +1403,17 @@ impl EsquisseProjection {
         point: u32,
         translation: Option<(Length, Length)>,
         ancres: &[(u32, (Length, Length))],
+        exclu: Option<u32>,
     ) -> Result<CroquisResolu, GcsError> {
-        self.resoudre_passe(solveur, Some(point), translation, Some(ancres), None, false)
+        self.resoudre_passe(
+            solveur,
+            &PasseDeResolution {
+                epingle: Some(point),
+                translation,
+                ancres: Some(ancres),
+                ..PasseDeResolution::neutre(exclu)
+            },
+        )
     }
 
     /// Vecteur du dernier geste : de la graine d'avant (graine
@@ -1319,14 +1473,16 @@ impl EsquisseProjection {
     /// d'un epsilon déterministe avant la résolution : leur
     /// gradient est indéfini aux graines, DogLeg échouerait alors
     /// que le croquis a une solution (re-test du 2026-10-23).
+    ///
+    /// Si `positions_initiales` est fourni, les graines de la passe
+    /// partent de ces positions résolues — la reproduction d'un
+    /// affichage d'avant pose, figeage de l'ancrage frais (re-test
+    /// du 24-10) ; si `exclu` désigne un point, sa contrainte
+    /// `PointFixe` ne fait pas partie du système de la passe.
     fn resoudre_passe(
         &self,
         solveur: &mut dyn Solveur2D,
-        epingle: Option<u32>,
-        translation: Option<(Length, Length)>,
-        ancres: Option<&[(u32, (Length, Length))]>,
-        graine_substituee: Option<(u32, (Length, Length))>,
-        differe_captures: bool,
+        passe: &PasseDeResolution,
     ) -> Result<CroquisResolu, GcsError> {
         if self.entites.is_empty() {
             return Ok(CroquisResolu {
@@ -1343,30 +1499,37 @@ impl EsquisseProjection {
         let mut reconstruction = Reconstruction::default();
         // Graines de la passe (re-test du 2026-10-23) : journal — ou
         // position résolue de la passe de base pour un point ancré,
-        // graine substituée du repli — puis translation du suivi du
-        // geste ; la réparation des graines confondues s'applique en
-        // dernier, une fois la translation posée.
+        // graine substituée du repli, positions initiales d'une
+        // reproduction d'affichage (re-test du 24-10) — puis
+        // translation du suivi du geste ; la réparation des graines
+        // confondues s'applique en dernier, une fois la translation
+        // posée.
         let mut graines_passe: BTreeMap<u32, (Length, Length)> = BTreeMap::new();
         for (id, entite) in &self.entites {
             if let EntiteEsquisse::Point { x, y } = entite {
-                let graine = match ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
+                let graine = match passe.ancres.and_then(|a| a.iter().find(|(p, _)| p == id)) {
                     Some((_, position)) => *position,
-                    None => match graine_substituee {
+                    None => match passe.graine_substituee {
                         Some((point, position)) if point == *id => position,
-                        _ => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                        _ => match passe.positions_initiales {
+                            Some(positions) => {
+                                positions.get(id).copied().unwrap_or((*x, *y))
+                            }
+                            None => self.graines.get(id).copied().unwrap_or((*x, *y)),
+                        },
                     },
                 };
                 graines_passe.insert(*id, graine);
             }
         }
-        self.reparer_graines_confondues(&mut graines_passe, epingle, ancres);
+        self.reparer_graines_confondues(&mut graines_passe, passe.epingle, passe.ancres);
         for (id, entite) in &self.entites {
             match entite {
                 EntiteEsquisse::Point { .. } => {
                     // Suivi du geste : les points non épinglés
                     // partent translatés du vecteur du dernier
                     // geste, l'épinglé reste à sa graine.
-                    let (dx, dy) = match (translation, epingle) {
+                    let (dx, dy) = match (passe.translation, passe.epingle) {
                         (Some((dx, dy)), Some(e)) if *id != e => (dx, dy),
                         _ => (Length::from_millimeters(0.0), Length::from_millimeters(0.0)),
                     };
@@ -1393,441 +1556,3 @@ impl EsquisseProjection {
                     reconstruction.cercles.insert(*id, identifiant);
                 }
                 EntiteEsquisse::Arc {
-                    centre,
-                    debut,
-                    fin,
-                    rayon,
-                    angle_debut,
-                    angle_fin,
-                } => {
-                    // Aucune contrainte ne référence un arc en v1 : son
-                    // identifiant solveur n'a pas besoin d'être gardé.
-                    solveur.ajouter_arc(
-                        reconstruction.id_point(*centre)?,
-                        reconstruction.id_point(*debut)?,
-                        reconstruction.id_point(*fin)?,
-                        *rayon,
-                        *angle_debut,
-                        *angle_fin,
-                    )?;
-                }
-            }
-        }
-        if let Some(id) = epingle {
-            solveur.fixer_point(reconstruction.id_point(id)?)?;
-        }
-        if let Some(ancres) = ancres {
-            for (point, _) in ancres {
-                solveur.fixer_point(reconstruction.id_point(*point)?)?;
-            }
-        }
-        let mut tags = BTreeMap::new();
-        let mut ancrages = Vec::new();
-        for (id, contrainte) in &self.contraintes {
-            match contrainte {
-                // L'ancrage capturé (ADR-0021 D2, révisée le
-                // 2026-10-23 — re-test jalon 2, point 8) se fige avant
-                // la première résolution : la graine du point EST la
-                // position affichée capturée à la pose, la forme ne
-                // saute pas, le reste absorbe. L'ancrage non capturé
-                // (journaux hérités) s'épingle après la résolution de
-                // base : il fige la position résolue du point (celle
-                // que l'utilisateur voit), pas sa graine — la forme
-                // ne saute jamais au moment de l'ancrage (retour
-                // checklist jalon 2). Le repli d'ancrage différé
-                // (re-test du 24-10) fait suivre aux ancrages
-                // capturés le sort des hérités : figés à leur
-                // position résolue après un premier passage sans
-                // point figé — la résolution ne doit jamais échouer
-                // sur des graines mélangées quand le croquis a une
-                // solution.
-                ContrainteEsquisse::PointFixe { point } => {
-                    if ancres.is_none() {
-                        if !differe_captures && self.ancrages_captures.contains_key(point) {
-                            solveur.fixer_point(reconstruction.id_point(*point)?)?;
-                        } else {
-                            ancrages.push(reconstruction.id_point(*point)?);
-                        }
-                    }
-                }
-                _ => {
-                    if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {
-                        tags.insert(*id, tag);
-                    }
-                }
-            }
-        }
-        solveur.resoudre(Algorithme::DogLeg)?;
-        // L'ancrage n'altère le résultat que s'il existe : sans
-        // PointFixe, un second passage ne servirait à rien et le
-        // comportement reste exactement celui d'avant l'ancrage
-        // post-résolution.
-        if !ancrages.is_empty() {
-            for point in ancrages {
-                solveur.fixer_point(point)?;
-            }
-            solveur.resoudre(Algorithme::DogLeg)?;
-        }
-        let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
-        let mut positions = BTreeMap::new();
-        for (id, identifiant) in &reconstruction.points {
-            let position = solveur.position_point(*identifiant)?;
-            positions.insert(*id, position);
-        }
-        Ok(CroquisResolu {
-            positions,
-            dof: diagnostic.dof(),
-            reproductible: diagnostic.reproductible(),
-            conflictuelles: diagnostic.conflictuelles().to_vec(),
-            redondantes: diagnostic.redondantes().to_vec(),
-            partiellement_redondantes: diagnostic.partiellement_redondantes().to_vec(),
-            tags,
-        })
-    }
-
-    /// Raison pour laquelle un identifiant n'est pas un point connu.
-    fn raison_point(&self, id: u32) -> Option<String> {
-        if self.genre_entite(id) == Some(GenreEntite::Point) {
-            None
-        } else {
-            Some(format!("le point {id} n'existe pas"))
-        }
-    }
-
-    /// Raison pour laquelle un identifiant n'est pas une ligne connue.
-    fn raison_ligne(&self, id: u32) -> Option<String> {
-        if self.genre_entite(id) == Some(GenreEntite::Ligne) {
-            None
-        } else {
-            Some(format!("la ligne {id} n'existe pas"))
-        }
-    }
-
-    /// Raison pour laquelle un identifiant n'est pas un cercle connu.
-    fn raison_cercle(&self, id: u32) -> Option<String> {
-        if self.genre_entite(id) == Some(GenreEntite::Cercle) {
-            None
-        } else {
-            Some(format!("le cercle {id} n'existe pas"))
-        }
-    }
-
-    /// Raison pour laquelle l'un des deux identifiants n'est pas un
-    /// point connu.
-    fn raison_deux_points(&self, p1: u32, p2: u32) -> Option<String> {
-        self.raison_point(p1).or_else(|| self.raison_point(p2))
-    }
-
-    /// Raison pour laquelle l'un des deux identifiants n'est pas une
-    /// ligne connue.
-    fn raison_deux_lignes(&self, ligne1: u32, ligne2: u32) -> Option<String> {
-        self.raison_ligne(ligne1)
-            .or_else(|| self.raison_ligne(ligne2))
-    }
-
-    /// Raison pour laquelle une coordonnée n'est pas un nombre fini.
-    fn raison_finie(valeur: f64, nom: &str) -> Option<String> {
-        if valeur.is_finite() {
-            None
-        } else {
-            Some(format!("{nom} doit être un nombre fini"))
-        }
-    }
-
-    /// Raison pour laquelle une cote n'est pas finie et strictement
-    /// positive.
-    fn raison_positive(valeur: f64, nom: &str) -> Option<String> {
-        if valeur.is_finite() && valeur > 0.0 {
-            None
-        } else {
-            Some(format!("{nom} doit être finie et strictement positive"))
-        }
-    }
-
-    /// Raison du refus d'une cote de distance (ADR-0019) : fixe
-    /// invalide ou expression vide.
-    fn raison_cote(valeur: &ValeurCote) -> Option<String> {
-        match valeur {
-            ValeurCote::Fixe { mm } => Self::raison_positive(mm.millimeters(), "la distance"),
-            ValeurCote::Expression { texte, .. } => {
-                if texte.trim().is_empty() {
-                    Some("l'expression de la cote ne peut pas être vide".to_string())
-                } else {
-                    None
-                }
-            }
-        }
-    }
-
-    /// Raison pour laquelle un angle n'est pas fini.
-    fn raison_angle(valeur: f64) -> Option<String> {
-        if valeur.is_finite() {
-            None
-        } else {
-            Some("l'angle doit être fini".to_string())
-        }
-    }
-}
-
-/// Traduit une contrainte du croquis vers le solveur et l’ajoute
-/// (ADR-0018 D1 : les onze genres du trait plus l’ancrage
-/// `PointFixe`). Renvoie le tag solveur de la contrainte posée ;
-/// l’ancrage n’a pas de tag — ce n’est pas une contrainte du
-/// solveur, le diagnostic ne peut jamais le référencer.
-fn applique_contrainte(
-    solveur: &mut dyn Solveur2D,
-    reconstruction: &Reconstruction,
-    contrainte: &ContrainteEsquisse,
-) -> Result<Option<TagContrainte>, GcsError> {
-    match contrainte {
-        ContrainteEsquisse::Coincidence { p1, p2 } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Coincidence {
-                p1: reconstruction.id_point(*p1)?,
-                p2: reconstruction.id_point(*p2)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Horizontale { ligne } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Horizontale {
-                ligne: reconstruction.id_ligne(*ligne)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Verticale { ligne } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Verticale {
-                ligne: reconstruction.id_ligne(*ligne)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Distance { p1, p2, valeur } => {
-            // Frontière forge-values → forge-gcs (ADR-0019) : le
-            // solveur ne voit jamais une expression — la session fige
-            // les cotes pilotées avant de résoudre.
-            let ValeurCote::Fixe { mm } = valeur else {
-                return Err(GcsError::AbiInvalide {
-                    contexte: format!(
-                        "la cote pilotée « {} » doit être figée avant la résolution",
-                        alias_de_cote(valeur)
-                    ),
-                });
-            };
-            let tag = solveur.ajouter_contrainte(Contrainte::Distance {
-                p1: reconstruction.id_point(*p1)?,
-                p2: reconstruction.id_point(*p2)?,
-                valeur: *mm,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::PointSurLigne { point, ligne } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::PointSurLigne {
-                point: reconstruction.id_point(*point)?,
-                ligne: reconstruction.id_ligne(*ligne)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::MemeLongueur {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Paralleles {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::PointSurCercle { point, cercle } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::PointSurCercle {
-                point: reconstruction.id_point(*point)?,
-                cercle: reconstruction.id_cercle(*cercle)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::RayonCercle { cercle, valeur } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::RayonCercle {
-                cercle: reconstruction.id_cercle(*cercle)?,
-                valeur: *valeur,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Perpendiculaires {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::Angle {
-            ligne1,
-            ligne2,
-            valeur,
-        } => {
-            let tag = solveur.ajouter_contrainte(Contrainte::Angle {
-                ligne1: reconstruction.id_ligne(*ligne1)?,
-                ligne2: reconstruction.id_ligne(*ligne2)?,
-                valeur: *valeur,
-            })?;
-            Ok(Some(tag))
-        }
-        ContrainteEsquisse::PointFixe { point } => {
-            solveur.fixer_point(reconstruction.id_point(*point)?)?;
-            Ok(None)
-        }
-    }
-}
-
-impl Projection for EsquisseProjection {
-    fn name(&self) -> &'static str {
-        "esquisse"
-    }
-
-    fn reset(&mut self) {
-        self.entites.clear();
-        self.contraintes.clear();
-        self.graines.clear();
-        self.dernier_deplace = None;
-        self.graine_avant_dernier = None;
-        self.unknown.clear();
-        self.ancrages_captures.clear();
-        self.capture_en_attente = None;
-        // `edition` n'est jamais remis à zéro : clé de cache monotone —
-        // deux contenus différents du croquis portent des éditions
-        // différentes, même après un rejeu complet.
-    }
-
-    fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
-        // Capture d'ancrage (ADR-0021 D2, révisée) : le déplacement
-        // posé par l'événement précédent ne survit qu'à la contrainte
-        // `PointFixe` du même point qui le suit immédiatement — tout
-        // autre événement l'abandonne.
-        let capture = self.capture_en_attente.take();
-        match event.event_type.as_str() {
-            EVENT_SKETCH_ENTITY_ADDED => {
-                verifie_schema_parmi(event, VERSIONS_ENTITE)?;
-                let (id, entite) = entite_de_journal(event)?;
-                if id != self.entites.len() as u32 {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason: format!("identifiant d'entité {id} non séquentiel"),
-                    });
-                }
-                if let Some(reason) = self.raison_refus_entite(&entite) {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason,
-                    });
-                }
-                self.entites.push((id, entite));
-                self.edition += 1;
-                Ok(())
-            }
-            EVENT_SKETCH_CONSTRAINT_ADDED => {
-                verifie_schema_parmi(event, VERSIONS_CONTRAINTE)?;
-                let (id, contrainte) = contrainte_de_journal(event)?;
-                if id != self.contraintes.len() as u32 {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason: format!("identifiant de contrainte {id} non séquentiel"),
-                    });
-                }
-                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason,
-                    });
-                }
-                // Capture d'ancrage (ADR-0021 D2, révisée) : le
-                // `PointFixe` du point déplacé à l'événement précédent
-                // fige la position affichée au moment de la pose — et
-                // rend ses droits à l'état de geste d'avant le
-                // déplacement capturé : l'ancrage n'est pas un
-                // geste, la passe épinglée du dernier vrai geste
-                // continue de tenir l'affichage (re-test du 24-10 :
-                // la forme sautait à la pose du point fixé).
-                if let ContrainteEsquisse::PointFixe { point } = &contrainte
-                    && let Some(capture) = &capture
-                    && capture.point == *point
-                {
-                    self.dernier_deplace = capture.dernier_deplace;
-                    self.graine_avant_dernier = capture.graine_avant_dernier;
-                    self.ancrages_captures.insert(*point, capture.position);
-                }
-                self.contraintes.push((id, contrainte));
-                self.edition += 1;
-                Ok(())
-            }
-            EVENT_SKETCH_CONSTRAINT_UPDATED => {
-                verifie_schema(event, VERSION_SCHEMA_MISE_A_JOUR)?;
-                let (id, contrainte) = contrainte_de_journal(event)?;
-                let Some(position) = self
-                    .contraintes
-                    .iter()
-                    .position(|(identifiant, _)| *identifiant == id)
-                else {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason: format!("contrainte {id} inconnue au croquis"),
-                    });
-                };
-                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason,
-                    });
-                }
-                // Identifiant conservé : seule la contrainte change,
-                // l'ordre d'ajout au journal fait foi (ADR-0019 §1).
-                self.contraintes[position].1 = contrainte;
-                self.edition += 1;
-                Ok(())
-            }
-            EVENT_SKETCH_POINT_MOVED => {
-                verifie_schema(event, VERSION_SCHEMA_DEPLACEMENT)?;
-                let point = champ_id(event, "point")?;
-                let x = Length::from_millimeters(champ_nombre(event, "x")?);
-                let y = Length::from_millimeters(champ_nombre(event, "y")?);
-                if let Some(reason) = self.raison_refus_deplacement(point, x, y) {
-                    return Err(SessionError::InvalidEventData {
-                        event_type: event.event_type.clone(),
-                        reason,
-                    });
-                }
-                // Capture d'ancrage (ADR-0021 D2, révisée) : le
-                // déplacement reste en attente de la contrainte
-                // `PointFixe` qui suit immédiatement, s'il vient —
-                // l'état de geste d'avant voyage avec : la capture
-                // n'est pas un geste (re-test du 24-10).
-                let capture = CaptureAncrage {
-                    point,
-                    position: (x, y),
-                    dernier_deplace: self.dernier_deplace,
-                    graine_avant_dernier: self.graine_avant_dernier,
-                };
-                self.graine_avant_dernier = self.position_graine(point);
-                self.graines.insert(point, (x, y));
-                self.dernier_deplace = Some(point);
-                self.capture_en_attente = Some(capture);
-                self.edition += 1;
-                Ok(())
-            }
-            _ => {
-                if !self.unknown.contains(&event.event_type) {
-                    self.unknown.push(event.event_type.clone());
-                }
-                Ok(())
-            }
-        }
-    }
-
-    fn types_connus(&self) -> &'static [&'static str] {
-        &[
-            EVENT_SKETCH_ENTITY_ADDED,
-            EVENT_SKETCH_CONSTRAINT_ADDED,
-            EVENT_SKETCH_CONSTRAINT_UPDATED,
-            EVENT_SKETCH_POINT_MOVED,
-        ]
-    }
-}

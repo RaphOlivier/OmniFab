@@ -1223,6 +1223,248 @@ fn l_ancrage_apres_un_geste_ne_fait_pas_sauter_la_forme() {
     }
 }
 
+/// L'ancrage du coin tiré ne flippe pas le rectangle rigide en
+/// symétrie (re-test du 24-10 : « quand je fixe un point, de temps
+/// en temps, le rectangle flippe en symétrie autour du point. Je
+/// pense que ça ne se fait qu'avec le premier point tracé ») : un
+/// croquis rigide en translation — H,H,V,V et les deux cotes —
+/// suit son geste en entier ; à la pose du point fixé, les graines
+/// du journal des autres points sont restées à leur position
+/// d'origine, loin de l'affiché translaté, et DogLeg retenait la
+/// branche miroir la plus proche de ces graines périmées. La pose
+/// reproduit d'abord l'affichage d'avant pose puis fige l'ancre à
+/// sa capture sur ces positions : aucune branche miroir ne peut
+/// plus être retenue.
+#[test]
+fn l_ancrage_du_point_tire_ne_flippe_pas_le_rectangle_rigide() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté ajouté");
+    }
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    // Le geste : le coin 0 — le premier point tracé — part à
+    // (150, 120) ; le rectangle rigide suit en entier.
+    session
+        .execute(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(150.0),
+            y: Length::from_millimeters(120.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(proche(resolu.position(0), 150.0, 120.0), "le coin 0 tient");
+    assert!(
+        proche(resolu.position(1), 250.0, 120.0),
+        "le rectangle suit le geste : le coin 1 est translaté"
+    );
+    assert!(
+        proche(resolu.position(3), 150.0, 170.0),
+        "le rectangle suit le geste : le coin 3 est translaté"
+    );
+    // La pose du point fixé sur le coin 0, à sa position affichée.
+    let (x0, y0) = mm(resolu.position(0));
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // La résolution d'après pose ne flippe pas : aucun miroir
+    // autour du point ancré, l'affichage d'avant pose tient.
+    let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(ancre.dof(), 0, "le rectangle ancré est de zéro DoF");
+    assert!(
+        proche(ancre.position(0), 150.0, 120.0),
+        "l'ancre tient sa capture"
+    );
+    assert!(
+        proche(ancre.position(1), 250.0, 120.0),
+        "le coin 1 ne flippe pas : pas en (50, 120)"
+    );
+    assert!(
+        proche(ancre.position(2), 250.0, 170.0),
+        "le coin 2 ne flippe pas : pas en (50, 70)"
+    );
+    assert!(
+        proche(ancre.position(3), 150.0, 170.0),
+        "le coin 3 ne flippe pas : pas en (150, 70)"
+    );
+    // Le rejeu reconstruit la même continuité : la fraîcheur de
+    // pose est dérivée du journal, la résolution est déterministe.
+    let octets = session.save_to_bytes().expect("octets");
+    let document = Document::from_bytes(&octets).expect("document");
+    let rejouee = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+    let rejoue = rejouee
+        .esquisse()
+        .resoudre(&mut solveur_rejeu)
+        .expect("résolu");
+    for point in 0..4 {
+        let (xa, ya) = mm(ancre.position(point));
+        let (xb, yb) = mm(rejoue.position(point));
+        assert!(
+            (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
+            "le rejeu tient la continuité du point {point}"
+        );
+    }
+}
+
+/// L'ancrage d'un autre coin que celui du geste ne flippe pas non
+/// plus (re-test du 24-10 : symétrie autour du point fixé) : la
+/// reproduction de l'affichage d'avant pose vaut quelle que soit
+/// la paire geste / point ancré.
+#[test]
+fn l_ancrage_apres_un_geste_ne_flippe_pas_le_rectangle_rigide() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté ajouté");
+    }
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+    ];
+    for contrainte in contraintes {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    // Le geste : le coin 2 part à (250, 170) — le rectangle
+    // rigide suit en entier, translation de (150, 120).
+    session
+        .execute(&MovePoint {
+            point: 2,
+            x: Length::from_millimeters(250.0),
+            y: Length::from_millimeters(170.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(
+        proche(resolu.position(0), 150.0, 120.0),
+        "le coin 0 suit le geste du coin 2"
+    );
+    assert!(
+        proche(resolu.position(2), 250.0, 170.0),
+        "le coin 2 tient sa visée"
+    );
+    // La pose du point fixé sur le coin 0 — un autre coin que
+    // celui du geste — à sa position affichée.
+    let (x0, y0) = mm(resolu.position(0));
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // La résolution d'après pose ne flippe pas autour de l'ancre.
+    let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert_eq!(ancre.dof(), 0, "le rectangle ancré est de zéro DoF");
+    assert!(
+        proche(ancre.position(0), 150.0, 120.0),
+        "l'ancre tient sa capture"
+    );
+    assert!(
+        proche(ancre.position(1), 250.0, 120.0),
+        "le coin 1 ne flippe pas : pas en (50, 120)"
+    );
+    assert!(
+        proche(ancre.position(2), 250.0, 170.0),
+        "le coin 2 ne flippe pas : pas en (50, 70)"
+    );
+    assert!(
+        proche(ancre.position(3), 150.0, 170.0),
+        "le coin 3 ne flippe pas : pas en (150, 70)"
+    );
+    // Le rejeu reconstruit la même continuité.
+    let octets = session.save_to_bytes().expect("octets");
+    let document = Document::from_bytes(&octets).expect("document");
+    let rejouee = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+    let rejoue = rejouee
+        .esquisse()
+        .resoudre(&mut solveur_rejeu)
+        .expect("résolu");
+    for point in 0..4 {
+        let (xa, ya) = mm(ancre.position(point));
+        let (xb, yb) = mm(rejoue.position(point));
+        assert!(
+            (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
+            "le rejeu tient la continuité du point {point}"
+        );
+    }
+}
+
 /// L'ancrage posé en DERNIER, après toutes les cotes, sans aucun
 /// geste (re-test du 24-10) : le point fixé fige sa position
 /// affichée pendant que les autres points partent des graines
@@ -1505,520 +1747,3 @@ fn l_annulation_vide_le_croquis_le_retablissement_le_restaure() {
 fn les_entites_invalides_sont_refusees() {
     let mut session = Session::new("tests");
     session
-        .execute(&AddEntity {
-            entite: EntiteEsquisse::Point {
-                x: Length::from_millimeters(0.0),
-                y: Length::from_millimeters(0.0),
-            },
-        })
-        .expect("point de référence");
-    let entites_invalides = vec![
-        EntiteEsquisse::Ligne { p1: 0, p2: 9 },
-        EntiteEsquisse::Ligne { p1: 0, p2: 0 },
-        EntiteEsquisse::Cercle {
-            centre: 9,
-            rayon: Length::from_millimeters(10.0),
-        },
-        EntiteEsquisse::Cercle {
-            centre: 0,
-            rayon: Length::from_millimeters(0.0),
-        },
-        EntiteEsquisse::Arc {
-            centre: 0,
-            debut: 0,
-            fin: 9,
-            rayon: Length::from_millimeters(10.0),
-            angle_debut: Angle::from_radians(0.0),
-            angle_fin: Angle::from_radians(1.0),
-        },
-        EntiteEsquisse::Point {
-            x: Length::from_millimeters(f64::NAN),
-            y: Length::from_millimeters(0.0),
-        },
-    ];
-    for entite in entites_invalides {
-        let resultat = session.execute(&AddEntity { entite });
-        assert!(resultat.is_err(), "l'entité invalide doit être refusée");
-        assert_eq!(session.document().events().len(), 1);
-    }
-    let contraintes_invalides = vec![
-        ContrainteEsquisse::Coincidence { p1: 0, p2: 0 },
-        ContrainteEsquisse::Distance {
-            p1: 0,
-            p2: 9,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(10.0),
-            },
-        },
-        ContrainteEsquisse::RayonCercle {
-            cercle: 0,
-            valeur: Length::from_millimeters(10.0),
-        },
-    ];
-    for contrainte in contraintes_invalides {
-        let resultat = session.execute(&AddConstraint { contrainte });
-        assert!(resultat.is_err(), "contrainte invalide refusée");
-        assert_eq!(session.document().events().len(), 1);
-    }
-}
-
-/// Les tags solveur sont exposés par contrainte du croquis ; ils
-/// sont distincts deux à deux, et l’ancrage `PointFixe` n’en a pas —
-/// ce n’est pas une contrainte du solveur, le diagnostic ne peut
-/// jamais le référencer (ADR-0018 D3, lot 3 : affichage des
-/// redondances par l’application).
-#[test]
-fn les_tags_des_contraintes_sont_exposes() {
-    let session = croquis_rectangle();
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    assert!(
-        resolu.tag(0).is_none(),
-        "l’ancrage PointFixe n’a pas de tag solveur"
-    );
-    let mut tags = Vec::new();
-    for id in 1..7u32 {
-        tags.push(resolu.tag(id).expect("contrainte du solveur"));
-    }
-    assert_eq!(tags.len(), 6, "six contraintes posées au solveur");
-    for i in 0..tags.len() {
-        for j in i + 1..tags.len() {
-            assert_ne!(tags[i], tags[j], "les tags sont distincts");
-        }
-    }
-}
-
-/// Le croquis est clonable en un instantané détaché de la session :
-/// l’annulation dans la session ne touche pas l’instantané, et la
-/// résolution du clone sur un solveur frais retombe sur la
-/// forme exacte (pattern C1 du lot 3 : la résolution part sur
-/// le fil de travail avec une copie du croquis).
-#[test]
-fn le_clone_de_l_esquisse_resout_identiquement() {
-    let mut session = croquis_rectangle();
-    let instantane = session.esquisse().clone();
-    session.undo().expect("undo de la dernière contrainte");
-    assert_eq!(instantane.contraintes().len(), 7, "instantané détaché");
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = instantane.resoudre(&mut solveur).expect("résolu");
-    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
-    forme_exacte(&resolu);
-}
-
-/// Le point relâché reste où on le lâche (re-validation §7) : une
-/// contrainte de distance relie deux points ; déplacer l'un d'eux
-/// épingle sa position germe, l'autre absorbe l'ajustement — plus
-/// aucune « moyenne » des deux déplacements.
-#[test]
-fn le_point_relache_reste_ou_on_le_lache() {
-    let mut session = Session::new("tests");
-    for (x, y) in [(0.0, 0.0), (40.0, 0.0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Point {
-                    x: Length::from_millimeters(x),
-                    y: Length::from_millimeters(y),
-                },
-            })
-            .expect("point ajouté");
-    }
-    session
-        .execute(&AddConstraint {
-            contrainte: ContrainteEsquisse::Distance {
-                p1: 0,
-                p2: 1,
-                valeur: ValeurCote::Fixe {
-                    mm: Length::from_millimeters(40.0),
-                },
-            },
-        })
-        .expect("distance posée");
-    session
-        .execute(&MovePoint {
-            point: 1,
-            x: Length::from_millimeters(90.0),
-            y: Length::from_millimeters(30.0),
-        })
-        .expect("déplacement");
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    // Le point relâché garde exactement sa position germe.
-    assert!(
-        proche(resolu.position(1), 90.0, 30.0),
-        "le point relâché reste où on le lâche"
-    );
-    // L'autre point absorbe : la distance reste tenue autour de la
-    // nouvelle position.
-    let (x1, y1) = resolu.position(0).expect("p1 résolu");
-    let dx = x1.millimeters() - 90.0;
-    let dy = y1.millimeters() - 30.0;
-    assert!(
-        (dx * dx + dy * dy - 1600.0).abs() < 1e-6,
-        "la distance de 40 mm reste tenue"
-    );
-}
-
-/// Croquis entièrement contraint : le repli tient — la passe
-/// épinglée du point déplacé entre en conflit avec les contraintes
-/// ET l'ancrage figé à sa position de base (CI #275) ; la
-/// résolution de base reste la réponse : aucun conflit, forme
-/// exacte du rectangle, le coin tiré ne ré-ancre pas la forme.
-#[test]
-fn un_croquis_totalement_contraint_replie_sur_la_passe_de_base() {
-    let mut session = croquis_rectangle();
-    session
-        .execute(&MovePoint {
-            point: 2,
-            x: Length::from_millimeters(130.0),
-            y: Length::from_millimeters(20.0),
-        })
-        .expect("déplacement");
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    assert_eq!(resolu.dof(), 0, "croquis entièrement contraint");
-    assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
-    assert!(
-        !proche(resolu.position(2), 130.0, 20.0),
-        "le coin tiré ne ré-ancre pas le rectangle sur sa graine"
-    );
-    forme_exacte(&resolu);
-}
-
-/// Croquis rigide en translation (DoF 2, aucun ancrage) : le geste
-/// du point relâché se transmet au croquis entier — le rectangle
-/// suit le coin tiré, il ne s'arrête plus « à mi-chemin ».
-#[test]
-fn le_croquis_rigide_suit_le_geste() {
-    let mut session = Session::new("tests");
-    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Point {
-                    x: Length::from_millimeters(x),
-                    y: Length::from_millimeters(y),
-                },
-            })
-            .expect("point ajouté");
-    }
-    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Ligne { p1, p2 },
-            })
-            .expect("ligne ajoutée");
-    }
-    let contraintes = [
-        ContrainteEsquisse::Horizontale { ligne: 4 },
-        ContrainteEsquisse::Horizontale { ligne: 6 },
-        ContrainteEsquisse::Verticale { ligne: 5 },
-        ContrainteEsquisse::Verticale { ligne: 7 },
-        ContrainteEsquisse::Distance {
-            p1: 0,
-            p2: 1,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(100.0),
-            },
-        },
-        ContrainteEsquisse::Distance {
-            p1: 1,
-            p2: 2,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(50.0),
-            },
-        },
-    ];
-    for contrainte in contraintes {
-        session
-            .execute(&AddConstraint { contrainte })
-            .expect("contrainte ajoutée");
-    }
-    session
-        .execute(&MovePoint {
-            point: 2,
-            x: Length::from_millimeters(130.0),
-            y: Length::from_millimeters(70.0),
-        })
-        .expect("déplacement");
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
-    assert_eq!(resolu.dof(), 2, "translation libre, forme rigide");
-    // Le point relâché reste où on le lâche…
-    assert!(
-        proche(resolu.position(2), 130.0, 70.0),
-        "le coin relâché tient sa graine"
-    );
-    // …et le rectangle entier suit le geste : translation (30, 20).
-    assert!(proche(resolu.position(0), 30.0, 20.0), "coin 0 suit");
-    assert!(proche(resolu.position(1), 130.0, 20.0), "coin 1 suit");
-    assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
-}
-
-/// Des graines confondues ne font pas échouer la résolution (re-test
-/// du 2026-10-23) : un carré affaissé par deux orientations posées
-/// sur des côtés opposés laisse des points exactement superposés —
-/// le gradient d'une cote de distance est indéfini aux graines,
-/// DogLeg échouait alors que le croquis a une solution. La passe
-/// répare en écartant les graines confondues d'un epsilon
-/// déterministe : la cote tient, sans conflit.
-#[test]
-fn des_graines_confondues_ne_font_pas_echouer_la_resolution() {
-    let mut session = Session::new("tests");
-    for (x, y) in [(0.0, 0.0), (0.0, 0.0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Point {
-                    x: Length::from_millimeters(x),
-                    y: Length::from_millimeters(y),
-                },
-            })
-            .expect("point ajouté");
-    }
-    session
-        .execute(&AddConstraint {
-            contrainte: ContrainteEsquisse::Distance {
-                p1: 0,
-                p2: 1,
-                valeur: ValeurCote::Fixe {
-                    mm: Length::from_millimeters(50.0),
-                },
-            },
-        })
-        .expect("contrainte ajoutée");
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session
-        .esquisse()
-        .resoudre(&mut solveur)
-        .expect("résolu : les graines confondues sont réparées");
-    assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
-    let (x0, y0) = mm(resolu.position(0));
-    let (x1, y1) = mm(resolu.position(1));
-    assert!(
-        ((x1 - x0).hypot(y1 - y0) - 50.0).abs() < 1e-6,
-        "la cote de distance tient"
-    );
-}
-
-/// L'aperçu de glissement suit le geste sans écrire au journal
-/// (re-test du 2026-10-23) : la projection d'aperçu reçoit la
-/// position visée comme relâchement provisoire — un croquis rigide
-/// suit en entier, exactement comme au relâchement — et le journal
-/// de la session reste inchangé.
-#[test]
-fn l_apercu_de_glissement_suite_le_geste_sans_ecrire_au_journal() {
-    let mut session = Session::new("tests");
-    for (x, y) in [(0.0, 0.0), (100.0, 0.0), (100.0, 50.0), (0.0, 50.0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Point {
-                    x: Length::from_millimeters(x),
-                    y: Length::from_millimeters(y),
-                },
-            })
-            .expect("point ajouté");
-    }
-    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
-        session
-            .execute(&AddEntity {
-                entite: EntiteEsquisse::Ligne { p1, p2 },
-            })
-            .expect("ligne ajoutée");
-    }
-    let contraintes = [
-        ContrainteEsquisse::Horizontale { ligne: 4 },
-        ContrainteEsquisse::Horizontale { ligne: 6 },
-        ContrainteEsquisse::Verticale { ligne: 5 },
-        ContrainteEsquisse::Verticale { ligne: 7 },
-        ContrainteEsquisse::Distance {
-            p1: 0,
-            p2: 1,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(100.0),
-            },
-        },
-        ContrainteEsquisse::Distance {
-            p1: 1,
-            p2: 2,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(50.0),
-            },
-        },
-    ];
-    for contrainte in contraintes {
-        session
-            .execute(&AddConstraint { contrainte })
-            .expect("contrainte ajoutée");
-    }
-    let mut solveur = Systeme2D::new().expect("solveur");
-    let _ = session
-        .esquisse()
-        .resoudre(&mut solveur)
-        .expect("résolu : le rectangle de départ tient");
-    let edition = session.esquisse().edition();
-    // Aperçu du point 1 visé à (130, 20) : rien au journal, la
-    // forme suit en entier, comme au relâchement.
-    let apercu = session
-        .esquisse()
-        .apercu_de_glissement(
-            1,
-            Length::from_millimeters(130.0),
-            Length::from_millimeters(20.0),
-        )
-        .expect("point saisi");
-    let resolu = apercu.resoudre(&mut solveur).expect("aperçu résolu");
-    assert_eq!(session.esquisse().edition(), edition, "rien au journal");
-    assert!(
-        proche(resolu.position(1), 130.0, 20.0),
-        "le point saisi tient la visée"
-    );
-    assert!(proche(resolu.position(0), 30.0, 20.0), "coin 0 suit");
-    assert!(proche(resolu.position(2), 130.0, 70.0), "coin 2 suit");
-    assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
-}
-
-/// L'ordre de pose ne change pas un croquis entièrement contraint
-/// (retour de Raphaël du 24-10 : mêmes contraintes, deux ordres de
-/// pose) : mêmes entités, mêmes graines, zéro degré de liberté —
-/// les positions résolues sont identiques à la tolérance près,
-/// quel que soit l'ordre d'écriture au journal.
-#[test]
-fn l_ordre_de_pose_ne_change_pas_un_croquis_entierement_contraint() {
-    let contraintes = [
-        ContrainteEsquisse::Horizontale { ligne: 4 },
-        ContrainteEsquisse::Horizontale { ligne: 6 },
-        ContrainteEsquisse::Verticale { ligne: 5 },
-        ContrainteEsquisse::Verticale { ligne: 7 },
-        ContrainteEsquisse::Distance {
-            p1: 0,
-            p2: 1,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(100.0),
-            },
-        },
-        ContrainteEsquisse::Distance {
-            p1: 1,
-            p2: 2,
-            valeur: ValeurCote::Fixe {
-                mm: Length::from_millimeters(50.0),
-            },
-        },
-        ContrainteEsquisse::PointFixe { point: 0 },
-    ];
-    // Ordre A : orientations, cotes, ancrage. Ordre B : la même
-    // palette entièrement mélangée.
-    let ordres = [[0, 1, 2, 3, 4, 5, 6], [4, 6, 0, 5, 3, 2, 1]];
-    let mut resolutions = Vec::new();
-    for ordre in ordres {
-        let mut session = Session::new("tests");
-        for (x, y) in [(0.0, 0.0), (80.0, -3.0), (97.0, 44.0), (-6.0, 51.0)] {
-            session
-                .execute(&AddEntity {
-                    entite: EntiteEsquisse::Point {
-                        x: Length::from_millimeters(x),
-                        y: Length::from_millimeters(y),
-                    },
-                })
-                .expect("point ajouté");
-        }
-        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
-            session
-                .execute(&AddEntity {
-                    entite: EntiteEsquisse::Ligne { p1, p2 },
-                })
-                .expect("ligne ajoutée");
-        }
-        for indice in ordre {
-            session
-                .execute(&AddConstraint {
-                    contrainte: contraintes[indice].clone(),
-                })
-                .expect("contrainte ajoutée");
-        }
-        let mut solveur = Systeme2D::new().expect("solveur");
-        let resolu = session
-            .esquisse()
-            .resoudre(&mut solveur)
-            .expect("résolu quel que soit l'ordre");
-        assert_eq!(resolu.dof(), 0, "zéro DoF dans tous les ordres");
-        resolutions.push(resolu);
-    }
-    for point in 0..4 {
-        let (xa, ya) = mm(resolutions[0].position(point));
-        let (xb, yb) = mm(resolutions[1].position(point));
-        assert!(
-            (xa - xb).abs() < 1e-6 && (ya - yb).abs() < 1e-6,
-            "le point {point} résout à l'identique quel que soit l'ordre"
-        );
-    }
-}
-
-/// Un croquis sous-contraint garantit l'essentiel quel que soit
-/// l'ordre de pose (retour de Raphaël du 24-10 : H,H,V,V contre
-/// H,V,H,V sur le même rectangle) : le même nombre de degrés de
-/// liberté, aucune contrainte conflictuelle, chaque orientation
-/// satisfaite. La distribution des degrés de liberté restants —
-/// largeur, hauteur, translation : le rectangle sans cotes n'est
-/// pas rigide — relève du choix du solveur et peut différer avec
-/// l'ordre : les positions ne sont pas comparées, seules ces
-/// garanties sont contractuelles.
-#[test]
-fn l_ordre_de_pose_garantit_les_contraintes_meme_sous_contraint() {
-    let orientations = [
-        ContrainteEsquisse::Horizontale { ligne: 4 },
-        ContrainteEsquisse::Horizontale { ligne: 6 },
-        ContrainteEsquisse::Verticale { ligne: 5 },
-        ContrainteEsquisse::Verticale { ligne: 7 },
-    ];
-    // H,H,V,V contre H,V,H,V : les deux ordres du retour.
-    let ordres = [[0, 1, 2, 3], [0, 2, 1, 3]];
-    let mut resolutions = Vec::new();
-    for ordre in ordres {
-        let mut session = Session::new("tests");
-        for (x, y) in [(0.0, 0.0), (80.0, -3.0), (97.0, 44.0), (-6.0, 51.0)] {
-            session
-                .execute(&AddEntity {
-                    entite: EntiteEsquisse::Point {
-                        x: Length::from_millimeters(x),
-                        y: Length::from_millimeters(y),
-                    },
-                })
-                .expect("point ajouté");
-        }
-        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
-            session
-                .execute(&AddEntity {
-                    entite: EntiteEsquisse::Ligne { p1, p2 },
-                })
-                .expect("ligne ajoutée");
-        }
-        for indice in ordre {
-            session
-                .execute(&AddConstraint {
-                    contrainte: orientations[indice].clone(),
-                })
-                .expect("contrainte ajoutée");
-        }
-        let mut solveur = Systeme2D::new().expect("solveur");
-        resolutions.push(
-            session
-                .esquisse()
-                .resoudre(&mut solveur)
-                .expect("résolu quel que soit l'ordre"),
-        );
-    }
-    assert_eq!(
-        resolutions[0].dof(),
-        resolutions[1].dof(),
-        "le même nombre de degrés de liberté reste libre"
-    );
-    for resolu in &resolutions {
-        assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
-        let (x0, y0) = mm(resolu.position(0));
-        let (x1, y1) = mm(resolu.position(1));
-        let (x2, y2) = mm(resolu.position(2));
-        let (x3, y3) = mm(resolu.position(3));
-        assert!((y1 - y0).abs() < 1e-6, "bord haut horizontal");
-        assert!((y3 - y2).abs() < 1e-6, "bord bas horizontal");
-        assert!((x2 - x1).abs() < 1e-6, "flanc droit vertical");
-        assert!((x3 - x0).abs() < 1e-6, "flanc gauche vertical");
-    }
-}
