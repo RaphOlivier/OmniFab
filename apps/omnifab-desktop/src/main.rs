@@ -3853,6 +3853,24 @@ mod tests {
         panic!("la résolution du croquis ne revient jamais");
     }
 
+    /// Pompe le retour de l'aperçu de glissement : la boucle ne
+    /// tient que l'aperçu en vol (`apercu_en_attente`), jamais la
+    /// résolution — même canal, deux attentes distinctes.
+    fn pomper_l_apercu(app: &mut DemoApp) {
+        for _ in 0..2_000 {
+            if !app.apercu_en_attente {
+                return;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("l'aperçu de glissement ne revient jamais");
+    }
+
     /// Le croquis contraint se résout au fil de travail : une entité
     /// posée, une demande, le cache reçoit les positions résolues
     /// (ADR-0018 D3).
@@ -4621,7 +4639,7 @@ mod tests {
             Length::from_millimeters(pas * 5.0),
             Length::from_millimeters(pas * 2.0),
         );
-        pomper_les_retours(&mut app);
+        pomper_l_apercu(&mut app);
         let resolu = app
             .croquis_apercu
             .as_ref()
@@ -4664,7 +4682,7 @@ mod tests {
             Length::from_millimeters(pas * 2.0),
             Length::from_millimeters(pas),
         );
-        pomper_les_retours(&mut app);
+        pomper_l_apercu(&mut app);
         // Relâchement : la graine part au journal, le frais vole —
         // l'aperçu du geste reste l'affichage du vol.
         atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
