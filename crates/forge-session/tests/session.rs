@@ -1116,6 +1116,110 @@ fn l_ancrage_fige_la_position_affichee_apres_un_geste() {
     assert!(proche(rejoue.position(0), 10.0, 20.0), "le rejeu tient");
 }
 
+/// L'ancrage après un geste ne fait pas sauter la forme (re-test du
+/// 24-10 : saut à la pose du point fixé) : la capture d'ancrage
+/// n'est pas un geste — l'état de geste survit à la pose, la passe
+/// épinglée du dernier vrai geste continue de tenir l'affichage.
+/// Sans la conservation, le déplacement capturé devenait LE
+/// dernier geste et, le point ancré n'étant pas épinglable, la
+/// résolution retombait sur la seule passe de base : la
+/// distribution des degrés de liberté changeait et la forme
+/// sautait au moment de la pose.
+#[test]
+fn l_ancrage_apres_un_geste_ne_fait_pas_sauter_la_forme() {
+    let mut session = Session::new("tests");
+    for (x, y) in [(0.0, 0.0), (240.0, 0.0), (240.0, 160.0), (0.0, 160.0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point ajouté");
+    }
+    for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+        session
+            .execute(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("ligne ajoutée");
+    }
+    let orientations = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+    ];
+    for contrainte in orientations {
+        session
+            .execute(&AddConstraint { contrainte })
+            .expect("contrainte ajoutée");
+    }
+    // Le geste : le coin 2 part à (100, 100) — la passe épinglée
+    // tient l'affichage, le rectangle épouse la graine visée.
+    session
+        .execute(&MovePoint {
+            point: 2,
+            x: Length::from_millimeters(100.0),
+            y: Length::from_millimeters(100.0),
+        })
+        .expect("déplacement");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(
+        proche(resolu.position(1), 100.0, 0.0),
+        "la passe épinglée tient : le coin 1 suit le geste"
+    );
+    assert!(
+        proche(resolu.position(3), 0.0, 100.0),
+        "la passe épinglée tient : le coin 3 suit le geste"
+    );
+    // La pose du point fixé sur le coin 0, à sa position affichée.
+    let (x0, y0) = mm(resolu.position(0));
+    session
+        .execute(&AncrerPoint {
+            point: 0,
+            x: Length::from_millimeters(x0),
+            y: Length::from_millimeters(y0),
+        })
+        .expect("ancrage posé");
+    // La résolution d'après la pose tient l'affichage : la forme ne
+    // saute pas, la passe épinglée du geste survit à l'ancrage.
+    let ancre = session.esquisse().resoudre(&mut solveur).expect("résolu");
+    assert!(
+        proche(ancre.position(1), 100.0, 0.0),
+        "le coin 1 ne saute pas à la pose du point fixé"
+    );
+    assert!(
+        proche(ancre.position(2), 100.0, 100.0),
+        "le coin 2 ne saute pas à la pose du point fixé"
+    );
+    assert!(
+        proche(ancre.position(3), 0.0, 100.0),
+        "le coin 3 ne saute pas à la pose du point fixé"
+    );
+    assert!(proche(ancre.position(0), x0, y0), "l'ancre tient sa capture");
+    // Le rejeu reconstruit la même continuité : l'état de geste est
+    // dérivé du journal, la conservation est déterministe.
+    let octets = session.save_to_bytes().expect("octets");
+    let document = Document::from_bytes(&octets).expect("document");
+    let rejouee = Session::from_document("tests", document).expect("rejeu");
+    let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+    let rejoue = rejouee
+        .esquisse()
+        .resoudre(&mut solveur_rejeu)
+        .expect("résolu");
+    for point in 0..4 {
+        let (xa, ya) = mm(ancre.position(point));
+        let (xb, yb) = mm(rejoue.position(point));
+        assert!(
+            (xa - xb).abs() < 1e-9 && (ya - yb).abs() < 1e-9,
+            "le rejeu tient la continuité du point {point}"
+        );
+    }
+}
+
 /// Un relâchement accroché sur le point ancré ne fait pas échouer
 /// la résolution (re-test du 2026-10-23) : la graine du point
 /// relâché tombe exactement sur la position capturée du point

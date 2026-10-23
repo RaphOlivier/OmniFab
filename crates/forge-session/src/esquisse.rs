@@ -702,6 +702,24 @@ impl CroquisResolu {
     }
 }
 
+/// Capture d'ancrage en attente (ADR-0021 D2, révisée le
+/// 2026-10-23) : le déplacement qui précède immédiatement la
+/// contrainte `PointFixe` du même point, avec l'état de geste
+/// d'avant ce déplacement — restauré à la consommation, la capture
+/// d'ancrage n'étant pas un geste (re-test du 24-10 : la pose du
+/// point fixé ne doit pas faire sauter la forme).
+#[derive(Debug, Clone)]
+struct CaptureAncrage {
+    /// Point déplacé, futur point ancré.
+    point: u32,
+    /// Position affichée capturée : la graine du point ancré.
+    position: (Length, Length),
+    /// Dernier point déplacé avant le déplacement capturé.
+    dernier_deplace: Option<u32>,
+    /// Graine d'avant geste avant le déplacement capturé.
+    graine_avant_dernier: Option<(Length, Length)>,
+}
+
 /// Projection du croquis contraint (ADR-0018) : entités, contraintes
 /// et graines de position rejouées depuis le journal ; les positions
 /// résolues sont un état dérivé, calculé à la demande via
@@ -735,11 +753,17 @@ pub struct EsquisseProjection {
     /// point EST la position capturée : la passe de base le fige
     /// avant la première résolution — la forme ne saute jamais.
     ancrages_captures: BTreeMap<u32, (Length, Length)>,
-    /// Déplacement en attente de capture : posé par le dernier
-    /// `sketch.point.moved` appliqué, consommé par la contrainte
-    /// `PointFixe` du même point qui suit immédiatement — tout autre
-    /// événement appliqué l'abandonne.
-    capture_en_attente: Option<(u32, (Length, Length))>,
+    /// Capture d'ancrage en attente (ADR-0021 D2, révisée le
+    /// 2026-10-23) : posée par le dernier `sketch.point.moved`
+    /// appliqué, consommée par la contrainte `PointFixe` du même
+    /// point qui suit immédiatement — tout autre événement appliqué
+    /// l'abandonne. L'état de geste d'avant le déplacement capturé
+    /// voyage avec : la capture n'est pas un geste, la consommation
+    /// lui rend ses droits — sinon le déplacement capturé devenait
+    /// le dernier geste et la forme sautait à la pose (re-test du
+    /// 24-10 : la passe épinglée du vrai geste disparaissait au
+    /// profit de la seule passe de base).
+    capture_en_attente: Option<CaptureAncrage>,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
     /// remis à zéro (clé de cache monotone pour l'application).
     edition: u64,
@@ -1050,6 +1074,8 @@ impl EsquisseProjection {
     /// 2, point 8) — fige son point à la position capturée dès la
     /// passe de base : la forme ne saute pas entre l'affichage
     /// d'avant pose et celui d'après, le reste du croquis absorbe.
+    /// La pose ne consomme pas l'état de geste : le dernier vrai
+    /// geste garde sa passe épinglée (re-test du 24-10).
     ///
     /// Une passe de base que DogLeg ne vient pas à bout — graines
     /// dégénérées, typiquement un relâchement accroché sur un autre
@@ -1677,13 +1703,19 @@ impl Projection for EsquisseProjection {
                 }
                 // Capture d'ancrage (ADR-0021 D2, révisée) : le
                 // `PointFixe` du point déplacé à l'événement précédent
-                // fige la position affichée au moment de la pose —
-                // avant le déplacement de la valeur au vecteur.
+                // fige la position affichée au moment de la pose — et
+                // rend ses droits à l'état de geste d'avant le
+                // déplacement capturé : l'ancrage n'est pas un
+                // geste, la passe épinglée du dernier vrai geste
+                // continue de tenir l'affichage (re-test du 24-10 :
+                // la forme sautait à la pose du point fixé).
                 if let ContrainteEsquisse::PointFixe { point } = &contrainte
-                    && let Some((point_deplace, position)) = &capture
-                    && *point_deplace == *point
+                    && let Some(capture) = &capture
+                    && capture.point == *point
                 {
-                    self.ancrages_captures.insert(*point, *position);
+                    self.dernier_deplace = capture.dernier_deplace;
+                    self.graine_avant_dernier = capture.graine_avant_dernier;
+                    self.ancrages_captures.insert(*point, capture.position);
                 }
                 self.contraintes.push((id, contrainte));
                 self.edition += 1;
@@ -1725,13 +1757,21 @@ impl Projection for EsquisseProjection {
                         reason,
                     });
                 }
+                // Capture d'ancrage (ADR-0021 D2, révisée) : le
+                // déplacement reste en attente de la contrainte
+                // `PointFixe` qui suit immédiatement, s'il vient —
+                // l'état de geste d'avant voyage avec : la capture
+                // n'est pas un geste (re-test du 24-10).
+                let capture = CaptureAncrage {
+                    point,
+                    position: (x, y),
+                    dernier_deplace: self.dernier_deplace,
+                    graine_avant_dernier: self.graine_avant_dernier,
+                };
                 self.graine_avant_dernier = self.position_graine(point);
                 self.graines.insert(point, (x, y));
                 self.dernier_deplace = Some(point);
-                // Capture d'ancrage (ADR-0021 D2, révisée) : le
-                // déplacement reste en attente de la contrainte
-                // `PointFixe` qui suit immédiatement, s'il vient.
-                self.capture_en_attente = Some((point, (x, y)));
+                self.capture_en_attente = Some(capture);
                 self.edition += 1;
                 Ok(())
             }
