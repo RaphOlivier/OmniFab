@@ -1556,3 +1556,447 @@ impl EsquisseProjection {
                     reconstruction.cercles.insert(*id, identifiant);
                 }
                 EntiteEsquisse::Arc {
+                    centre,
+                    debut,
+                    fin,
+                    rayon,
+                    angle_debut,
+                    angle_fin,
+                } => {
+                    // Aucune contrainte ne référence un arc en v1 : son
+                    // identifiant solveur n'a pas besoin d'être gardé.
+                    solveur.ajouter_arc(
+                        reconstruction.id_point(*centre)?,
+                        reconstruction.id_point(*debut)?,
+                        reconstruction.id_point(*fin)?,
+                        *rayon,
+                        *angle_debut,
+                        *angle_fin,
+                    )?;
+                }
+            }
+        }
+        if let Some(id) = passe.epingle {
+            solveur.fixer_point(reconstruction.id_point(id)?)?;
+        }
+        if let Some(ancres) = passe.ancres {
+            for (point, _) in ancres {
+                solveur.fixer_point(reconstruction.id_point(*point)?)?;
+            }
+        }
+        let mut tags = BTreeMap::new();
+        let mut ancrages = Vec::new();
+        for (id, contrainte) in &self.contraintes {
+            match contrainte {
+                // L'ancrage capturé (ADR-0021 D2, révisée le
+                // 2026-10-23 — re-test jalon 2, point 8) se fige avant
+                // la première résolution : la graine du point EST la
+                // position affichée capturée à la pose, la forme ne
+                // saute pas, le reste absorbe. L'ancrage non capturé
+                // (journaux hérités) s'épingle après la résolution de
+                // base : il fige la position résolue du point (celle
+                // que l'utilisateur voit), pas sa graine — la forme
+                // ne saute jamais au moment de l'ancrage (retour
+                // checklist jalon 2). Le repli d'ancrage différé
+                // (re-test du 24-10) fait suivre aux ancrages
+                // capturés le sort des hérités : figés à leur
+                // position résolue après un premier passage sans
+                // point figé — la résolution ne doit jamais échouer
+                // sur des graines mélangées quand le croquis a une
+                // solution.
+                ContrainteEsquisse::PointFixe { point } => {
+                    if passe.ancres.is_none() && Some(*point) != passe.exclu {
+                        if !passe.differe_captures && self.ancrages_captures.contains_key(point) {
+                            solveur.fixer_point(reconstruction.id_point(*point)?)?;
+                        } else {
+                            ancrages.push(reconstruction.id_point(*point)?);
+                        }
+                    }
+                }
+                _ => {
+                    if let Some(tag) = applique_contrainte(solveur, &reconstruction, contrainte)? {
+                        tags.insert(*id, tag);
+                    }
+                }
+            }
+        }
+        solveur.resoudre(Algorithme::DogLeg)?;
+        // L'ancrage n'altère le résultat que s'il existe : sans
+        // PointFixe, un second passage ne servirait à rien et le
+        // comportement reste exactement celui d'avant l'ancrage
+        // post-résolution.
+        if !ancrages.is_empty() {
+            for point in ancrages {
+                solveur.fixer_point(point)?;
+            }
+            solveur.resoudre(Algorithme::DogLeg)?;
+        }
+        let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
+        let mut positions = BTreeMap::new();
+        for (id, identifiant) in &reconstruction.points {
+            let position = solveur.position_point(*identifiant)?;
+            positions.insert(*id, position);
+        }
+        Ok(CroquisResolu {
+            positions,
+            dof: diagnostic.dof(),
+            reproductible: diagnostic.reproductible(),
+            conflictuelles: diagnostic.conflictuelles().to_vec(),
+            redondantes: diagnostic.redondantes().to_vec(),
+            partiellement_redondantes: diagnostic.partiellement_redondantes().to_vec(),
+            tags,
+        })
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas un point connu.
+    fn raison_point(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Point) {
+            None
+        } else {
+            Some(format!("le point {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas une ligne connue.
+    fn raison_ligne(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Ligne) {
+            None
+        } else {
+            Some(format!("la ligne {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle un identifiant n'est pas un cercle connu.
+    fn raison_cercle(&self, id: u32) -> Option<String> {
+        if self.genre_entite(id) == Some(GenreEntite::Cercle) {
+            None
+        } else {
+            Some(format!("le cercle {id} n'existe pas"))
+        }
+    }
+
+    /// Raison pour laquelle l'un des deux identifiants n'est pas un
+    /// point connu.
+    fn raison_deux_points(&self, p1: u32, p2: u32) -> Option<String> {
+        self.raison_point(p1).or_else(|| self.raison_point(p2))
+    }
+
+    /// Raison pour laquelle l'un des deux identifiants n'est pas une
+    /// ligne connue.
+    fn raison_deux_lignes(&self, ligne1: u32, ligne2: u32) -> Option<String> {
+        self.raison_ligne(ligne1)
+            .or_else(|| self.raison_ligne(ligne2))
+    }
+
+    /// Raison pour laquelle une coordonnée n'est pas un nombre fini.
+    fn raison_finie(valeur: f64, nom: &str) -> Option<String> {
+        if valeur.is_finite() {
+            None
+        } else {
+            Some(format!("{nom} doit être un nombre fini"))
+        }
+    }
+
+    /// Raison pour laquelle une cote n'est pas finie et strictement
+    /// positive.
+    fn raison_positive(valeur: f64, nom: &str) -> Option<String> {
+        if valeur.is_finite() && valeur > 0.0 {
+            None
+        } else {
+            Some(format!("{nom} doit être finie et strictement positive"))
+        }
+    }
+
+    /// Raison du refus d'une cote de distance (ADR-0019) : fixe
+    /// invalide ou expression vide.
+    fn raison_cote(valeur: &ValeurCote) -> Option<String> {
+        match valeur {
+            ValeurCote::Fixe { mm } => Self::raison_positive(mm.millimeters(), "la distance"),
+            ValeurCote::Expression { texte, .. } => {
+                if texte.trim().is_empty() {
+                    Some("l'expression de la cote ne peut pas être vide".to_string())
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
+    /// Raison pour laquelle un angle n'est pas fini.
+    fn raison_angle(valeur: f64) -> Option<String> {
+        if valeur.is_finite() {
+            None
+        } else {
+            Some("l'angle doit être fini".to_string())
+        }
+    }
+}
+
+/// Traduit une contrainte du croquis vers le solveur et l’ajoute
+/// (ADR-0018 D1 : les onze genres du trait plus l’ancrage
+/// `PointFixe`). Renvoie le tag solveur de la contrainte posée ;
+/// l’ancrage n’a pas de tag — ce n’est pas une contrainte du
+/// solveur, le diagnostic ne peut jamais le référencer.
+fn applique_contrainte(
+    solveur: &mut dyn Solveur2D,
+    reconstruction: &Reconstruction,
+    contrainte: &ContrainteEsquisse,
+) -> Result<Option<TagContrainte>, GcsError> {
+    match contrainte {
+        ContrainteEsquisse::Coincidence { p1, p2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Coincidence {
+                p1: reconstruction.id_point(*p1)?,
+                p2: reconstruction.id_point(*p2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Horizontale { ligne } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Horizontale {
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Verticale { ligne } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Verticale {
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Distance { p1, p2, valeur } => {
+            // Frontière forge-values → forge-gcs (ADR-0019) : le
+            // solveur ne voit jamais une expression — la session fige
+            // les cotes pilotées avant de résoudre.
+            let ValeurCote::Fixe { mm } = valeur else {
+                return Err(GcsError::AbiInvalide {
+                    contexte: format!(
+                        "la cote pilotée « {} » doit être figée avant la résolution",
+                        alias_de_cote(valeur)
+                    ),
+                });
+            };
+            let tag = solveur.ajouter_contrainte(Contrainte::Distance {
+                p1: reconstruction.id_point(*p1)?,
+                p2: reconstruction.id_point(*p2)?,
+                valeur: *mm,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::PointSurLigne { point, ligne } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::PointSurLigne {
+                point: reconstruction.id_point(*point)?,
+                ligne: reconstruction.id_ligne(*ligne)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::MemeLongueur {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Paralleles { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Paralleles {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::PointSurCercle { point, cercle } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::PointSurCercle {
+                point: reconstruction.id_point(*point)?,
+                cercle: reconstruction.id_cercle(*cercle)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::RayonCercle { cercle, valeur } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::RayonCercle {
+                cercle: reconstruction.id_cercle(*cercle)?,
+                valeur: *valeur,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Perpendiculaires {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::Angle {
+            ligne1,
+            ligne2,
+            valeur,
+        } => {
+            let tag = solveur.ajouter_contrainte(Contrainte::Angle {
+                ligne1: reconstruction.id_ligne(*ligne1)?,
+                ligne2: reconstruction.id_ligne(*ligne2)?,
+                valeur: *valeur,
+            })?;
+            Ok(Some(tag))
+        }
+        ContrainteEsquisse::PointFixe { point } => {
+            solveur.fixer_point(reconstruction.id_point(*point)?)?;
+            Ok(None)
+        }
+    }
+}
+
+impl Projection for EsquisseProjection {
+    fn name(&self) -> &'static str {
+        "esquisse"
+    }
+
+    fn reset(&mut self) {
+        self.entites.clear();
+        self.contraintes.clear();
+        self.graines.clear();
+        self.dernier_deplace = None;
+        self.graine_avant_dernier = None;
+        self.unknown.clear();
+        self.ancrages_captures.clear();
+        self.capture_en_attente = None;
+        self.pose_ancrage_fraiche = None;
+        // `edition` n'est jamais remis à zéro : clé de cache monotone —
+        // deux contenus différents du croquis portent des éditions
+        // différentes, même après un rejeu complet.
+    }
+
+    fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
+        // Capture d'ancrage (ADR-0021 D2, révisée) : le déplacement
+        // posé par l'événement précédent ne survit qu'à la contrainte
+        // `PointFixe` du même point qui le suit immédiatement — tout
+        // autre événement l'abandonne.
+        let capture = self.capture_en_attente.take();
+        // La fraîcheur de pose (re-test du 24-10, cf.
+        // `pose_ancrage_fraiche`) ne survit à aucun événement de
+        // croquis : seule la pose d'un ancrage capturé la pose.
+        let _pose_fraiche = self.pose_ancrage_fraiche.take();
+        match event.event_type.as_str() {
+            EVENT_SKETCH_ENTITY_ADDED => {
+                verifie_schema_parmi(event, VERSIONS_ENTITE)?;
+                let (id, entite) = entite_de_journal(event)?;
+                if id != self.entites.len() as u32 {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("identifiant d'entité {id} non séquentiel"),
+                    });
+                }
+                if let Some(reason) = self.raison_refus_entite(&entite) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                self.entites.push((id, entite));
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_CONSTRAINT_ADDED => {
+                verifie_schema_parmi(event, VERSIONS_CONTRAINTE)?;
+                let (id, contrainte) = contrainte_de_journal(event)?;
+                if id != self.contraintes.len() as u32 {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("identifiant de contrainte {id} non séquentiel"),
+                    });
+                }
+                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                // Capture d'ancrage (ADR-0021 D2, révisée) : le
+                // `PointFixe` du point déplacé à l'événement précédent
+                // fige la position affichée au moment de la pose — et
+                // rend ses droits à l'état de geste d'avant le
+                // déplacement capturé : l'ancrage n'est pas un
+                // geste, la passe épinglée du dernier vrai geste
+                // continue de tenir l'affichage (re-test du 24-10 :
+                // la forme sautait à la pose du point fixé).
+                if let ContrainteEsquisse::PointFixe { point } = &contrainte
+                    && let Some(capture) = &capture
+                    && capture.point == *point
+                {
+                    self.dernier_deplace = capture.dernier_deplace;
+                    self.graine_avant_dernier = capture.graine_avant_dernier;
+                    self.ancrages_captures.insert(*point, capture.position);
+                    self.pose_ancrage_fraiche = Some((*point, capture.position));
+                }
+                self.contraintes.push((id, contrainte));
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_CONSTRAINT_UPDATED => {
+                verifie_schema(event, VERSION_SCHEMA_MISE_A_JOUR)?;
+                let (id, contrainte) = contrainte_de_journal(event)?;
+                let Some(position) = self
+                    .contraintes
+                    .iter()
+                    .position(|(identifiant, _)| *identifiant == id)
+                else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("contrainte {id} inconnue au croquis"),
+                    });
+                };
+                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                // Identifiant conservé : seule la contrainte change,
+                // l'ordre d'ajout au journal fait foi (ADR-0019 §1).
+                self.contraintes[position].1 = contrainte;
+                self.edition += 1;
+                Ok(())
+            }
+            EVENT_SKETCH_POINT_MOVED => {
+                verifie_schema(event, VERSION_SCHEMA_DEPLACEMENT)?;
+                let point = champ_id(event, "point")?;
+                let x = Length::from_millimeters(champ_nombre(event, "x")?);
+                let y = Length::from_millimeters(champ_nombre(event, "y")?);
+                if let Some(reason) = self.raison_refus_deplacement(point, x, y) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason,
+                    });
+                }
+                // Capture d'ancrage (ADR-0021 D2, révisée) : le
+                // déplacement reste en attente de la contrainte
+                // `PointFixe` qui suit immédiatement, s'il vient —
+                // l'état de geste d'avant voyage avec : la capture
+                // n'est pas un geste (re-test du 24-10).
+                let capture = CaptureAncrage {
+                    point,
+                    position: (x, y),
+                    dernier_deplace: self.dernier_deplace,
+                    graine_avant_dernier: self.graine_avant_dernier,
+                };
+                self.graine_avant_dernier = self.position_graine(point);
+                self.graines.insert(point, (x, y));
+                self.dernier_deplace = Some(point);
+                self.capture_en_attente = Some(capture);
+                self.edition += 1;
+                Ok(())
+            }
+            _ => {
+                if !self.unknown.contains(&event.event_type) {
+                    self.unknown.push(event.event_type.clone());
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn types_connus(&self) -> &'static [&'static str] {
+        &[
+            EVENT_SKETCH_ENTITY_ADDED,
+            EVENT_SKETCH_CONSTRAINT_ADDED,
+            EVENT_SKETCH_CONSTRAINT_UPDATED,
+            EVENT_SKETCH_POINT_MOVED,
+        ]
+    }
+}
