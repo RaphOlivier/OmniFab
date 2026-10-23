@@ -1512,9 +1512,7 @@ impl EsquisseProjection {
                     None => match passe.graine_substituee {
                         Some((point, position)) if point == *id => position,
                         _ => match passe.positions_initiales {
-                            Some(positions) => {
-                                positions.get(id).copied().unwrap_or((*x, *y))
-                            }
+                            Some(positions) => positions.get(id).copied().unwrap_or((*x, *y)),
                             None => self.graines.get(id).copied().unwrap_or((*x, *y)),
                         },
                     },
