@@ -1489,20 +1489,26 @@ impl DemoApp {
         }
     }
 
-    /// Résolution d'affichage du geste de poignée (re-test du
-    /// 24-10) : l'aperçu de glissement reste la résolution
-    /// d'affichage tant que le glissement tient OU que le vol du
-    /// relâchement dure — il est l'état résolu du relâchement, le
-    /// frais le remplace à son arrivée. La purge n'a lieu qu'une
-    /// fois les deux finis : pendant un glissement, le dessin ne
-    /// montre ainsi que des états résolus — jamais une position
-    /// brute du curseur qui violerait une contrainte.
-    fn resolution_du_geste(&mut self) -> Option<&CroquisResolu> {
+    /// Purge de l'aperçu de glissement une fois le geste fini
+    /// (re-test du 24-10) : l'aperçu tient le glissement ET le vol
+    /// du relâchement — il se purge seulement quand les deux sont
+    /// finis, le frais du relâchement a pris le relais.
+    fn purge_apercu_si_geste_fini(&mut self) {
         if self.saisie.is_none() && atelier_esquisse::surcharge_du_relachement(self).is_none() {
             self.croquis_apercu = None;
             self.apercu_envoye = None;
             self.apercu_en_attente = false;
         }
+    }
+
+    /// Résolution d'affichage du geste de poignée (re-test du
+    /// 24-10) : l'aperçu de glissement reste la résolution
+    /// d'affichage tant que le glissement tient OU que le vol du
+    /// relâchement dure — il est l'état résolu du relâchement, le
+    /// frais le remplace à son arrivée. Pendant un glissement, le
+    /// dessin ne montre ainsi que des états résolus — jamais une
+    /// position brute du curseur qui violerait une contrainte.
+    fn resolution_du_geste(&self) -> Option<&CroquisResolu> {
         if self.saisie.is_some() || atelier_esquisse::surcharge_du_relachement(self).is_some() {
             self.croquis_apercu
                 .as_ref()
@@ -2614,7 +2620,8 @@ impl DemoApp {
                 let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
                 let curseur = response.interact_pointer_pos().map(|position| {
                     let decalage = position - response.rect.center();
-                    self.camera.depuis_ecran((decalage.x as f64, decalage.y as f64))
+                    self.camera
+                        .depuis_ecran((decalage.x as f64, decalage.y as f64))
                 });
                 let (surcharge_drag, cible_du_geste) =
                     atelier_esquisse::affichage_du_geste(self, pas, curseur);
@@ -2628,6 +2635,7 @@ impl DemoApp {
                 // Résolution d'affichage du geste (re-test du
                 // 24-10) : l'aperçu tient le glissement ET le vol
                 // du relâchement — purgé quand les deux sont finis.
+                self.purge_apercu_si_geste_fini();
                 let resolu_apercu = self.resolution_du_geste();
                 atelier_esquisse::dessiner(&painter, self, rect, surcharge_drag, resolu_apercu);
                 // Aperçu du geste en cours (ADR-0018, lot 3c-2) : le
