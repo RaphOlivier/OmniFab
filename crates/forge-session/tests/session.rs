@@ -1774,7 +1774,8 @@ fn l_ordre_de_pose_garantit_les_contraintes_meme_sous_contraint() {
         );
     }
     assert_eq!(
-        resolutions[0].dof(), resolutions[1].dof(),
+        resolutions[0].dof(),
+        resolutions[1].dof(),
         "le même nombre de degrés de liberté reste libre"
     );
     for resolu in &resolutions {
