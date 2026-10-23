@@ -1642,3 +1642,150 @@ fn l_apercu_de_glissement_suite_le_geste_sans_ecrire_au_journal() {
     assert!(proche(resolu.position(2), 130.0, 70.0), "coin 2 suit");
     assert!(proche(resolu.position(3), 30.0, 70.0), "coin 3 suit");
 }
+
+/// L'ordre de pose ne change pas un croquis entièrement contraint
+/// (retour de Raphaël du 24-10 : mêmes contraintes, deux ordres de
+/// pose) : mêmes entités, mêmes graines, zéro degré de liberté —
+/// les positions résolues sont identiques à la tolérance près,
+/// quel que soit l'ordre d'écriture au journal.
+#[test]
+fn l_ordre_de_pose_ne_change_pas_un_croquis_entierement_contraint() {
+    let contraintes = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+        ContrainteEsquisse::Distance {
+            p1: 0,
+            p2: 1,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(100.0),
+            },
+        },
+        ContrainteEsquisse::Distance {
+            p1: 1,
+            p2: 2,
+            valeur: ValeurCote::Fixe {
+                mm: Length::from_millimeters(50.0),
+            },
+        },
+        ContrainteEsquisse::PointFixe { point: 0 },
+    ];
+    // Ordre A : orientations, cotes, ancrage. Ordre B : la même
+    // palette entièrement mélangée.
+    let ordres = [[0, 1, 2, 3, 4, 5, 6], [4, 6, 0, 5, 3, 2, 1]];
+    let mut resolutions = Vec::new();
+    for ordre in ordres {
+        let mut session = Session::new("tests");
+        for (x, y) in [(0.0, 0.0), (80.0, -3.0), (97.0, 44.0), (-6.0, 51.0)] {
+            session
+                .execute(&AddEntity {
+                    entite: EntiteEsquisse::Point {
+                        x: Length::from_millimeters(x),
+                        y: Length::from_millimeters(y),
+                    },
+                })
+                .expect("point ajouté");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            session
+                .execute(&AddEntity {
+                    entite: EntiteEsquisse::Ligne { p1, p2 },
+                })
+                .expect("ligne ajoutée");
+        }
+        for indice in ordre {
+            session
+                .execute(&AddConstraint {
+                    contrainte: contraintes[indice].clone(),
+                })
+                .expect("contrainte ajoutée");
+        }
+        let mut solveur = Systeme2D::new().expect("solveur");
+        let resolu = session
+            .esquisse()
+            .resoudre(&mut solveur)
+            .expect("résolu quel que soit l'ordre");
+        assert_eq!(resolu.dof(), 0, "zéro DoF dans tous les ordres");
+        resolutions.push(resolu);
+    }
+    for point in 0..4 {
+        let (xa, ya) = mm(resolutions[0].position(point));
+        let (xb, yb) = mm(resolutions[1].position(point));
+        assert!(
+            (xa - xb).abs() < 1e-6 && (ya - yb).abs() < 1e-6,
+            "le point {point} résout à l'identique quel que soit l'ordre"
+        );
+    }
+}
+
+/// Un croquis sous-contraint garantit l'essentiel quel que soit
+/// l'ordre de pose (retour de Raphaël du 24-10 : H,H,V,V contre
+/// H,V,H,V sur le même rectangle) : le même nombre de degrés de
+/// liberté, aucune contrainte conflictuelle, chaque orientation
+/// satisfaite. La distribution des degrés de liberté restants —
+/// largeur, hauteur, translation : le rectangle sans cotes n'est
+/// pas rigide — relève du choix du solveur et peut différer avec
+/// l'ordre : les positions ne sont pas comparées, seules ces
+/// garanties sont contractuelles.
+#[test]
+fn l_ordre_de_pose_garantit_les_contraintes_meme_sous_contraint() {
+    let orientations = [
+        ContrainteEsquisse::Horizontale { ligne: 4 },
+        ContrainteEsquisse::Horizontale { ligne: 6 },
+        ContrainteEsquisse::Verticale { ligne: 5 },
+        ContrainteEsquisse::Verticale { ligne: 7 },
+    ];
+    // H,H,V,V contre H,V,H,V : les deux ordres du retour.
+    let ordres = [[0, 1, 2, 3], [0, 2, 1, 3]];
+    let mut resolutions = Vec::new();
+    for ordre in ordres {
+        let mut session = Session::new("tests");
+        for (x, y) in [(0.0, 0.0), (80.0, -3.0), (97.0, 44.0), (-6.0, 51.0)] {
+            session
+                .execute(&AddEntity {
+                    entite: EntiteEsquisse::Point {
+                        x: Length::from_millimeters(x),
+                        y: Length::from_millimeters(y),
+                    },
+                })
+                .expect("point ajouté");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            session
+                .execute(&AddEntity {
+                    entite: EntiteEsquisse::Ligne { p1, p2 },
+                })
+                .expect("ligne ajoutée");
+        }
+        for indice in ordre {
+            session
+                .execute(&AddConstraint {
+                    contrainte: orientations[indice].clone(),
+                })
+                .expect("contrainte ajoutée");
+        }
+        let mut solveur = Systeme2D::new().expect("solveur");
+        resolutions.push(
+            session
+                .esquisse()
+                .resoudre(&mut solveur)
+                .expect("résolu quel que soit l'ordre"),
+        );
+    }
+    assert_eq!(
+        resolutions[0].dof(), resolutions[1].dof(),
+        "le même nombre de degrés de liberté reste libre"
+    );
+    for resolu in &resolutions {
+        assert!(resolu.conflictuelles().is_empty(), "aucun conflit");
+        let (x0, y0) = mm(resolu.position(0));
+        let (x1, y1) = mm(resolu.position(1));
+        let (x2, y2) = mm(resolu.position(2));
+        let (x3, y3) = mm(resolu.position(3));
+        assert!((y1 - y0).abs() < 1e-6, "bord haut horizontal");
+        assert!((y3 - y2).abs() < 1e-6, "bord bas horizontal");
+        assert!((x2 - x1).abs() < 1e-6, "flanc droit vertical");
+        assert!((x3 - x0).abs() < 1e-6, "flanc gauche vertical");
+    }
+}
