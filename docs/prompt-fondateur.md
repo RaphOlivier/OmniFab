@@ -11,7 +11,7 @@
 > - Synchro ordinateur ↔ téléphone : **export/import manuel** (100 % local) ✓
 > - Priorité : **workflow complet de A à Z** (cas d'école : fabriquer un meuble : CAO paramétrique → découpe/gravure 2D + raster → CAM → LinuxCNC) ✓
 > - Interface : **egui** ✓ (preuve de concept Android dès le jalon 0, plan B = frontend mobile Slint sur le même noyau)
-> - Extensions fonctionnelles validées : éditeur G-code multi-dialectes (colorisation, autocomplétion, aides), gestion multi-machines en parallèle, traitement par lots, bibliothèques de données réelles sourcées, assistant de profils machines et dialectes G-code maison, paramétrique universel (alias + nodal sur un moteur unique), assistants de conception guidée (guides pas-à-pas par type d'objet + éditeur de guides personnalisés), classification multi-référentielle des objets + nomenclatures/BOM paramétriques, interopérabilité openBIM (IFC à l'import, DSTV/NC1 à l'export) ✓
+> - Extensions fonctionnelles validées : éditeur G-code multi-dialectes (colorisation, autocomplétion, aides), gestion multi-machines en parallèle, traitement par lots, bibliothèques de données réelles sourcées, assistant de profils machines et dialectes G-code maison, paramétrique universel (alias + nodal sur un moteur unique), assistants de conception guidée (guides pas-à-pas par type d'objet + éditeur de guides personnalisés), classification multi-référentielle des objets + nomenclatures/BOM paramétriques, interopérabilité openBIM (IFC à l'import, DSTV/NC1 à l'export), détection automatique des contrôleurs et bibliothèques de données « référence ouverte du marché » (vision 2026-10-19) ✓
 >
 > **Objectif de ce document :** contenir (A) le prompt à copier-coller dans une nouvelle discussion pour lancer la conception, et (B) les annexes de référence (stack, formats, architecture, interface, roadmap) pour valider et ajuster les choix avant et pendant cette discussion.
 
@@ -57,7 +57,12 @@ Une seule application qui couvre, sans sortir de l'outil :
    et des dialectes G-code maison (plusieurs firmwares). Liaisons physiques
    : PORT SÉRIE (USB pour contrôleurs modernes, RS-232 pour les machines
    anciennes) et PORT PARALLÈLE LPT pour piloter directement des machines
-   pas-à-pas classiques (signaux step/dir sur les broches). Sur LinuxCNC,
+   pas-à-pas classiques (signaux step/dir sur les broches). DÉTECTION
+   AUTOMATIQUE (2026-10-19) : minimiser la configuration — sondage des
+   paramètres de communication (débits, bannières, empreintes protocolaires
+   par dialecte) pour identifier automatiquement le contrôleur (type, marque,
+   modèle) via la base communautaire ; profil proposé à validation, jamais
+   de commande de mouvement pendant la sonde. Sur LinuxCNC,
    OmniFab peut REMPLACER l'interface Axis : soit comme GUI native déclarée
    dans l'INI ([DISPLAY] DISPLAY=omnifab, liaison NML), soit par pilotage
    distant via linuxcncrsh (réseau) ; dans les deux cas le noyau temps réel
@@ -80,7 +85,24 @@ Une seule application qui couvre, sans sortir de l'outil :
    machines courantes (hobby et industriel, caractéristiques constructeurs),
    normes ISO (visserie, formats…). Sources : bases libres existantes,
    contributions communautaires, normes ISO ; toute donnée sourcée et citée,
-   sous licence ouverte compatible GPL.
+   sous licence ouverte compatible GPL. VISION « RÉFÉRENCE DU MARCHÉ »
+   (2026-10-19) : ces bibliothèques deviennent une infrastructure de données
+   partagée pour l'industrie — accessibles et utilisables par des tiers et
+   d'autres programmes, comme base de données de référence gratuite (modèle
+   OpenStreetMap de la fabrication : format autonome documenté, accès triple
+   par fichiers/API/crate, gouvernance neutre, identifiants stables, ODbL).
+   Architecture à trois niveaux : (a) données descriptives embarquées dans
+   l'installation (volumétrie Ko, hors ligne dès le premier lancement),
+   incluant une ontologie à relations typées (compatibilités entre éléments :
+   ex. pas de vis standard partagé entre visserie et quincaillerie) et des
+   assemblages compositionnels (moteur, valve…) ; (b) géométrie GÉNÉRÉE depuis
+   les valeurs pour les pièces décrites par une norme (visserie, profilés
+   IPE/HEA/UPN, quincaillerie normée) par générateurs paramétriques — zéro
+   stockage, cohérence par construction, toutes tailles disponibles ; (c)
+   bibliothèque géométrique téléchargée à la demande (glTF LOD + STEP/3MF)
+   pour les pièces non déductibles d'une norme, dépôt séparé, cache local.
+   Règle de décision publiable : si une norme décrit la pièce → générée ;
+   sinon → modèle téléchargé.
 10. Interopérabilité : lecture/écriture des formats ouverts des logiciels de
    référence cités plus bas, sans perte inutile.
 11. Aide contextuelle universelle : chaque option, bouton, paramètre et
@@ -210,7 +232,9 @@ BlenderCAM, F-Engrave (gravure V), Ezilathe (tournage), Deepnest/SVGnest
 (nesting), FlatCAM + pcb2gcode (PCB), SolveSpace, OpenSCAD, InkCut (traceurs
 2D), CNCjs, QCAD, MeshLab, PrusaSlicer (impression), mods du MIT CBA
 (chaînes de fabrication nodales), BOSL2 (bibliothèques paramétriques),
-WikiHouse (système constructif libre), ainsi que la famille
+WikiHouse (système constructif libre), FullControl (design direct de
+trajectoires en G-code), la suite ArtCraft (VectorCraft, CADCraft,
+PhotoCraft, GridCraft — libres en Rust natif), ainsi que la famille
 G-code (RS-274 / dialectes LinuxCNC et GRBL).
 
 INSPIRATIONS COMMERCIALES (comportement et workflows uniquement, jamais le
@@ -445,5 +469,5 @@ flowchart LR
 - ~~Cinq verrous techniques~~ → ZIP + event sourcing + planegcs + tokio + unités strictes ✓
 - Spécifier le **schéma du manifeste** du conteneur ZIP (détaillé en phase 0).
 - Rédiger les **spécifications du protocole machine** (états LinuxCNC en priorité, puis GRBL/FluidNC).
-- ~~Ébaucher la matrice « fonctionnalité × logiciel de référence »~~ → **v7** dans le document séparé « Matrice fonctionnalité × logiciel » (~265 fonctions, 10 domaines, §10 extensions, §11 assistants de conception guidée, classification/openBIM en transversal) — enrichie par 8 cycles de recherche (~55 logiciels libres et commerciaux).
+- ~~Ébaucher la matrice « fonctionnalité × logiciel de référence »~~ → **v8** dans le document séparé « Matrice fonctionnalité × logiciel » (~277 fonctions, 10 domaines, §10 extensions, §11 assistants de conception guidée, classification/openBIM en transversal) — enrichie par 9 cycles de recherche (~60 logiciels libres et commerciaux ; la v8 fusionne les trains d'ajouts « bibliothèques » du 2026-10-19 et ArtCraft/FullControl du 2026-10-24).
 - Préparer une **maquette interactive d'interface** pour valider l'ergonomie desktop/mobile avant le développement.
