@@ -1,4 +1,4 @@
-<!-- Source : canevas « OmniFab — Matrice fonctionnalité × logiciel de référence » (v7). Synchronisé depuis la phase 0 ; fait foi pour l'inventaire exhaustif des capacités (garde-fou anti-oubli). -->
+<!-- Source : canevas « OmniFab — Matrice fonctionnalité × logiciel de référence » (v8). Synchronisé depuis la phase 0 ; fait foi pour l'inventaire exhaustif des capacités (garde-fou anti-oubli). -->
 
 # Matrice fonctionnalité × logiciel de référence — OmniFab
 
@@ -6,36 +6,38 @@
 >
 > **Colonnes :** « Présent dans » = quels logiciels de référence offrent la fonction ; « Cible » = où elle atterrit dans OmniFab (crate / jalon).
 >
-> **Statut :** v7 — enrichie par 8 cycles de recherche (~55 logiciels documentés). Nouveautés v6 : assistants de conception guidée (§11). Nouveautés v7 : classification multi-référentielle des objets (BIM/OmniClass/Uniclass), nomenclatures/BOM paramétriques, interopérabilité openBIM (IFC, BCF, IDS, DSTV/NC1). Reste à hiérarchiser par jalon pendant la phase 0.
+> **Statut :** v8 — enrichie par 9 cycles de recherche (~60 logiciels documentés). Nouveautés v6 : assistants de conception guidée (§11). Nouveautés v7 : classification multi-référentielle des objets (BIM/OmniClass/Uniclass), nomenclatures/BOM paramétriques, interopérabilité openBIM (IFC, BCF, IDS, DSTV/NC1). Nouveautés v8 (2026-10-24) : train bibliothèques (détection automatique des contrôleurs, bibliothèques « référence ouverte » modèle OSM, géométrie générée des pièces normées, LOD glTF) + train ArtCraft/FullControl (design direct de trajectoires, pilotage par agents IA MCP/CLI/JSON, effets vectoriels live, round-trip PSD/PSB et XLSX, espace papier/viewports, lecture DWG, spécimens de calibration, génération web paramétrique). Reste à hiérarchiser par jalon pendant la phase 0.
 
 ## 1. Dessin vectoriel 2D — réf. Inkscape, Graphite, FreeCAD (Sketcher)
 
 | Fonctionnalité | Présent dans | Cible OmniFab |
 |---|---|---|
-| Formes primitives, chemins de Bézier, édition de nœuds | Inkscape, Graphite | forge-paint (2D), jalon 1 |
+| Formes primitives, chemins de Bézier, édition de nœuds | Inkscape, Graphite, VectorCraft | forge-paint (2D), jalon 1 |
 | Calques, groupes, verrouillage | Inkscape | forge-paint, jalon 1 |
 | Alignement / distribution, grilles et guides | Inkscape | forge-paint, jalon 2 |
-| Opérations booléennes (union, différence, intersection) | Inkscape, Graphite | forge-geom, jalon 2 |
+| Opérations booléennes (union, différence, intersection) | Inkscape, Graphite, VectorCraft (exactes sur courbes) | forge-geom, jalon 2 |
 | Texte vectoriel, texte sur courbe, vectorisation | Inkscape | forge-paint, jalon 2 |
 | Simplification / nettoyage de chemins | Inkscape, Graphite | forge-geom, jalon 2 |
-| Clones dynamiques / motifs répétés | Inkscape | forge-paint + forge-values |
-| Vectorisation d'image (trace bitmap) | Inkscape | forge-io + forge-paint, jalon 4 |
+| Clones dynamiques / motifs répétés | Inkscape, VectorCraft (répétitions live radiale/grille/miroir) | forge-paint + forge-values |
+| Vectorisation d'image (trace bitmap) | Inkscape, VectorCraft (12 présets) | forge-io + forge-paint, jalon 4 |
 | Graphe nodal procédural 2D | Graphite ★ | forge-values (nodal), jalon 3 |
 | Extensions / scripts | Inkscape | plugins WASM, jalon 8 |
-| Snapping objet/axe/grille fin | Inkscape, FreeCAD | forge-paint, jalon 2 |
+| Snapping objet/axe/grille fin | Inkscape, FreeCAD, VectorCraft | forge-paint, jalon 2 |
 | Effets de chemin vivants (LPE) : non destructifs, empilables, éditables (offset, tressage, engrenages…) | Inkscape ★ rare ailleurs | forge-paint + event sourcing, jalon 3+ |
-| Symboles et blocs réutilisables, avec bibliothèques prêtes (électrique, mécanique…) | Inkscape (symboles), QCAD (blocs) | forge-paint, jalon 2+ |
-| Cotation technique : styles de cotes, flèches, tolérances, cotes d'ensemble/détail | QCAD ★ absent du vectoriel libre courant | forge-paint (mode technique), jalon 4+ |
-| Hachures normalisées (ISO/ANSI) dans zones fermées | QCAD | forge-paint, jalon 4+ |
+| Symboles et blocs réutilisables, avec bibliothèques prêtes (électrique, mécanique…) | Inkscape (symboles), QCAD (blocs), CADCraft (blocs à attributs, imbriqués) | forge-paint, jalon 2+ |
+| Cotation technique : styles de cotes, flèches, tolérances, cotes d'ensemble/détail | QCAD ★ absent du vectoriel libre courant, VectorCraft (cotes liées à l'objet), CADCraft (cotation associative) | forge-paint (mode technique), jalon 4+ |
+| Hachures normalisées (ISO/ANSI) dans zones fermées | QCAD, CADCraft (contour au clic, îlots) | forge-paint, jalon 4+ |
 | Grille et vue isométriques (dessin technique 2D) | QCAD | forge-paint, option |
-| Import DWG en plus du DXF ; conversion par lots | QCAD ★ dans le libre | forge-io, jalon 2 |
+| Import DWG en plus du DXF ; conversion par lots | QCAD ★ dans le libre, CADCraft (DWG R13–2018 en lecture) | forge-io, jalon 2 |
 | DXF exporté avec cotation conservée | SolveSpace, QCAD | forge-io, jalon 2 |
+| Effets d'apparence live : déformation enveloppe, gradient mesh, blends, glows, ombres portées — non destructifs, rééditables | VectorCraft ★ rare en libre | forge-paint + event sourcing, jalon 3+ |
+| 3D revolve vectoriel avec ombrage + grille perspective éditable | VectorCraft ★ rare en libre | forge-paint, option |
 
 ## 2. Raster / painting — réf. GIMP, Krita, GMIC
 
 | Fonctionnalité | Présent dans | Cible OmniFab |
 |---|---|---|
-| Calques : masques, modes de fusion, groupes, transparence | GIMP, Krita | forge-paint, jalon 6 |
+| Calques : masques, modes de fusion, groupes, transparence | GIMP, Krita, PhotoCraft | forge-paint, jalon 6 |
 | Pinceaux paramétriques (taille, opacité, dynamics, textures) | GIMP, Krita | forge-paint, jalon 6 |
 | Stabilisateur de tracé, assistants (perspective, symétrie, grille) | Krita | forge-paint, jalon 6+ |
 | Outils de retouche : clone, correcteur, patch | GIMP, Krita | forge-paint, jalon 6 |
@@ -55,12 +57,13 @@
 | Calques vectoriels et calques-fichier (références externes) | Krita | forge-paint, option |
 | Outils BD : cases, halftone (trames), traits de contour | Krita | forge-paint, option |
 | Pipelines de filtres personnalisés enregistrés (scripts .gmic) | GMIC | forge-paint (filtres), jalon 6/8 |
+| Round-trip PSD/PSB avec calques préservés (lecture + écriture, gros documents) | PhotoCraft ★ écriture PSB rare en libre | forge-io, jalon 6 |
 
 ## 3. CAO paramétrique — réf. FreeCAD
 
 | Fonctionnalité | Présent dans | Cible OmniFab |
 |---|---|---|
-| Esquisse contrainte (géométrie + contraintes, solveur) | FreeCAD | forge-cad + planegcs, jalon 2 |
+| Esquisse contrainte (géométrie + contraintes, solveur) | FreeCAD, CADCraft (contraintes + paramètres d'expression) | forge-cad + planegcs, jalon 2 |
 | Fonctions : pad, pocket, révolution, lissage (loft), balayage | FreeCAD | forge-cad, jalon 3 |
 | Arbre des fonctions (feature tree) éditable, recalcul automatique | FreeCAD | forge-cad + event sourcing, jalon 3 |
 | Fillets, chanfreins, coques | FreeCAD | forge-cad, jalon 3 |
@@ -69,6 +72,9 @@
 | Surfaces NURBS, reconstruction | FreeCAD | forge-geom, jalon 3+ |
 | Tableur paramétrique lié aux fonctions | FreeCAD | forge-values (alias/expressions) |
 | Bibliothèque de visserie normée (ISO) | FreeCAD (Fasteners) | jalon 10 (bibliothèques) |
+| Bibliothèques à architecture 3 niveaux : (a) données descriptives embarquées (ontologie à relations typées, assemblages compositionnels) ; (b) géométrie GÉNÉRÉE depuis les valeurs pour les pièces normées (visserie, profilés IPE/HEA/UPN, quincaillerie) par générateurs paramétriques — zéro stockage, toutes tailles disponibles ; (c) bibliothèque géométrique téléchargée à la demande (glTF LOD + STEP/3MF) pour les pièces non déductibles d'une norme | ★ aucun — vision 2026-10-19 | forge-values + forge-cad, jalon 10 |
+| Espace papier & viewports flottants : surcharges de calque par viewport, page setups, tracé à l'échelle exacte | CADCraft ★ rare en libre | forge-cad (mise en plan), jalon 3+ |
+| Workflow drafting clavier type AutoCAD : ligne de commande, saisie directe de distance, polar tracking, ortho, grips, clic-droit pour répéter | CADCraft | forge-paint (mode technique), option |
 | Tôlerie (plis, développé) | FreeCAD (Sheet Metal) | forge-cad, option avancée |
 | Multicorps, matériaux, propriétés physiques (masse, densité) | FreeCAD | forge-cad, jalon 3 |
 | Import/export STEP, IGES, BREP ; import .FCStd | FreeCAD | forge-io (OCCT), jalon 3 |
@@ -178,6 +184,8 @@
 | Adaptation du modèle aux états intermédiaires d'usinage (in-process) + modélisation des fixations | Siemens NX ★ | forge-cam, long terme |
 | Gestionnaire de synchronisation multi-canaux pour mill-turn (synchronisation interactive) | Siemens NX (Sync Manager) | forge-cam, très long terme |
 | **Chaîne CAM entièrement nodale** : source (PNG/SVG) → modules de calcul → machine, sans passer par la CAO | mods (MIT CBA) ★ | forge-values (graphe nodal), jalons 3-4 |
+| **Design direct de trajectoires** : la trajectoire est conçue explicitement (liste d'étapes d'état : position, vitesse, température, extrusion, commandes custom) sans CAO ni slicing ; un design = deux sorties (G-code + visualisation) ; « things with state » = convergence directe avec l'abstraction contrôleurs de forge-link | FullControl ★ unique en libre | forge-cam (mode design direct) + forge-gcode, long terme |
+| Spécimens de calibration multi-paramètres : centaines de combinaisons (température, vitesse, extrusion) générées en une seule production | FullControl ★ | forge-cam, option |
 
 ## 6. Simulation G-code — réf. Camotics
 
@@ -189,7 +197,7 @@
 | Pas-à-pas, coupe, avance rapide, stats temps | Camotics | forge-gcode, jalon 4 |
 | Multi-outils / changement d'outil simulé | Camotics | forge-gcode, jalon 5+ |
 | Table d'outils simulée (n°, diamètre, longueur) | Camotics | forge-gcode, jalon 5 |
-| Export de la pièce usinée en STL (vérification CAO ↔ CFAO) | Camotics ★ rare | forge-gcode, jalon 5 |
+| Export de la pièce usinée en STL (vérification CAO ↔ CFAO) ; export de géométrie depuis des trajectoires | Camotics, FullControl (steps2geometry) ★ rare en libre | forge-gcode, jalon 5 |
 | Simulation des O-codes (sous-programmes, boucles) | Camotics | forge-gcode, jalon 5 |
 
 ## 7. Envoi & contrôle machine — réf. bCNC, UGS, gSender, LaserGRBL, LaserWeb
@@ -199,6 +207,7 @@
 | Connexion série USB + réseau (Ethernet/WiFi/IP) | tous | forge-link, jalon 5 |
 | **Transfert RS-232 / DNC drip-feed** (machines anciennes Fanuc/Mazak/HAAS : envoi au fil de l'exécution, bauds/parité/handshake configurables, upload/download de programmes) | logiciels DNC commerciaux ★ libre quasi absent | forge-link, long terme |
 | **Pilotage direct par port parallèle LPT** (signaux step/dir sur les broches, machines pas-à-pas classiques ; exige noyau Linux temps réel + LPT natif/PCIe, les adaptateurs USB-LPT sont inutilisables à cause de la latence) | LinuxCNC (parport), Mach3 historique | forge-link, option long terme |
+| **Détection automatique du contrôleur (zéro-config)** : sondage des paramètres de communication (débits, bannières, empreintes protocolaires par dialecte) pour identifier type/marque/modèle via la base communautaire ; profil proposé à validation, jamais de commande de mouvement pendant la sonde | ★ aucun — vision 2026-10-19 | forge-link, jalon 5 |
 | **Alerte pédagogique des risques pendant le contrôle** (avant lancement : collision, courses, broche en rotation ; pendant : feed hold, e-stop distant ; contournement = confirmation explicite) | ★ aucun | forge-link, jalon 5 |
 | DRO temps réel (positions, états) | tous | forge-link, jalon 5 |
 | Overrides feed / rapid / broche | UGS, gSender, bCNC | forge-link, jalon 5 |
@@ -262,12 +271,14 @@
 | Formats natifs documentés publiquement | Blender, FreeCAD | ZIP + manifeste, jalon 1 |
 | Biblio. de matériaux avec données réelles (avances/vitesses) | gSender (presets machine) ★ partiellement | jalon 10 |
 | Biblio. de machines types/marques, normes ISO | ★ aucun | jalon 10 |
+| **Bibliothèques « référence ouverte du marché »** : infrastructure de données partagée accessible aux tiers et à d'autres programmes (modèle OpenStreetMap de la fabrication : format autonome documenté, accès triple fichiers/API/crate, gouvernance neutre, identifiants stables, ODbL) | ★ aucun — vision 2026-10-19 | jalon 10 ★ novateur |
+| Pilotage par agents IA : CLI headless, canal JSON, serveur MCP — chaque outil/menu/panneau/dialogue = une commande exposée | suite ArtCraft ★ rare en libre | transversal, long terme |
 | Liaison de valeurs par alias ET nodal (Xpresso) | Blender (drivers), Cinema 4D ★ non-libre | forge-values, jalons 2–3 |
 | **Documentation développeur de premier ordre** : rustdoc sur toute API publique (testé CI), ADR pour chaque décision, doc d'architecture vivante, guide « ajouter un procédé/dialecte/format », codes d'erreur typés | Blender (Python API docs), FreeCAD ★ rare à ce niveau dans le libre hobby | transversal, jalon 0 |
 | Interface adaptée par plateforme (desktop dense / mobile menus) | ★ aucun | jalons 0/7 |
 | Collaboration temps réel multi-utilisateurs, versioning avec branches et fusions | Onshape ★ desktop absent | event sourcing natif (+CRDT), option très long terme |
 | **Classification multi-référentiel des objets** : chaque élément porte des codes de plusieurs référentiels simultanément (OmniClass/Uniclass/UniFormat, normes mécaniques, bibliothèques maison) ; disponibilité des propriétés conditionnée par la classification | Archicad (Classification Manager, ISO 12006-3), Revit (OmniClass + Assembly Code) ★ libre quasi absent | forge-cad (métadonnées) + forge-values, long terme |
-| Nomenclatures/BOM paramétriques : extraits multi-catégories (quantités, longueurs, matériaux) recalculés en direct, export tableur | Revit (schedules), Archicad (Interactive Schedules), Advance Steel/Tekla | transversal (tout modèle), jalon 10 |
+| Nomenclatures/BOM paramétriques : extraits multi-catégories (quantités, longueurs, matériaux) recalculés en direct, export tableur | Revit (schedules), Archicad (Interactive Schedules), Advance Steel/Tekla, GridCraft (référence libre du round-trip XLSX complet) | transversal (tout modèle), jalon 10 |
 | Recherche/sélection d'éléments par classification + surcharges graphiques par classe | Archicad | forge-cad, long terme |
 | **Import IFC (maquettes BIM)** : pièces/sous-modèles réutilisés pour la fabrication (chaîne BIM → CAM : BOM, listes de coupe, fichiers CNC) | Revit/ArchiCAD (export IFC), openBIM ★ CAM libre absent | forge-io, long terme |
 | Échange BCF (sujets/incidents ancrés sur le modèle) et IDS (exigences d'information lisibles machine) avec les outils commerciaux | buildingSMART (openBIM) | hors périmètre initial — noté pour l'interopérabilité |
@@ -295,6 +306,12 @@
 | **mods (MIT CBA)** | Plateforme de fabrication modulaire web (libre, navigateur) | Graphe de modules à connecter : entrée PNG/SVG → calcul → machine ; pilote fraiseuses PCB (Roland SRM/MDX), découpeurs vinyle (Cameo, Roland GX), lasers, plasma, jet d'eau, fil chaud, EDM fil ; **implémentation de référence de l'approche nodale de forge-values** — un procédé = une chaîne de modules, pas un logiciel monolithique |
 | **BOSL2** (bibliothèque OpenSCAD) | Composants paramétriques par code (libre) | Attachements, visserie normée avec logement d'écrou, tubes, jointures (screw/snap/dovetail) — le pendant libre des « assistants » : des générateurs paramétriques réutilisables |
 | **WikiHouse** | Système constructif open source | Gabarits CNC en contreplaqué emboîtables type puzzle, plans librement téléchargeables : preuve qu'un système constructif complet peut être open source |
+| **FullControl** | Design direct de trajectoires en G-code (Python, GPL-3.0) | Inversion du pipeline : pas de CAO→STL→slicing, la trajectoire est une liste d'étapes d'état (position, vitesse, température, extrusion, commandes custom) → G-code OU visualisation ; trajectoires mathématiques (shapes, waves, arcs, polaires), couches non planes, 5 axes (module lab) ; spécimens de calibration ; export STL depuis les trajectoires (steps2geometry) ; génération web paramétrique (fullcontrol.xyz) ; « things with state » = convergence directe avec l'abstraction contrôleurs de forge-link |
+| **VectorCraft** (suite ArtCraft) | Graphique 2D vectoriel | Rust natif multi-backend (Metal/Vulkan/DX12/WebGPU), pas d'Electron ; booléens exacts sur courbes ; effets live (enveloppe, gradient mesh, blends, glows, répétitions radiale/grille/miroir) ; image tracing 12 présets ; 3D revolve + grille perspective ; cotes liées à l'objet ; document natif JSON, import/export SVG/PDF ; MCP/CLI |
+| **CADCraft** (suite ArtCraft) | CAO 2D / drafting | Workflow AutoCAD (ligne de commande, saisie directe de distance, polar tracking, ortho, grips, clic-droit pour répéter) ; cotation associative ; hachures au clic avec îlots ; blocs à attributs imbriqués ; contraintes paramétriques + expressions re-résolues à l'édition ; espace papier & viewports flottants ; DXF R12–2018 lu/écrit, DWG R13–2018 lu ; MCP/CLI |
+| **PhotoCraft** (suite ArtCraft) | Painting raster | Calques, masques, calques de réglage, styles de calque ; round-trip PSD/PSB en préservant les calques (écriture PSB rare en libre) ; compositeur natif rapide (Metal/Vulkan/DX12/WebGPU) ; MCP/CLI |
+| **GridCraft** (suite ArtCraft) | Tableur / données / BOM | Round-trip XLSX complet (styles, thèmes, formules, tableaux dynamiques, TCD, validation, sparklines) ; 500+ fonctions ; moteur à graphe de dépendances avec recalcul incrémental (même problème que le ValueGraph d'OmniFab — source d'inspiration implémentation) ; référence libre pour les sorties BOM/nomenclatures/devis/listes de débit ; MCP/CLI |
+| **Suite ArtCraft** (transverse) | 13 apps libres en Rust natif, licences permissives, local-first sans cloud | Preuve de faisabilité des paris techniques d'OmniFab (Rust natif, GPU multi-backend, WASM en plus du desktop, pas d'Electron) à l'échelle d'une suite ; UX « familière dès le premier jour » face aux suites commerciales ; pilotage par agents (CLI headless, canal JSON, serveur MCP) ; apps en alpha → source d'inspiration principes et architecture, pas un concurrent fonctionnel |
 
 ### 10.2 Inspirations commerciales (comportement uniquement, jamais le code — compatible GPL)
 
@@ -352,6 +369,7 @@
 | Sorties d'assistant : modèle éditable, liste de débit optimisée, plans par pièce, coût estimé, 3D de présentation, fichiers CNC | PolyBoard (débit+plans+coûts+CNC), StairDesigner, WikiHouse (gabarits) | chaîne native OmniFab A→Z |
 | **Éditeur d'assistants : création de ses propres guides** (template déclaratif + règles + pré-réglages, partageable, sans coder) | ★ aucun — chaque éditeur fige ses assistants | forge-values + forge-cam, jalon 10 ★ novateur |
 | Assistant en tant que données : versionné, publiable dans les bibliothèques (comme un fichier) | ★ aucun | event sourcing + jalon 10 |
+| Génération web paramétrique de designs prédéfinis : bibliothèque en ligne de recettes paramétriques → sortie G-code | FullControl (fullcontrol.xyz) | forge-values (templates publiés) + cible web, jalons 9/10 |
 
 ### 11.2 Assistants par domaine (liste extensible)
 
@@ -369,8 +387,8 @@
 
 ## Bilan
 
-- **≈ 265 fonctionnalités** cataloguées (v7), réparties en 10 domaines + section 10 (extensions) — enrichies par **8 cycles de recherche** (~55 logiciels). Le cycle 8 ajoute la **classification multi-référentielle des objets** (à la Archicad/Revit : OmniClass, Uniclass, UniFormat, ISO 12006-3), les **nomenclatures/BOM paramétriques** recalculées en direct, et l'interopérabilité openBIM (import IFC BIM→CAM, échange BCF/IDS, export DSTV/NC1 acier).
-- **≈ 50 lignes ★** (fonction absente ou quasi absente du libre — la proposition de valeur unique d'OmniFab) : aide contextuelle universelle, multi-machines parallèle, alerte pédagogique des risques, assistant de dialectes, éditeur G-code complet, liaisons nodales CAO→CAM, DNC RS-232 libre, pilotage LPT moderne, fabrication par tranches « 123D Make », documentation développeur exigeante ; ajouts v3 : simulation de linkages (SolveSpace), digitizer (bCNC), profondeur par IA (UGS), job sheet, fluting/texture ; ajouts v6 : chaîne CAM nodale (mods), **éditeur d'assistants personnalisés** ; ajouts v7 : **classification multi-référentielle + chaîne BIM→CAM libre**.
+- **≈ 277 fonctionnalités** cataloguées (v8), réparties en 10 domaines + section 10 (extensions) — enrichies par **9 cycles de recherche** (~60 logiciels). Le cycle 8 ajoute la **classification multi-référentielle des objets** (à la Archicad/Revit : OmniClass, Uniclass, UniFormat, ISO 12006-3), les **nomenclatures/BOM paramétriques** recalculées en direct, et l'interopérabilité openBIM (import IFC BIM→CAM, échange BCF/IDS, export DSTV/NC1 acier). Le cycle 9 fusionne le train « bibliothèques » du 2026-10-19 (détection automatique des contrôleurs, bibliothèques « référence ouverte » modèle OSM, géométrie générée des pièces normées, LOD glTF) et le train ArtCraft/FullControl du 2026-10-24 (design direct de trajectoires, pilotage par agents IA, effets vectoriels live, round-trip PSD/PSB et XLSX, espace papier/viewports, lecture DWG, spécimens de calibration, génération web paramétrique).
+- **≈ 59 lignes ★** (fonction absente ou quasi absente du libre — la proposition de valeur unique d'OmniFab) : aide contextuelle universelle, multi-machines parallèle, alerte pédagogique des risques, assistant de dialectes, éditeur G-code complet, liaisons nodales CAO→CAM, DNC RS-232 libre, pilotage LPT moderne, fabrication par tranches « 123D Make », documentation développeur exigeante ; ajouts v3 : simulation de linkages (SolveSpace), digitizer (bCNC), profondeur par IA (UGS), job sheet, fluting/texture ; ajouts v6 : chaîne CAM nodale (mods), **éditeur d'assistants personnalisés** ; ajouts v7 : **classification multi-référentielle + chaîne BIM→CAM libre** ; ajouts v8 : **design direct de trajectoires (FullControl)**, **bibliothèques « référence ouverte » + architecture 3 niveaux**, **détection automatique des contrôleurs (zéro-config)**, effets vectoriels live, espace papier/viewports, round-trip PSD/PSB, pilotage par agents IA.
 - ~~4 lignes « à spécifier »~~ → **résolu en v2** : gravure V (F-Engrave/Vectric), plasma (PlasmaC/SheetCam — trou libre identifiable), tournage (Ezilathe/Ecam), 5 axes (3+2 positionnel d'abord). Niveaux d'ambition initiale proposés §10.3, à valider en phase 0.
-- **16 logiciels libres supplémentaires** identifiés (§10.1) dont Deepnest, FlatCAM, SolveSpace, InkCut, QCAD, CNCjs, mods (MIT CBA), BOSL2, WikiHouse ; **27 entrées d'inspirations commerciales** (§10.2, comportement uniquement) dont SolidWorks, 3DEXPERIENCE CATIA, Onshape, Siemens NX, les spécialistes par construction (PolyBoard, StairDesigner, Cadwork, Advance Steel/Tekla, MTpro) et le monde BIM (Revit/ArchiCAD).
+- **22 logiciels libres supplémentaires** identifiés (§10.1) dont Deepnest, FlatCAM, SolveSpace, InkCut, QCAD, CNCjs, mods (MIT CBA), BOSL2, WikiHouse, FullControl et la suite ArtCraft (VectorCraft, CADCraft, PhotoCraft, GridCraft) ; **27 entrées d'inspirations commerciales** (§10.2, comportement uniquement) dont SolidWorks, 3DEXPERIENCE CATIA, Onshape, Siemens NX, les spécialistes par construction (PolyBoard, StairDesigner, Cadwork, Advance Steel/Tekla, MTpro) et le monde BIM (Revit/ArchiCAD).
 - **Prochaine étape (phase 0)** : hiérarchiser par jalon, arbitrer le wire EDM (hors périmètre initial pour l'instant), valider les niveaux d'ambition (fluting/texture = option ; 5 axes = 3+2 positionnel d'abord ; broderie et impression 3D = procédés « exotiques » validant l'abstraction), et coucher dans l'architecture le **système d'assistants (§11)** et la **classification multi-référentielle (§9)** — deux systèmes de données qui s'appuient sur forge-values et le jalon 10.
