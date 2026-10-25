@@ -283,6 +283,24 @@ fn export_declare_la_taille_physique() {
 }
 
 #[test]
+fn export_d_un_trace_plat_garde_une_boite_visible() {
+    // Ligne horizontale : sans marge, height="0mm" et un viewBox de
+    // hauteur nulle — que les navigateurs refusent de rendre
+    // (audit n°2, N9).
+    let trace = Path2::from_points(vec![point(0.0, 5.0), point(20.0, 5.0)], false);
+    let octets = svg::export(&[trace]).expect("export svg");
+    let texte = String::from_utf8(octets).expect("svg en utf-8");
+    assert!(
+        texte.contains("height=\"0.1mm\""),
+        "hauteur au plancher de marge : {texte}"
+    );
+    assert!(
+        texte.contains("viewBox=\"0 -5 20 0.1\""),
+        "viewBox jamais de hauteur nulle : {texte}"
+    );
+}
+
+#[test]
 fn export_relit_aux_memes_dimensions() {
     // Un lecteur extérieur (ici : notre import) interprète le
     // document à la bonne taille physique — mêmes coordonnées.

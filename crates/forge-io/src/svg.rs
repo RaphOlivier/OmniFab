@@ -22,6 +22,12 @@ use usvg::tiny_skia_path::PathSegment;
 /// Segments par courbe de Bézier à l'aplatissement.
 pub const SEGMENTS_COURBE: usize = 16;
 
+/// Taille minimale d'une dimension de la boîte exportée : un tracé
+/// plat (ligne horizontale ou verticale) produit sinon un `viewBox`
+/// de hauteur nulle, que les navigateurs refusent de rendre — la
+/// marge vaut l'épaisseur du trait (audit n°2, N9).
+pub const MARGE_BOITE_PLATE: f64 = 0.1;
+
 /// Budgets de ressources du parseur SVG (ADR-0009).
 ///
 /// La sécurité ne doit pas brider les fonctions : chaque budget est
@@ -168,8 +174,11 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
     }
     let mut sortie = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
     if min_x <= max_x {
-        let largeur = max_x - min_x;
-        let hauteur = max_y - min_y;
+        // Boîte plate (ligne horizontale ou verticale) : une dimension
+        // nulle rend le document invisible chez les lecteurs — chaque
+        // dimension est plancher à la marge du trait (audit n°2, N9).
+        let largeur = (max_x - min_x).max(MARGE_BOITE_PLATE);
+        let hauteur = (max_y - min_y).max(MARGE_BOITE_PLATE);
         writeln!(
             sortie,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">"
