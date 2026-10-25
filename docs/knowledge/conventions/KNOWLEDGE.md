@@ -2,7 +2,7 @@
 name: conventions
 description: "Conventions OmniFab : unités strictes Rust, i18n Fluent, licences (GPL-3.0+ / MPL-2.0 / données ouvertes), process ADR, CI multi-plateformes, bonnes manières de développement."
 ---
-**Version :** v1 (2026-10-25) — versionnage mis en place (fiche historique/KNOWLEDGE.md)
+**Version :** v2 (2026-10-25) — ADR-0028 : copies de référence de la Knowledge au dépôt + règle de synchro ; v1 : versionnage mis en place
 
 # Conventions OmniFab
 
@@ -25,6 +25,7 @@ description: "Conventions OmniFab : unités strictes Rust, i18n Fluent, licences
 - Dépôt **GitHub** (décision 2026-10-10, compte `RaphOlivier`) = **seule source de vérité** ; le code ne vit jamais uniquement dans une discussion. URL : https://github.com/RaphOlivier/OmniFab (nom « OmniFab », privé pendant le développement ; passage public après traduction EN de la doc et ajout du fichier LICENSE GPL-3.0 en local). Miroir Codeberg possible pour l'indépendance (option, non bloquante). **Adresse et propriétaire inchangés depuis l'origine** (rappel Raphaël, 2026-10-22) : aucun renommage de compte ni de dépôt n'a jamais eu lieu — un 404 côté connecteur signifie un problème d'accès (installation de l'app, droits, faute de frappe), JAMAIS un changement d'adresse ; relire cette fiche avant toute supposition de renommage.
 - **Connecteur GitHub de Vibe** : opérationnel (installé sur le compte `RaphOlivier` le 2026-10-10 via https://github.com/apps/mistralai → Install → Repository access). ⚠️ Le point de vigilance : le bouton « Connecter » de Vibe ne fait qu'**autoriser** l'app (profil seul, dépôts = 404/403) ; l'**installation** via la page publique de l'app est indispensable pour l'accès aux dépôts. Une fois installée, le connecteur gère tout le dépôt : fichiers (commit multi-fichiers), issues, branches, PR, releases, recherche de code.
 - README + CONTRIBUTING + code of conduct.
+- **Copies de référence de la Knowledge au dépôt (ADR-0028, 2026-10-25)** : le sous-ensemble publiable (racine, architecture, conventions, formats, machines, sécurité, archives, historique) est miroité 1:1 sous `docs/knowledge/` ; la plateforme **fait foi**, le dépôt est copie de référence. Règle : **tout bump de version d'une fiche ⇒ la même fiche repoussée au dépôt dans la foulée** (delta identifiable par la section Historique, aucun relecture complète). Exclus : `prompt-fondateur`/matrice (déjà à `docs/`), `references/` (docs externes, licences), `preparation/` (travail, souvent obsolète), fiches process Vibe personnelles. Le dépôt étant **public**, le tri de contenu se fait à la source, jamais rétroactivement.
 - **ADR** (architecture decision records) pour chaque choix structurant.
 - CI : builds Linux (x86_64 + aarch64), Windows, Android (APK) ; tests + clippy + fmt à chaque commit.
 - Formats documentés ; imports testés contre des fichiers réels produits par les logiciels de référence.
@@ -65,3 +66,4 @@ Pour lever le goulot d'étranglement que constitue la validation utilisateur (�
 ## Historique
 
 - v1 (2026-10-25) : mise en place du versionnage — n° de version en tête + cette section (protocole : fiche historique).
+- v2 (2026-10-25) : ADR-0028 — copies de référence de la Knowledge au dépôt (`docs/knowledge/`), règle « bump ⇒ repush », périmètre filtré (dépôt public).

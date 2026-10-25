@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v5 (2026-10-25) — ajout de l'entrée audit n°2 (5 correctifs de robustesse)
+**Version :** v6 (2026-10-25) — ajout de l'entrée ADR-0028 (Knowledge au dépôt)
 
 # Archives des discussions
 
@@ -12,6 +12,8 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - Format : un fichier par discussion, nommé `AAAA-MM-JJ-slug.md`, classé au fil de l'eau. **Chaque entrée porte le jalon dominant en tête** (format des titres de discussions : `[JX] — <sujet>`, J0 = transversal) ; à chaque fin de discussion, Vibe propose à Raphaël le titre normalisé de la discussion suivante.
 
 ## Index
+
+- [2026-10-25 — [J0] ADR-0028 : copies de référence de la Knowledge au dépôt (`docs/knowledge/`), règle « bump ⇒ repush »](2026-10-25-j0-adr0028-knowledge-depot.md) — sous-ensemble filtré (dépôt public), synchro à coût quasi nul via le connecteur `file_system` du sandbox ; chaîne `314c7b3`→`035edbe`, roundtrip md5.
 
 - [2026-10-25 — [J0] Audit externe n°2 : 5 correctifs de robustesse poussés (N1 lexeur à points, N2 substitution, récursion bornée, N7 export atomique, N9 SVG plat)](2026-10-25-j0-audit2-correctifs.md) — chaque constat re-vérifié sur la tête `4409a65` avant correction ; chaîne `d152080`→`4315374` sur main ; CI rouge = Cargo.lock périmé hérité (#311-#313), validation conditionnée au push du lock ; backlog des restes (discrétisation, DXF, N3-N6, N8, hygiène build) dans l'entrée.
 - [2026-10-25 — [J3] Phase A lot 1 : forge-cad (OCCT système) poussé, CI rouge attendue (Cargo.lock)](2026-10-25-j3-phaseA-lot1-forge-cad.md) — commit 4409a65 : ADR-0022..0027 au dépôt, crate forge-cad MPL-2.0 (opencascade 0.3 sans features défaut → OCCT système ≥ 7.8 dynamique), 4 codes OF-CAD, CI ubuntu-26.04/brew/vcpkg+cache, check-aarch64 exclut forge-cad ; issues #311/#312 = Cargo.lock périmé, convergence par Raphaël (build local + push du lock) ; checklist manuelle phase A livrée.
@@ -32,3 +34,4 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v3 (2026-10-25) : ajout de l'entrée d'ouverture du jalon 3 (lot ADR-0022..0027 validé, digest 4/4).
 - v4 (2026-10-25) : ajout de l'entrée phase A lot 1 (forge-cad poussé, CI rouge attendue Cargo.lock).
 - v5 (2026-10-25) : ajout de l'entrée [J0] audit n°2 — 5 correctifs de robustesse (noms en chemin, substitution, récursion bornée, export atomique, SVG plat).
+- v6 (2026-10-25) : ajout de l'entrée [J0] ADR-0028 — copies de référence de la Knowledge au dépôt.
