@@ -11,8 +11,8 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs).
-Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs), `CAD` (forge-cad).
+Réservés : `UNT` (forge-units), `CAM`, `GCO`, `LNK`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
 ## forge-values (VAL) — moteur de liaisons
@@ -97,3 +97,12 @@ Réservés : `UNT` (forge-units), `CAD`, `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-GCS-0002 | Échec de résolution du croquis | Croquis conflictuel ou sans solution pour l'algorithme choisi | Corriger les contraintes ou changer d'algorithme |
 | OF-GCS-0003 | Reproductibilité non garantie | L'arène de paramètres n'a pas maintenu des adresses croissantes (FreeCAD #33399) | Réduire le croquis ou signaler le bug |
 | OF-GCS-0004 | Appel invalide à l'ABI C | Handle nul, valeur non finie, ou exception C++ rattrapée dans le shim | Corriger les paramètres d'appel (bug logiciel sinon) |
+
+## forge-cad (CAD) — CAO paramétrique (noyau OCCT, ADR-0023)
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-CAD-0001 | Échec d'une opération OCCT | Construction, booléen, tessellation ou écriture refusés par le noyau CAO | Simplifier la géométrie ou vérifier l'installation OCCT (liaison dynamique, version >= 7.8) |
+| OF-CAD-0002 | Forme nulle ou invalide | Une opération a produit une forme vide (contour dégénéré, booléen sans résultat) | Corriger la géométrie source |
+| OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
+| OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets ou de formes du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |

@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "apps/omnifab-android",
     "apps/omnifab-desktop",
+    "crates/forge-cad",
     "crates/forge-doc",
     "crates/forge-gcs",
     "crates/forge-gcs-sys",

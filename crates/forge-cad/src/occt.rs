@@ -1,0 +1,97 @@
+//! Frontière OCCT (ADR-0023 D1) : tout accès au noyau OCCT vit dans ce
+//! module — aucun type d'`opencascade` ne fuit hors de la crate (même
+//! politique de re-encapsulation que le shim planegcs, ADR-0013).
+//!
+//! La liaison est DYNAMIQUE sur une OCCT système (feature `builtin` du
+//! binding désactivée dans le Cargo.toml) : OCCT n'est jamais vendue dans
+//! le dépôt, c'est une dépendance système (apt `libocct-*`, brew
+//! `opencascade`, vcpkg `opencascade`).
+
+use std::path::Path;
+
+use opencascade::mesh::Mesh;
+use opencascade::primitives::{IntoShape, Shape, Solid};
+
+/// Forme topologique opaque, enveloppée par le
+/// [`Solide`](crate::Solide) public.
+pub(crate) struct Forme {
+    /// La forme OCCT encapsulée — jamais exposée hors de ce module.
+    forme: Shape,
+}
+
+impl Forme {
+    /// Boîte alignée sur les axes, coin à l'origine.
+    pub(crate) fn boite(largeur: f64, profondeur: f64, hauteur: f64) -> Self {
+        Self {
+            forme: Shape::box_with_dimensions(largeur, profondeur, hauteur),
+        }
+    }
+
+    /// Cylindre vertical de rayon `rayon`, base centrée en (x, y, 0),
+    /// de hauteur `hauteur` vers +Z.
+    pub(crate) fn cylindre_centre(rayon: f64, x: f64, y: f64, hauteur: f64) -> Self {
+        let base = glam::dvec3(x, y, 0.0);
+        Self {
+            forme: Shape::cylinder(base, rayon, glam::DVec3::Z, hauteur),
+        }
+    }
+
+    /// Prisme : face construite sur le contour fermé, extrudée vers +Z
+    /// (vraies courbes OCCT, pas de polyligne — ADR-0024 D2).
+    pub(crate) fn prisme(
+        contour: Vec<glam::DVec3>,
+        hauteur: f64,
+    ) -> Result<Self, opencascade::Error> {
+        let solide = Solid::extrude_polygon(contour, hauteur)?;
+        Ok(Self {
+            forme: Shape::from(&solide),
+        })
+    }
+
+    /// Soustraction booléenne `self - autre`.
+    pub(crate) fn soustraire(&self, autre: &Self) -> Self {
+        Self {
+            forme: self.forme.subtract(&autre.forme).into_shape(),
+        }
+    }
+
+    /// Union booléenne `self + autre`.
+    pub(crate) fn unir(&self, autre: &Self) -> Self {
+        Self {
+            forme: self.forme.union(&autre.forme).into_shape(),
+        }
+    }
+
+    /// Tessellation (coordonnées en millimètres).
+    pub(crate) fn tesseller(&self, tolerance: f64) -> Result<Mesh, opencascade::Error> {
+        self.forme.mesh_with_tolerance(tolerance)
+    }
+
+    /// Écrit toutes les formes dans un fichier STEP.
+    pub(crate) fn ecrire_step_tous(
+        formes: &[&Self],
+        chemin: &Path,
+    ) -> Result<(), opencascade::Error> {
+        let references: Vec<&Shape> = formes.iter().map(|f| &f.forme).collect();
+        Shape::write_all_step(references, chemin)
+    }
+
+    /// Lit un fichier STEP (une forme par fichier au lot 1).
+    pub(crate) fn lire_step(chemin: &Path) -> Result<Self, opencascade::Error> {
+        Ok(Self {
+            forme: Shape::read_step(chemin)?,
+        })
+    }
+
+    /// Écrit la forme dans un fichier BREP textuel.
+    pub(crate) fn ecrire_brep(&self, chemin: &Path) -> Result<(), opencascade::Error> {
+        self.forme.write_brep_text(chemin)
+    }
+
+    /// Lit un fichier BREP textuel.
+    pub(crate) fn lire_brep(chemin: &Path) -> Result<Self, opencascade::Error> {
+        Ok(Self {
+            forme: Shape::read_brep_text(chemin)?,
+        })
+    }
+}

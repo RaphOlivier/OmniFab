@@ -1,0 +1,16 @@
+# CAO paramétrique OmniFab — phase A (ADR-0023).
+# OCCT en liaison DYNAMIQUE sur une OCCT système >= 7.8 : la feature
+# `builtin` du binding (OCCT statique vendue) est désactivée.
+[package]
+name = "forge-cad"
+description = "CAO paramétrique OmniFab : noyau OCCT isolé derrière le module interne occt (ADR-0023)"
+license = "MPL-2.0"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+forge-units = { path = "../forge-units" }
+opencascade = { version = "0.3", default-features = false }
+glam = "0.24"
+thiserror.workspace = true
+uuid.workspace = true
