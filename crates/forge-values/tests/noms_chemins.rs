@@ -61,3 +61,21 @@ fn la_substitution_respecte_les_noms_en_chemin() {
         "piece.b + 1"
     );
 }
+
+#[test]
+fn une_expression_trop_imbriquee_est_refusee_sans_deborder() {
+    let mut g = ValueGraph::new();
+    g.set_input("a", 1.0).expect("entrée posée");
+    // 100 000 parenthèses ouvrantes : le parseur refuse bien avant
+    // de déborder la pile (audit n°2 — récursion bornée).
+    let profonde = format!("{}a{}", "(".repeat(100_000), ")".repeat(100_000));
+    let erreur = g.set_expression("x", &profonde).unwrap_err();
+    assert_eq!(erreur.code(), "OF-VAL-0003");
+    // une chaîne de négations déborde tout autant : même garde.
+    let moine = format!("{}a", "-".repeat(100_000));
+    let erreur = g.set_expression("y", &moine).unwrap_err();
+    assert_eq!(erreur.code(), "OF-VAL-0003");
+    // une imbrication raisonnable passe toujours.
+    g.set_expression("z", "((a + 1) * 2) - -a").expect("expression bornée");
+    assert_eq!(g.value("z").unwrap(), 5.0);
+}

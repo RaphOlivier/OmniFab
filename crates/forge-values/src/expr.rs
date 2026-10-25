@@ -227,9 +227,17 @@ fn lex(input: &str, node: &str) -> Result<Vec<Token>, ValuesError> {
     Ok(tokens)
 }
 
+/// Profondeur d'imbrication maximale d'une expression : le parseur
+/// et l'évaluateur descendent récursivement, la borne garantit
+/// qu'aucune expression hostile ne déborde la pile — critique sur
+/// Android où un fil démarre avec 2 Mio (audit n°2).
+const PROFONDEUR_MAX: usize = 256;
+
 struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
+    /// Profondeur d'imbrication courante, bornée à `PROFONDEUR_MAX`.
+    profondeur: usize,
     node: &'a str,
     resolve: &'a dyn Fn(&str) -> Option<NodeId>,
 }
@@ -239,7 +247,27 @@ impl Parser<'_> {
         self.tokens.get(self.pos).cloned()
     }
 
+    /// Erreur de dépassement de profondeur : mieux qu'un débordement
+    /// de pile sur une expression hostile (audit n°2).
+    fn erreur_profondeur(&self) -> ValuesError {
+        ValuesError::InvalidExpression {
+            node: self.node.to_string(),
+            reason: format!("expression imbriquée au-delà de {PROFONDEUR_MAX} niveaux"),
+        }
+    }
+
     fn expression(&mut self) -> Result<Expr, ValuesError> {
+        self.profondeur += 1;
+        if self.profondeur > PROFONDEUR_MAX {
+            return Err(self.erreur_profondeur());
+        }
+        let resultat = self.expression_int();
+        self.profondeur -= 1;
+        resultat
+    }
+
+    /// Corps de [`Parser::expression`], sous garde de profondeur.
+    fn expression_int(&mut self) -> Result<Expr, ValuesError> {
         let mut lhs = self.term()?;
         loop {
             match self.peek() {
@@ -277,8 +305,15 @@ impl Parser<'_> {
 
     fn factor(&mut self) -> Result<Expr, ValuesError> {
         if matches!(self.peek(), Some(Token::Minus)) {
+            // Une chaîne de négations descend aussi : même garde.
+            self.profondeur += 1;
+            if self.profondeur > PROFONDEUR_MAX {
+                return Err(self.erreur_profondeur());
+            }
             self.pos += 1;
-            return Ok(Expr::Negate(Box::new(self.factor()?)));
+            let interne = self.factor();
+            self.profondeur -= 1;
+            return Ok(Expr::Negate(Box::new(interne?)));
         }
         self.atom()
     }
@@ -373,6 +408,7 @@ pub(crate) fn parse(
     let mut parser = Parser {
         tokens,
         pos: 0,
+        profondeur: 0,
         node,
         resolve,
     };

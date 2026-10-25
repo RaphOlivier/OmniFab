@@ -640,12 +640,17 @@ impl ValueGraph {
     }
 
     /// Dépendances transitives du nœud : tout ce qu'il lit, directement
-    /// ou non (le nœud lui-même est exclu).
+    /// ou non (le nœud lui-même est exclu) — itératif : un graphe
+    /// profond ne déborde jamais la pile (audit n°2).
     fn collecte_deps_transitifs(&self, id: NodeId, vus: &mut BTreeSet<NodeId>) {
-        if let Some(deps) = self.deps.get(&id) {
+        let mut queue = vec![id];
+        while let Some(courant) = queue.pop() {
+            let Some(deps) = self.deps.get(&courant) else {
+                continue;
+            };
             for dep in deps {
                 if vus.insert(*dep) {
-                    self.collecte_deps_transitifs(*dep, vus);
+                    queue.push(*dep);
                 }
             }
         }
