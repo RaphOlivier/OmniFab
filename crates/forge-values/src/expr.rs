@@ -92,7 +92,8 @@ pub(crate) enum Expr {
 enum Token {
     /// Littéral numérique.
     Number(f64),
-    /// Identifiant (nom de valeur ou de fonction).
+    /// Identifiant (nom de valeur ou de fonction), segments séparés
+    /// par des points pour les noms en chemin (ADR-0006).
     Ident(String),
     /// +
     Plus,
@@ -149,12 +150,33 @@ fn lex(input: &str, node: &str) -> Result<Vec<Token>, ValuesError> {
                 chars.next();
                 let mut name = String::new();
                 name.push(c);
-                while let Some(&c2) = chars.peek() {
-                    if c2.is_ascii_alphanumeric() || c2 == '_' {
-                        name.push(c2);
-                        chars.next();
-                    } else {
-                        break;
+                loop {
+                    match chars.peek().copied() {
+                        Some(c2) if c2.is_ascii_alphanumeric() || c2 == '_' => {
+                            name.push(c2);
+                            chars.next();
+                        }
+                        // Identifiant en chemin (ADR-0006) : segments
+                        // séparés par des points, chaque segment démarre
+                        // comme un identifiant — « piece.largeur » est une
+                        // seule référence, « a.5 » n'en est pas une.
+                        Some('.') => {
+                            chars.next();
+                            match chars.peek().copied() {
+                                Some(c3) if c3.is_ascii_alphabetic() || c3 == '_' => {
+                                    name.push('.');
+                                }
+                                _ => {
+                                    return Err(ValuesError::InvalidExpression {
+                                        node: node.to_string(),
+                                        reason: format!(
+                                            "identifiant « {name}. » : un point doit ouvrir un segment"
+                                        ),
+                                    });
+                                }
+                            }
+                        }
+                        _ => break,
                     }
                 }
                 tokens.push(Token::Ident(name));

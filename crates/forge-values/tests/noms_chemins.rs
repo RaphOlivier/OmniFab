@@ -1,0 +1,38 @@
+//! Noms en chemin (ADR-0006) : identifiants à segments séparés
+//! par des points — audit n°2, point N1. Un nom accepté à la
+//! création (`piece.largeur`, cote système `esquisse.<alias>`) doit
+//! être référençable dans une expression : le lexeur lit le point
+//! comme séparateur de segments, jamais comme un début de nombre.
+
+use forge_values::{Unite, ValueGraph};
+
+#[test]
+fn un_nom_en_chemin_est_referencable_dans_une_formule() {
+    let mut g = ValueGraph::new();
+    g.set_input("piece.largeur", 50.0).expect("entrée posée");
+    g.set_expression("piece.perimetre", "piece.largeur * 2")
+        .expect("formule posée");
+    assert_eq!(g.value("piece.perimetre").expect("valeur"), 100.0);
+}
+
+#[test]
+fn une_cote_systeme_est_lisible_par_l_utilisateur() {
+    let mut g = ValueGraph::new();
+    g.set_expression_systeme("esquisse.largeur", "80", Some(Unite::Millimetre))
+        .expect("cote système posée");
+    g.set_expression("caisse", "esquisse.largeur * 2")
+        .expect("formule utilisateur");
+    assert_eq!(g.value("caisse").expect("valeur"), 160.0);
+}
+
+#[test]
+fn un_segment_fautif_apres_un_point_est_refuse() {
+    let mut g = ValueGraph::new();
+    g.set_input("a", 1.0).expect("entrée posée");
+    // « a.5 » : le point ouvre un segment, pas un nombre.
+    let erreur = g.set_expression("x", "a.5").unwrap_err();
+    assert_eq!(erreur.code(), "OF-VAL-0003");
+    // « 1.5 » reste un nombre décimal.
+    g.set_expression("y", "1.5 * a").expect("nombre décimal");
+    assert_eq!(g.value("y").unwrap(), 1.5);
+}
