@@ -570,10 +570,25 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
     }
 }
 
-/// Écrit les octets exportés au chemin choisi : retour d'export ou
-/// d'erreur (ADR-0016 C1).
+/// Écrit les octets exportés au chemin choisi (ADR-0016 C1) —
+/// atomiquement (audit n°2, N7) : un temporaire voisin est écrit,
+/// synchronisé, puis renommé ; un échec en cours d'écriture ne
+/// tronque jamais le fichier de l'utilisateur, et le temporaire est
+/// nettoyé.
 fn ecris_fichier(generation: u64, chemin: &Path, octets: &[u8]) -> Retour {
-    if let Err(error) = std::fs::write(chemin, octets) {
+    let mut tmp = chemin.as_os_str().to_owned();
+    tmp.push(".tmp");
+    let tmp = PathBuf::from(tmp);
+    let ecriture = (|| -> std::io::Result<()> {
+        use std::io::Write as _;
+        let mut fichier = std::fs::File::create(&tmp)?;
+        fichier.write_all(octets)?;
+        fichier.sync_all()?;
+        drop(fichier);
+        std::fs::rename(&tmp, chemin)
+    })();
+    if let Err(error) = ecriture {
+        let _ = std::fs::remove_file(&tmp);
         return erreur_de_travail(generation, error);
     }
     Retour::Export {
@@ -5164,6 +5179,37 @@ mod tests {
         let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
         let resolu = resultat.expect("résolution réussie");
         assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
+    }
+
+    /// L'export écrit au chemin cible via un temporaire synchronisé
+    /// puis renommé : le fichier de l'utilisateur n'est jamais
+    /// tronqué par un échec en cours d'écriture, aucun temporaire
+    /// ne survit (audit n°2, N7).
+    #[test]
+    fn l_ecriture_d_export_est_atomique() {
+        let cible = std::env::temp_dir().join("omnifab-audit2-export.svg");
+        let _ = std::fs::remove_file(&cible);
+        assert!(
+            matches!(ecris_fichier(0, &cible, b"<svg/>"), Retour::Export { .. }),
+            "l'export doit réussir"
+        );
+        assert_eq!(
+            std::fs::read(&cible).expect("fichier écrit"),
+            b"<svg/>".to_vec()
+        );
+        let mut tmp = cible.as_os_str().to_owned();
+        tmp.push(".tmp");
+        assert!(
+            !PathBuf::from(tmp).exists(),
+            "aucun temporaire résiduel"
+        );
+        let _ = std::fs::remove_file(&cible);
+        // un dossier parent absent : échec propre, retour d'erreur
+        let absent = std::env::temp_dir().join("omnifab-audit2-absent/sortie.svg");
+        assert!(
+            matches!(ecris_fichier(0, &absent, b"x"), Retour::Erreur { .. }),
+            "l'échec remonte comme erreur"
+        );
     }
 
     /// L'hystérésis des redondances (ADR-0018 D5, lot 3c-4) : le
