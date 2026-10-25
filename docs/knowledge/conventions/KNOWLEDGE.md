@@ -1,0 +1,67 @@
+---
+name: conventions
+description: "Conventions OmniFab : unités strictes Rust, i18n Fluent, licences (GPL-3.0+ / MPL-2.0 / données ouvertes), process ADR, CI multi-plateformes, bonnes manières de développement."
+---
+**Version :** v1 (2026-10-25) — versionnage mis en place (fiche historique/KNOWLEDGE.md)
+
+# Conventions OmniFab
+
+## Code
+
+- **Unités strictes** : newtypes (longueur, angle…) dans toutes les API métier, jamais de `f64` nu. Tolérance géométrique documentée : 1e-6 mm par défaut.
+- **Concurrence** : tokio pour la communication machine ; canaux entre machine et UI ; calculs géométriques en blocs parallélisés (rayon), jamais en async. Un freeze de l'UI ne coupe jamais le pilotage machine.
+- **i18n** : Fluent ; toutes les chaînes derrière des clés dès le jalon 1.
+- **Aide intégrée** : chaque élément d'interface porte un `help_id` (clic droit → « Aide sur X ») ; le contenu (description + exemples concrets dans le contexte) vit dans le dépôt, traduit via Fluent, source unique pour l'app, le manuel et le site web. CI : widget sans help_id ou page sans exemple = build en échec.
+- **Wasm-friendly** : feature flags native/wasm ; aucun accès natif (série, fichiers) hors trait d'abstraction.
+
+## Licences
+
+- **Application** : GPL-3.0+ (compatible Blender, Inkscape, GIMP, Krita, FreeCAD).
+- **Crates isolés réutilisables** : MPL-2.0 ou Apache-2.0.
+- **Données (matériaux, machines, normes)** : licences ouvertes dédiées (ODbL, CC0, CC-BY) — pas GPL, qui est faite pour le code. Toute donnée sourcée et citée. Les normes ISO sont payantes : utiliser les tables légalement publiées et les résumés communautaires vérifiés. Fiches constructeurs : citer la source, pas d'extraction contre les CGU.
+
+## Gouvernance
+
+- Dépôt **GitHub** (décision 2026-10-10, compte `RaphOlivier`) = **seule source de vérité** ; le code ne vit jamais uniquement dans une discussion. URL : https://github.com/RaphOlivier/OmniFab (nom « OmniFab », privé pendant le développement ; passage public après traduction EN de la doc et ajout du fichier LICENSE GPL-3.0 en local). Miroir Codeberg possible pour l'indépendance (option, non bloquante). **Adresse et propriétaire inchangés depuis l'origine** (rappel Raphaël, 2026-10-22) : aucun renommage de compte ni de dépôt n'a jamais eu lieu — un 404 côté connecteur signifie un problème d'accès (installation de l'app, droits, faute de frappe), JAMAIS un changement d'adresse ; relire cette fiche avant toute supposition de renommage.
+- **Connecteur GitHub de Vibe** : opérationnel (installé sur le compte `RaphOlivier` le 2026-10-10 via https://github.com/apps/mistralai → Install → Repository access). ⚠️ Le point de vigilance : le bouton « Connecter » de Vibe ne fait qu'**autoriser** l'app (profil seul, dépôts = 404/403) ; l'**installation** via la page publique de l'app est indispensable pour l'accès aux dépôts. Une fois installée, le connecteur gère tout le dépôt : fichiers (commit multi-fichiers), issues, branches, PR, releases, recherche de code.
+- README + CONTRIBUTING + code of conduct.
+- **ADR** (architecture decision records) pour chaque choix structurant.
+- CI : builds Linux (x86_64 + aarch64), Windows, Android (APK) ; tests + clippy + fmt à chaque commit.
+- Formats documentés ; imports testés contre des fichiers réels produits par les logiciels de référence.
+
+## Maintenabilité (exigence de premier ordre)
+
+Le projet doit pouvoir être maintenu par des développeurs qui n'ont pas écrit le code :
+
+- **rustdoc obligatoire sur toute API publique**, publié et testé en CI ; une API publique sans doc = build en échec (même règle que les widgets sans help_id).
+- **Dossier docs/adr/** : chaque choix technique tranché = un ADR avec alternatives rejetées.
+- **Documentation d'architecture vivante** : schéma des crates, flux de données, invariants du modèle event sourcing, conventions de nommage/erreurs.
+- **Guides d'extension** : « comment ajouter un procédé / un dialecte / un format » (les trois axes d'extension les plus probables) + exemples d'utilisation par crate.
+- **Erreurs exploitables** : codes d'erreur typés, jamais de panique silencieuse.
+
+## Gouvernance de validation (décision Raphaël, 2026-10-19)
+
+Pour lever le goulot d'étranglement que constitue la validation utilisateur (≈ 1 jour de cycle sur 4 observé en phase C), mode de fonctionnement adopté :
+
+1. **ADR par lot de jalon** : tous les ADR d'un jalon sont rédigés d'avance et validés en une seule session au début ; l'exécution des phases est ensuite libre jusqu'à la livraison (critère de sortie : CI verte + capitalisation).
+2. **Pré-approbation des micro-décisions** : bugfixes, convergence rustfmt/CI, points de robustesse — silence de Raphaël = accepté. **Restent TOUJOURS à validation explicite** : les six verrous, licences, schémas de format, sécurité machine, frontières de crates, et toute décision de fond (l'ADR la porte).
+3. **Checklist de validation manuelle complète livrée au DÉBUT de chaque phase** (pas à la fin) : Raphaël connaît d'avance tout ce qu'il devra tester.
+4. **Automatisations CI à mettre en place** (workflows dédiés, sans toucher au mécanisme d'issues de `ci.yml`) : galerie de captures d'écran du démonstrateur (artefact téléchargeable, validation visuelle sans `cargo run`) ; régénération/push du `Cargo.lock` par la CI.
+5. **Validations non planifiées** : Raphaël valide quand il est disponible ; Vibe travaille en continu et prépare la phase N+1 pendant que la phase N attend sa validation manuelle.
+6. **Non déléguable** : test tactile Android, jugement visuel/ergonomie final, décisions de fond ci-dessus.
+7. **Rendez-vous explicite (ETA)** : chaque fin de bloc de travail indique le délai estimé avant la prochaine interaction requise de Raphaël (date + durée de session attendue) — il n'a jamais à surveiller la discussion. La veille CI quotidienne (4 h) relaie l'état « en attente de Raphaël » le cas échéant.
+8. **Validations au fil de l'eau** (décision Raphaël, 2026-10-19) : dès qu'une décision est mûre (ADR, digest), Vibe la soumet immédiatement à Raphaël (questions ciblées) pendant qu'il continue le travail non dépendant en parallèle — aucune attente séquentielle dans un sens ni dans l'autre. Les réponses sont actées, puis Vibe poursuit jusqu'au prochain point mûr sans checkpoint intermédiaire. Première application : ADR-0019 validé le 2026-10-19 en cours de discussion de planification.
+9. **Nom des discussions (préférence Raphaël, 2026-10-19)** : chaque discussion OmniFab porte un titre au format `[JX] — <sujet précis>` où X = jalon dominant (J0 = transversal/gestion de projet). Raphaël applique le nommage côté interface (Vibe ne peut pas renommer) ; à chaque fin de discussion, Vibe **propose le titre normalisé** pour la discussion suivante. Les archives suivent le même repérage (jalon en tête d'entrée).
+10. **Textes à copier = encart adapté (préférence Raphaël, 2026-10-19)** : tout texte destiné à être copié par Raphaël (message de lancement d'une discussion, prompt Vibe Code, commande console, question à coller ailleurs) doit être présenté dans un **bloc de code adapté à son type** — encart texte brut pour les messages de discussion, encart `bash` pour les commandes, encart du langage concerné pour le code — jamais en citation ou dans le corps du texte. **Un seul encart par livrable à copier** : le titre de la discussion est inclus en première ligne du prompt de lancement (marqué « Titre : »), pas dans un encart séparé.
+
+## Méthode de travail
+
+- **Tranche horizontale** : livrer un cas d'école de bout en bout (fabriquer un meuble : CAO → découpe/gravure → CAM → LinuxCNC) avant d'élargir.
+- Une discussion = un objectif ; chaque jalon a sa propre discussion amorcée par les fiches Knowledge.
+- À chaque étape : point dette technique, risques, réutilisation de bibliothèques existantes plutôt que réécriture.
+- L'inventaire exhaustif « fonctionnalité × logiciel de référence » (phase 0) est un **garde-fou anti-oubli**, pas une liste à livrer d'un coup.
+- Développement : concevoir dans Vibe Work, implémenter avec Vibe Code (VS Code/CLI) sur le dépôt Git, capitaliser dans la Knowledge Base.
+
+## Historique
+
+- v1 (2026-10-25) : mise en place du versionnage — n° de version en tête + cette section (protocole : fiche historique).
