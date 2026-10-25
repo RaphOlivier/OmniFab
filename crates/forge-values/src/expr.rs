@@ -45,6 +45,13 @@ pub(crate) enum Function {
     Round,
 }
 
+/// `true` si le nom désigne une fonction reconnue du langage : un
+/// tel nom n'est jamais référençable comme valeur — le lexeur lit
+/// « nom( » comme un appel (audit n°2, N2).
+pub(crate) fn est_nom_de_fonction(name: &str) -> bool {
+    Function::from_name(name).is_some()
+}
+
 impl Function {
     /// Nom des fonctions reconnues.
     fn from_name(name: &str) -> Option<Self> {

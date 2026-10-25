@@ -795,14 +795,18 @@ impl ValueGraph {
 }
 
 /// Remplace dans `texte` chaque occurrence de l'identifiant `de` par
-/// `par`, sans toucher les identifiants qui contiennent `de` (bordures
-/// respectées : ni voisin alphanumérique avant, ni après).
+/// `par`, sans toucher les identifiants qui contiennent `de` :
+/// bordures respectées (ni voisin alphanumérique avant, ni après),
+/// le point compte dans un nom en chemin (ADR-0006 — remplacer `a`
+/// ne réécrit ni `piece.a` ni `a.b`, ni les décimales d'un nombre),
+/// et un nom de fonction suivi d'une parenthèse ouvrante est un
+/// appel, jamais une référence (audit n°2, N2).
 pub fn remplacer_identifiants(texte: &str, de: &str, par: &str) -> String {
     let cible: Vec<char> = de.chars().collect();
     if cible.is_empty() {
         return texte.to_string();
     }
-    let est_ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let est_ident = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '.';
     let lettres: Vec<char> = texte.chars().collect();
     let mut resultat = String::with_capacity(texte.len());
     let mut i = 0;
@@ -811,7 +815,8 @@ pub fn remplacer_identifiants(texte: &str, de: &str, par: &str) -> String {
         let correspond = fin <= lettres.len()
             && (i == 0 || !est_ident(lettres[i - 1]))
             && (fin == lettres.len() || !est_ident(lettres[fin]))
-            && lettres[i..fin] == cible[..];
+            && lettres[i..fin] == cible[..]
+            && !est_un_appel(&lettres[fin..], de);
         if correspond {
             resultat.push_str(par);
             i = fin;
@@ -821,4 +826,23 @@ pub fn remplacer_identifiants(texte: &str, de: &str, par: &str) -> String {
         }
     }
     resultat
+}
+
+/// `true` si l'occurrence suivie de `reste` ouvre un appel de
+/// fonction : « min( » reste un appel, même quand un alias portant
+/// le nom de la fonction est remplacé.
+fn est_un_appel(reste: &[char], de: &str) -> bool {
+    expr::est_nom_de_fonction(de)
+        && matches!(
+            reste.iter().find(|c| !c.is_whitespace()),
+            Some('(')
+        )
+}
+
+/// `true` si le nom désigne une fonction du langage d'expressions
+/// (`min`, `abs`, …) : un tel nom n'est pas référençable — le
+/// lexeur lit « nom( » comme un appel — et ne doit pas servir
+/// d'alias (audit n°2, N2).
+pub fn est_nom_de_fonction(name: &str) -> bool {
+    expr::est_nom_de_fonction(name)
 }

@@ -101,6 +101,15 @@ fn verifie_nom_chemin(name: &str) -> Result<(), SessionError> {
     for segment in name.split('.') {
         verifie_nom(segment)?;
     }
+    // Un alias nommé comme une fonction du langage (`min`, `abs`…)
+    // serait créable mais jamais référençable : le lexeur lit
+    // « min( » comme un appel — refus au plan, rien au journal
+    // (audit n°2, N2).
+    if forge_values::est_nom_de_fonction(name) {
+        return Err(SessionError::CommandRejected {
+            reason: format!("le nom « {name} » désigne une fonction des expressions"),
+        });
+    }
     Ok(())
 }
 

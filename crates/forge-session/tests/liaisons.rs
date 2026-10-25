@@ -591,6 +591,28 @@ fn mise_a_jour_de_contrainte_survit_au_journal() {
     );
 }
 
+/// Un alias nommé comme une fonction du langage (`min`, `abs`…)
+/// serait créable mais jamais référençable : le lexeur lit
+/// « min( » comme un appel — refusé au plan, rien au journal
+/// (audit n°2, N2).
+#[test]
+fn un_alias_nomme_comme_une_fonction_est_refuse() {
+    let mut session = Session::new("tests");
+    for name in [
+        "min", "max", "abs", "sqrt", "sin", "cos", "tan", "floor", "ceil", "round",
+    ] {
+        let erreur = session
+            .execute(&SetInput {
+                name: name.into(),
+                value: 1.0,
+                unite: None,
+            })
+            .unwrap_err();
+        assert_eq!(erreur.code(), "OF-SES-0001", "refus de {name}");
+    }
+    assert_eq!(session.document().events().len(), 0, "rien au journal");
+}
+
 /// Croquis piloté : point fixe, point mobile, cote `esquisse.demi`
 /// = `w / 2` (ADR-0019) — le nœud système naît avec la contrainte,
 /// dans la même transaction.

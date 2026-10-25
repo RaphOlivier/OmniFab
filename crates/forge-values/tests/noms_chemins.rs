@@ -36,3 +36,28 @@ fn un_segment_fautif_apres_un_point_est_refuse() {
     g.set_expression("y", "1.5 * a").expect("nombre décimal");
     assert_eq!(g.value("y").unwrap(), 1.5);
 }
+
+#[test]
+fn la_substitution_respecte_les_noms_en_chemin() {
+    use forge_values::remplacer_identifiants;
+    // un segment à l'intérieur d'un nom en chemin n'est pas une
+    // référence à l'alias court (audit n°2, N2)
+    assert_eq!(
+        remplacer_identifiants("piece.a + 1", "a", "b"),
+        "piece.a + 1"
+    );
+    // les décimales d'un nombre ne sont pas un identifiant
+    assert_eq!(remplacer_identifiants("a + 1.5", "a", "b"), "b + 1.5");
+    assert_eq!(remplacer_identifiants("1.5 * a", "5", "b"), "1.5 * a");
+    // un appel de fonction du même nom n'est pas une référence
+    assert_eq!(
+        remplacer_identifiants("min(a, 1)", "min", "b"),
+        "min(a, 1)"
+    );
+    assert_eq!(remplacer_identifiants("min + 1", "min", "b"), "b + 1");
+    // remplacer un nom en chemin entier, lui, réécrit
+    assert_eq!(
+        remplacer_identifiants("piece.a + 1", "piece.a", "piece.b"),
+        "piece.b + 1"
+    );
+}
