@@ -113,6 +113,7 @@ Toutes commandes : `cargo test --workspace`, `cargo clippy --workspace --all-tar
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — conventions de développement obligatoires.
 - [`docs/architecture.md`](docs/architecture.md) — architecture cible du workspace (garde-fou).
 - [`docs/adr/`](docs/adr/) — décisions d'architecture, avec alternatives rejetées.
+- [`docs/audit-protocole.md`](docs/audit-protocole.md) — protocole d'audit du dépôt (à lire par tout auditeur externe avant tout signalement).
 - [`docs/error-codes.md`](docs/error-codes.md) — registre central des codes d'erreur.
 - [`docs/knowledge/`](docs/knowledge/README.md) — **la Knowledge du projet** : fiches de décisions, état actuel, archives des discussions, journal des fonctions (ADR-0028).
 
