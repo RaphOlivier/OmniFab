@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v8 (2026-10-26) — ajout de l'entrée extraits historiques de la fiche architecture (découpage en noyau stable)
+**Version :** v9 (2026-10-26) — ajout de l'entrée protocole d'audit du dépôt (gouvernance des audits externes)
 
 # Archives des discussions
 
@@ -13,6 +13,7 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 
 ## Index
 
+- [2026-10-26 — [J0] Protocole d'audit du dépôt : gouvernance des audits externes réguliers](2026-10-26-j0-protocole-audit.md) — `docs/audit-protocole.md` public + lien README : audit ancré à un SHA, liste anti-faux-positifs (conventions délibérées ADR-citées), dette assumée non re-signalable, format de rapport (A<n>-<nn>, fichier:ligne, sévérité, preuve, test proposé), verdict explicite par signalement (corrigé/dette acceptée/refusé), rapports archivés pour que les audits suivants vérifient les corrections au lieu de re-signaler.
 - [2026-10-26 — [J0] Extraits historiques de la fiche architecture : jalons 0-2, ADR-0016..0027, revue de code, dette d'audit](2026-10-26-arch-extraits-jalons0-2.md) — contenu déplacé **verbatim et sans perte** lors du découpage de la fiche en noyau stable (v4, ~145 Ko → ~26 Ko) : journaux de livraison des jalons 0-2 (phases A-E, rides, leçons egui/usvg/wgpu), résumés étendus des ADR-0016 à 0027, revue de code externe (2026-10-13), dette d'audit (2026-10-17, remplacée par la fiche état actuel). Fichier figé par nature, jamais mis à jour.
 
 - [2026-10-26 — [J0] Revue externe du miroir : statuts datés, clause de reprise ADR-0028, gel post-jalon 4](2026-10-26-j0-revue-miroir-dette.md) — chaque constat de la revue re-vérifié avant correction ; ADR-0028 amendé (miroir = référence de fait si la plateforme disparaît, inversion des rôles rejetée ~5-8×/édition + troncature 64 Ko) ; gel des jalons 5-10 (meuble de bout en bout) ; fiche « état actuel » créée, sécurité v2 (statuts datés), conventions v3 (public depuis 2026-10-22), architecture v3 (gel + tokio annoté).
@@ -41,3 +42,4 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v6 (2026-10-25) : ajout de l'entrée [J0] ADR-0028 — copies de référence de la Knowledge au dépôt.
 - v7 (2026-10-26) : ajout de l'entrée [J0] revue externe du miroir — statuts datés, clause de reprise, gel post-jalon 4, fiche état actuel.
 - v8 (2026-10-26) : ajout de l'entrée [J0] extraits historiques de la fiche architecture — découpage en noyau stable (v4), contenu déplacé verbatim.
+- v9 (2026-10-26) : ajout de l'entrée [J0] protocole d'audit du dépôt — gouvernance des audits externes réguliers (format de rapport, verdicts, anti-faux-positifs).
