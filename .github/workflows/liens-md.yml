@@ -1,0 +1,42 @@
+name: Controle des liens Markdown
+
+# Verifie que tous les liens relatifs des .md du depot existent (README, docs/, AGENTS.md).
+# PREPARE le 2026-10-26 — declenchement volontaire uniquement (workflow_dispatch)
+# tant que la CI est rouge (Cargo.lock) ; a activer (on.push.paths: ["**/*.md"])
+# une fois la CI repassee au vert. Ne cree PAS d'issue : echec visible dans Actions.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  liens:
+    name: liens relatifs .md (docs/, README, AGENTS)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - name: Verification des liens relatifs
+        run: |
+          set -eu
+          FAIL=0
+          # liens relatifs dans tous les .md du depot (hors target/)
+          while IFS= read -r f; do
+            dir=$(dirname "$f")
+            # extraire les cibles de liens markdown [x](y) — on ignore les liens http(s) et les ancres seules
+            grep -oE '\[[^]]*\]\([^)#]+(#[^)]*)?\)' "$f" 2>/dev/null | sed -E 's/^\[[^]]*\]\(//; s/\)$//' | while IFS='#' read -r cible _; do
+              case "$cible" in
+                http* | mailto:* | "") continue ;;
+              esac
+              if [ ! -e "$dir/$cible" ]; then
+                echo "LIEN CASSE : $f -> $cible"
+                FAIL=1
+              fi
+            done
+          done < <(find . -name '*.md' -not -path './target/*')
+          if [ "${FAIL:-0}" = "1" ]; then
+            echo "Des liens relatifs sont casses (voir ci-dessus)."
+            exit 1
+          fi
+          echo "Tous les liens relatifs des .md sont valides."
