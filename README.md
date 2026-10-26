@@ -5,6 +5,8 @@
 
 > **🚧 Statut : jalon 3 (CAO paramétrique) en cours — phase A.** Jalons 1 et 2 livrés (noyau + undo + imports/exports SVG/DXF/STL, viewport wgpu, esquisse 2D à contraintes, moteur de liaisons). La CI est **temporairement rouge** : le `Cargo.lock` doit être régénéré après l'ajout de la crate `forge-cad` (OpenCascade, installation système requise) — correction déjà planifiée. Suivi d'avancement détaillé : [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](docs/knowledge/etat-actuel/KNOWLEDGE.md).
 
+> 🗺️ **Se repérer dans le projet :** le [sommaire général](docs/sommaire.md) cartographie **toute** la documentation et le dépôt — chaque entrée est cliquable et expliquée en une ligne.
+
 **OmniFab** est un logiciel libre de fabrication numérique A→Z : **CAO** (conception assistée par ordinateur), **CAM** (fabrication assistée par ordinateur), génération de **G-code** et **pilotage machine**.
 
 L'objectif : couvrir toute la chaîne, de l'idée du meuble à la pièce usinée, dans une seule application native — sans dépendre de logiciels propriétaires.
@@ -110,6 +112,7 @@ Toutes commandes : `cargo test --workspace`, `cargo clippy --workspace --all-tar
 
 ## Documentation
 
+- [`docs/sommaire.md`](docs/sommaire.md) — **sommaire général** : carte cliquable de toute la documentation et du dépôt.
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — conventions de développement obligatoires.
 - [`docs/architecture.md`](docs/architecture.md) — architecture cible du workspace (garde-fou).
 - [`docs/adr/`](docs/adr/) — décisions d'architecture, avec alternatives rejetées.
