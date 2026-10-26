@@ -62,7 +62,7 @@ Légende : ✅ clos · ◐ en cours · ⏸ gelé (jalons 5-10) / en attente (jal
 | `crates/forge-doc` | Conteneur ZIP versionné + journal d'événements JSON Lines, migrations, snapshots non autoritaires (ADR-0001) |
 | `crates/forge-values` | Moteur unique de liaisons : évaluation paresseuse + expressions déterministes (ADR-0002) |
 | `crates/forge-geom` | Géométrie minimale : points, chemins 2D, maillages (codes OF-GEO) |
-| `crates/forge-io` | Import/export SVG, DXF, STL — parseurs budgetsés, courbes discrétisées (ADR-0009) |
+| `crates/forge-io` | Import/export SVG, DXF, STL — parseurs budgetés, courbes discrétisées (ADR-0009) |
 | `crates/forge-session` | Commandes, projections, undo/redo par curseur, tout-ou-rien (ADR-0008, ADR-0011) |
 | `crates/forge-i18n` | i18n Fluent + pages d'aide intégrées, clés vérifiées par tests (ADR-0010) |
 | `crates/forge-render` | Rendu wgpu 2D/3D : caméras, scènes, pipelines TriangleList/LineList (ADR-0015) |
