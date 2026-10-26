@@ -2,7 +2,7 @@
 name: formats
 description: "Formats d'interopérabilité OmniFab : vectoriel (SVG/DXF/PDF), CAO (STEP/IGES/BREP/FCStd), maillage (STL/3MF/glTF/blend), images (PNG/ORA/kra/psd/xcf/GMIC), G-code multi-dialectes, projet natif ZIP."
 ---
-**Version :** v1 (2026-10-25) — versionnage mis en place (fiche historique/KNOWLEDGE.md)
+**Version :** v2 (2026-10-26) — ligne broderie (DST/JEF/PES, référence Ink/Stitch) ajoutée à la matrice par domaine (cohérence avec le point 3 de la vision du prompt fondateur) ; v1 (2026-10-25) — versionnage mis en place (fiche historique/KNOWLEDGE.md)
 
 # Formats — interopérabilité OmniFab
 
@@ -31,6 +31,7 @@ Priorité aux formats ouverts/standard. Imports testés contre des fichiers rée
 | Fabrication | G-code GRBL/FluidNC/LinuxCNC, toolpaths, DSTV/NC1 (pièces acier → CNC) | LinuxCNC, bCNC, UGS, gSender ; Tekla/Advance Steel (DSTV) |
 | Simulation usinage | Rejouage G-code 3D | Camotics, BlenderCAM |
 | Laser / plasma / couteau | G-code GRBL, paramètres laser/plasma, commandes tangentielles | LaserGRBL, LaserWeb, FabexCNC |
+| Broderie | DST, JEF, PES (export — fichiers machines à broder numérique) | Ink/Stitch |
 
 **Ajouts 2026-10-23 (analyse ArtCraft/FullControl — intégrés dans la matrice v8 au dépôt le 2026-10-24)** : **DWG en lecture** (R13–2018) — précédent récent CADCraft (Rust natif, licence permissive : crate réutilisable à évaluer au moment venu ; quasi absent du libre, QCAD/FreeCAD passent par des convertisseurs), jalon à décider (candidat élargissement forge-io après STEP/.FCStd du jalon 3) ; **PSD/PSB round-trip avec préservation des calques** (précédent PhotoCraft), jalon 6 painting raster.
 
@@ -58,3 +59,4 @@ Conteneur ZIP : manifeste JSON versionné + un fichier par objet + blobs binaire
 ## Historique
 
 - v1 (2026-10-25) : mise en place du versionnage — n° de version en tête + cette section (protocole : fiche historique).
+- v2 (2026-10-26) : ligne broderie (DST/JEF/PES, référence Ink/Stitch) ajoutée à la matrice par domaine — cohérence croisée hebdomadaire (prompt fondateur point 3).

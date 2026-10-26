@@ -14,6 +14,8 @@
 > - Extensions fonctionnelles validées : éditeur G-code multi-dialectes (colorisation, autocomplétion, aides), gestion multi-machines en parallèle, traitement par lots, bibliothèques de données réelles sourcées, assistant de profils machines et dialectes G-code maison, paramétrique universel (alias + nodal sur un moteur unique), assistants de conception guidée (guides pas-à-pas par type d'objet + éditeur de guides personnalisés), classification multi-référentielle des objets + nomenclatures/BOM paramétriques, interopérabilité openBIM (IFC à l'import, DSTV/NC1 à l'export), détection automatique des contrôleurs et bibliothèques de données « référence ouverte du marché » (vision 2026-10-19) ✓
 >
 > **Objectif de ce document :** contenir (A) le prompt à copier-coller dans une nouvelle discussion pour lancer la conception, et (B) les annexes de référence (stack, formats, architecture, interface, roadmap) pour valider et ajuster les choix avant et pendant cette discussion.
+>
+> **Dernière synchronisation : v4, 2026-10-26** (contrôle de cohérence hebdomadaire) — DWG en lecture (R13–2018), PSD/PSB round-trip avec préservation des calques (précédent PhotoCraft), formats broderie DST/JEF/PES, listes de logiciels harmonisées sur le KNOWLEDGE.md racine (matrice v8).
 
 ---
 
@@ -230,31 +232,28 @@ LinuxCNC (dont PlasmaC/QtPlasmaC pour le plasma), Camotics, bCNC, KiriMoto,
 LaserGRBL, Universal G-Code Sender, FluidNC, gSender, LaserWeb, FabexCNC,
 BlenderCAM, F-Engrave (gravure V), Ezilathe (tournage), Deepnest/SVGnest
 (nesting), FlatCAM + pcb2gcode (PCB), SolveSpace, OpenSCAD, InkCut (traceurs
-2D), CNCjs, QCAD, MeshLab, PrusaSlicer (impression), mods du MIT CBA
-(chaînes de fabrication nodales), BOSL2 (bibliothèques paramétriques),
-WikiHouse (système constructif libre), FullControl (design direct de
-trajectoires en G-code), la suite ArtCraft (VectorCraft, CADCraft,
-PhotoCraft, GridCraft — libres en Rust natif), ainsi que la famille
-G-code (RS-274 / dialectes LinuxCNC et GRBL).
+2D), CNCjs, QCAD, MeshLab, Ink/Stitch (broderie), PyCAM, PrusaSlicer/Cura
+(impression), mods du MIT CBA (chaînes de fabrication nodales), BOSL2
+(bibliothèques paramétriques), WikiHouse (système constructif libre),
+FullControl (design direct de trajectoires en G-code), la suite ArtCraft
+(VectorCraft, CADCraft, PhotoCraft, GridCraft — libres en Rust natif), ainsi
+que la famille G-code (RS-274 / dialectes LinuxCNC et GRBL).
 
 INSPIRATIONS COMMERCIALES (comportement et workflows uniquement, jamais le
-code — pour rester 100 % libre GPL) : Vectric VCarve/Aspire (gravure V,
+code — pour rester 100 % libre GPL) : Vectric (VCarve/Aspire : gravure V,
 inlays), SheetCam (plasma : kerf, lead-in/out, cut charts), Fusion 360
-(intégration CAO+CFAO, 3+2 positionnel), Ecam/CamBam (tournage),
-Mach3/Mach4, Carbide Create, EstlCAM (parcours débutant), Slicer/123D Make
-(fabrication par tranches empilées/enchevêtrées — Autodesk a abandonné
-l'outil : OmniFab peut reprendre ce flambeau librement, il n'existe aucun
-équivalent libre complet), LightBurn (laser), MeshCAM (CAM sans CAO),
-SolidWorks et SolidWorks CAM (configurations, reconnaissance automatique
-de fonctions, usinage piloté par les tolérances), Mastercam, Siemens NX,
-3DEXPERIENCE CATIA (knowledgeware, Class-A), Onshape, Alibre ; et les
-spécialistes par type de construction pour l'axe « assistants de
-conception guidée » : PolyBoard (meubles), StairDesigner (escaliers),
-Cadwork/Dietrich's (charpente), Advance Steel/Tekla (structures acier),
-MTpro (profilés alu) ; et le monde BIM pour la classification et
-l'interopérabilité : Autodesk Revit / Graphisoft Archicad (classification
-multi-référentielle OmniClass/Uniclass/UniFormat, nomenclatures/BOM
-paramétriques), écosystème openBIM buildingSMART (IFC, BCF, IDS).
+(intégration CAO+CFAO, 3+2 positionnel), Mastercam, SolidWorks et SolidWorks
+CAM (configurations, reconnaissance automatique de fonctions, usinage piloté
+par les tolérances), 3DEXPERIENCE CATIA (knowledgeware, Class-A), Siemens NX,
+Onshape, Alibre, LightBurn (laser), MeshCAM (CAM sans CAO), Edgecam ; et les
+spécialistes par type de construction pour l'axe « assistants de conception
+guidée » : PolyBoard (meubles), StairDesigner (escaliers), SketchList
+(meubles), Cadwork/Dietrich's/sema (charpente), Advance Steel/Tekla
+(structures acier), MTpro (profilés alu) ; et le monde BIM pour la
+classification et l'interopérabilité : Autodesk Revit / Graphisoft Archicad
+(classification multi-référentielle OmniClass/Uniclass/UniFormat,
+nomenclatures/BOM paramétriques), écosystème openBIM buildingSMART (IFC,
+BCF, IDS).
 
 EXIGENCE D'EXHAUSTIVITÉ : en phase 0, produire un inventaire complet des
 fonctionnalités de CHACUN de ces logiciels de référence, classé dans une
@@ -264,16 +263,19 @@ chaque logiciel comme options avancées. Cet inventaire alimente la matrice
 formats/interopérabilité et la définition des jalons.
 
 FORMATS À SUPPORTER (priorité ouverte/standard)
-- Vectoriel 2D : SVG, DXF, PDF (import).
+- Vectoriel 2D : SVG, DXF, DWG (lecture, R13–2018 — précédent récent CADCraft,
+  crate réutilisable à évaluer), PDF (import).
 - CAO : STEP, IGES, BREP ; natif FreeCAD (.FCStd) à l'import ; IFC à l'import
   (maquettes BIM : pièces/sous-modèles réutilisables pour la fabrication,
   chaîne BIM → CAM).
 - Maillage 3D : STL, 3MF, OBJ, PLY, glTF ; natif Blender (.blend) à l'import.
 - Image : PNG, JPEG, TIFF, WebP, EXR ; OpenRaster (.ora), .kra (Krita), .psd
-  et .xcf à l'import ; filtres GMIC (.gmic).
+  et .xcf à l'import ; PSD/PSB round-trip avec préservation des calques
+  (précédent PhotoCraft) ; filtres GMIC (.gmic).
 - Fabrication : G-code (généré + lu, dialectes GRBL/FluidNC/LinuxCNC), fichiers
   projets CAM ; enregistrer les paramètres d'usinage dans le projet natif ;
   DSTV/NC1 (pièces acier vers machines CNC, interface neutre standard).
+- Broderie : DST/JEF/PES (export, comme Ink/Stitch).
 - Classification et nomenclatures : les objets peuvent porter des codes de
   plusieurs référentiels simultanément (classification à la BIM : OmniClass,
   Uniclass, UniFormat ; normes mécaniques ISO ; bibliothèques maison),
@@ -403,7 +405,7 @@ flowchart LR
 
 | Domaine                | Formats                                 | Logiciel de référence         |
 | ---------------------- | --------------------------------------- | ----------------------------- |
-| Vectoriel 2D           | SVG, DXF, PDF                           | Inkscape, FreeCAD TechDraw    |
+| Vectoriel 2D           | SVG, DXF, DWG (lecture), PDF             | Inkscape, FreeCAD TechDraw ; CADCraft (DWG) |
 | CAO solide             | STEP, IGES, BREP, FCStd, IFC (import)  | FreeCAD ; Revit/ArchiCAD (IFC) |
 | Maillage 3D            | STL, 3MF, OBJ, PLY, glTF, blend         | Blender, FreeCAD              |
 | Image raster           | PNG, JPEG, TIFF, WebP, EXR, PSD, XCF    | GIMP, Krita                   |
@@ -414,6 +416,7 @@ flowchart LR
 | Classification / nomenclatures | Codes multi-référentiels (OmniClass, Uniclass, UniFormat, ISO, maison) + BOM paramétriques | Revit, Archicad, Tekla       |
 | Simulation usinage     | Rejouage G-code 3D                      | Camotics, BlenderCAM          |
 | Laser / plasma / couteau | G-code GRBL, paramètres laser/plasma, commandes tangentielles | LaserGRBL, LaserWeb, FabexCNC |
+| Broderie               | DST, JEF, PES (export)                 | Ink/Stitch                    |
 
 
 ### B5. Concept d'interface à envisager ensemble
