@@ -20,23 +20,24 @@ jobs:
       - name: Verification des liens relatifs
         run: |
           set -eu
-          FAIL=0
-          # liens relatifs dans tous les .md du depot (hors target/)
+          CASSES=$(mktemp)
+          # liens relatifs dans tous les .md du depot (hors target/) ;
+          # collecte dans un fichier : une variable modifiee dans un pipe
+          # reste dans son sous-shell et ne remonte jamais au parent
           while IFS= read -r f; do
             dir=$(dirname "$f")
-            # extraire les cibles de liens markdown [x](y) — on ignore les liens http(s) et les ancres seules
             grep -oE '\[[^]]*\]\([^)#]+(#[^)]*)?\)' "$f" 2>/dev/null | sed -E 's/^\[[^]]*\]\(//; s/\)$//' | while IFS='#' read -r cible _; do
               case "$cible" in
                 http* | mailto:* | "") continue ;;
               esac
               if [ ! -e "$dir/$cible" ]; then
-                echo "LIEN CASSE : $f -> $cible"
-                FAIL=1
+                echo "$f -> $cible" >> "$CASSES"
               fi
             done
           done < <(find . -name '*.md' -not -path './target/*')
-          if [ "${FAIL:-0}" = "1" ]; then
-            echo "Des liens relatifs sont casses (voir ci-dessus)."
+          if [ -s "$CASSES" ]; then
+            echo "Liens relatifs casses :"
+            cat "$CASSES"
             exit 1
           fi
           echo "Tous les liens relatifs des .md sont valides."
