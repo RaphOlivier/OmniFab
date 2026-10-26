@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v10 (2026-10-26) — ajout de l'entrée audit externe n°3 (verdicts du mainteneur sur les 23 signalements)
+**Version :** v11 (2026-10-26) — ajout de l'entrée présentation/schémas d'interaction (docs/architecture.md, commit d08e6d7)
 
 # Archives des discussions
 
@@ -12,6 +12,8 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - Format : un fichier par discussion, nommé `AAAA-MM-JJ-slug.md`, classé au fil de l'eau. **Chaque entrée porte le jalon dominant en tête** (format des titres de discussions : `[JX] — <sujet>`, J0 = transversal) ; à chaque fin de discussion, Vibe propose à Raphaël le titre normalisé de la discussion suivante.
 
 ## Index
+
+- [2026-10-26 — [J0] Présentation du projet et schémas d'interaction dans la documentation](2026-10-26-j0-presentation-docs-diagrammes.md) — deck développeur + 6 diagrammes Mermaid (canvases, hors dépôt) ; argumentaire accepté : invariants → `docs/architecture.md` (commit `d08e6d7` : geste utilisateur, undo/redo+sauvegarde, chaîne machine cible verrou n°4, règle « casser un schéma ⇒ ADR ou maj dans la même PR »), récit/bilan → page de présentation datée, jamais la doc de référence ; pas d'ADR (doc d'invariants existants).
 
 - [2026-10-26 — [J0] Audit externe n°3 (Claude) : 23 signalements, verdicts du mainteneur — 1 réfuté (B2, opencascade 0.3.0 vérifiée), 6 corrections doc/outillage (D1-D5, D7), backlog au vert (A3-01..A3-18 + B1/B3/B4/B5)](2026-10-26-j0-audit3-claude.md) — rapport intégral + table des verdicts ; re-vérification au code d'A3-01 (gc_blobs, confirmé) et A3-02 (PROFONDEUR_MAX=256 ne borne que l'imbrication, confirmé) ; correctifs de l'audit 2 vérifiés par l'auditeur (N1/N2/N7/N9 ✔, récursion ◐) ; protocole respecté à la lettre (premier audit sous `docs/audit-protocole.md`).
 
@@ -46,3 +48,4 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v8 (2026-10-26) : ajout de l'entrée [J0] extraits historiques de la fiche architecture — découpage en noyau stable (v4), contenu déplacé verbatim.
 - v9 (2026-10-26) : ajout de l'entrée [J0] protocole d'audit du dépôt — gouvernance des audits externes réguliers (format de rapport, verdicts, anti-faux-positifs).
 - v10 (2026-10-26) : ajout de l'entrée [J0] audit externe n°3 — 23 signalements, verdicts du mainteneur (B2 réfuté avec preuve crates.io, D1-D5/D7 corrigés en doc, A3-* en backlog au vert).
+- v11 (2026-10-26) : ajout de l'entrée [J0] présentation du projet — 3 schémas d'invariants Mermaid ajoutés à docs/architecture.md (d08e6d7), récit/bilan hors doc de référence.
