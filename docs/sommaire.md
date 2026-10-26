@@ -44,8 +44,10 @@
 | [`ADR-0013`](adr/ADR-0013-planegcs-ffi.md) | planegcs (solveur de contraintes FreeCAD) via FFI + shim C++ (verrou 3) |
 | [`ADR-0014`](adr/ADR-0014-quick-wins-phase-B.md) | Quick-wins de la phase B du jalon 2 |
 | [`ADR-0015`](adr/ADR-0015-viewport-wgpu.md) | Viewport wgpu : caméras, scènes, pipelines 2D/3D |
+| [`ADR-0016`](adr/ADR-0016-correctifs-robustesse.md) | Correctifs de robustesse (audits du 2026-10-17) : session transactionnelle, sauvegarde sûre, conteneur durci, fil de travail desktop, export SVG interopérable |
 | [`ADR-0017`](adr/ADR-0017-unites-stl.md) | Unités à l'import/export STL |
 | [`ADR-0018`](adr/ADR-0018-esquisse-2D.md) | Esquisse 2D contrainte (design du sketcher) |
+| [`ADR-0019`](adr/ADR-0019-liaisons-phase-E.md) | Moteur de liaisons forge-values (phase E) : schémas d'événements v2, namespaces d'alias, cotes d'esquisse pilotées, panneau de liaisons |
 | [`ADR-0020`](adr/ADR-0020-correctifs-validation-jalon2.md) | Correctifs de validation du jalon 2 |
 | [`ADR-0021`](adr/ADR-0021-bascule-ancrage-liste-contraintes.md) | Bascule d'ancrage de la liste des contraintes |
 | [`ADR-0022`](adr/ADR-0022-decoupage-jalon-3.md) | Découpage du jalon 3 en phases A-E |

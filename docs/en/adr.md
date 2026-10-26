@@ -22,8 +22,10 @@ The full ADRs are written in French in [`docs/adr/`](../adr/). Every settled str
 | [ADR-0013](../adr/ADR-0013-planegcs-ffi.md) | planegcs via FFI + C++ shim, isolated in forge-gcs/forge-gcs-sys |
 | [ADR-0014](../adr/ADR-0014-quick-wins-phase-B.md) | Phase B quick wins |
 | [ADR-0015](../adr/ADR-0015-viewport-wgpu.md) | wgpu viewport: cameras, scenes, TriangleList/LineList pipelines |
+| [ADR-0016](../adr/ADR-0016-correctifs-robustesse.md) | Robustness fixes (external audits of 2026-10-17): transactional session, safe saving, hardened container, worker thread, interoperable SVG export |
 | [ADR-0017](../adr/ADR-0017-unites-stl.md) | STL units (millimeter convention, tolerance threshold) |
 | [ADR-0018](../adr/ADR-0018-esquisse-2D.md) | Constraint-based 2D sketch |
+| [ADR-0019](../adr/ADR-0019-liaisons-phase-E.md) | Binding engine forge-values (phase E): v2 event schemas, alias namespaces, expression-driven sketch dimensions, bindings panel |
 | [ADR-0020](../adr/ADR-0020-correctifs-validation-jalon2.md) | Milestone-2 validation fixes |
 | [ADR-0021](../adr/ADR-0021-bascule-ancrage-liste-contraintes.md) | Constraint toggle, point anchoring, constraint list |
 | [ADR-0022](../adr/ADR-0022-decoupage-jalon-3.md) | Milestone 3 decomposition: phases A→E (CAD core → nodal editor → desktop CAD) |
@@ -34,6 +36,6 @@ The full ADRs are written in French in [`docs/adr/`](../adr/). Every settled str
 | [ADR-0027](../adr/ADR-0027-desktop-cao.md) | Desktop CAD space: project tree, File menu, rich 3D rendering |
 | [ADR-0028](../adr/ADR-0028-copies-knowledge-depot.md) | Reference copies of the project Knowledge in the repository (`docs/knowledge/`), bump ⇒ repush rule |
 
-> ADR-0016 (import report) and ADR-0019 (bindings v2) are referenced across the docs and Knowledge summaries; they have no standalone file in `docs/adr/` yet.
+> ADR-0016 and ADR-0019 were added to `docs/adr/` on 2026-10-26 — the numbering 0000-0028 is now complete.
 
 For the full reasoning (including rejected alternatives), read the French originals.
