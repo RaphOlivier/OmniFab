@@ -2,7 +2,7 @@
 name: etat-actuel
 description: "État actuel d'OmniFab sur une page : ce qui compile, état de la CI, dette ouverte. Mise à jour à chaque lot de travail — la fraîcheur de toutes les autres fiches se lit ici d'un coup d'œil."
 ---
-**Version :** v3 (2026-10-26) — galerie visuelle étendue (historique durable branche `galerie`) + diagnostic de la veille du matin éclairci (commits nocturnes identifiés, `list_issues` du connecteur défaillant)
+**Version :** v4 (2026-10-26, soir) — lot « sans PC » : fiche architecture découpée (v4), AGENTS.md créé, hygiène build (LICENSE ×6, rust-toolchain, rust-version), workflow liens-md préparé
 
 # État actuel du projet
 
@@ -25,9 +25,9 @@ description: "État actuel d'OmniFab sur une page : ce qui compile, état de la 
 
 1. **CI au vert** : push du Cargo.lock (Raphaël) — bloque toute validation compile des correctifs récents.
 2. **Backlog audit n°2 non corrigé** : discrétisation à tolérance (cercle/arc/flèche), DXF ($INSUNITS, INSERT/blocs, extrusion, chaînage de contours, export LWPOLYLINE), RapportImport (ADR-0016), N3 suppression « Remplacer » atomique, N4 résolveur d'esquisse à état historique, N5 suppression d'entités/contraintes, N6 validations dégénérées, N8 catch_unwind fil de travail.
-3. **Hygiène build** : `rust-toolchain.toml`/`rust-version` absents (code exige ≥ 1.88) ; LICENSE manquants sur 7 crates/12 ; ~218 `expect()` hors tests (clippy `expect_used` à activer hors tests).
-4. **Dette documentaire** : `architecture/KNOWLEDGE.md` ~149 Ko à découper (noyau stable + historique vers archives) ; README/CONTRIBUTING encore jalon 0 ; prérequis C++ (CMake ≥ 3.26, Eigen, fmt, Boost, libclang, sous-module) à documenter ; traduction EN de la doc (condition initiale du passage public, non tenue).
-5. **Dette outillage** : contrôle de liens Markdown du miroir en CI (attend CI verte) ; `AGENTS.md` ou fiche non publiée pour les préférences personnelles (nommage `[JX]`, encarts) ; branches/PR vs pushes directs (non tranché) ; main.rs ~5 000 lignes à découper avant la fusion de fonctionnalités risquée.
+3. **Hygiène build** ✅ *(traité le 2026-10-26 : rust-toolchain.toml + rust-version 1.88, LICENSE MPL-2.0 sur les 6 crates manquantes — `f754c1f`)* ; reste : ~218 `expect()` hors tests (clippy `expect_used` à activer hors tests — code, attend CI verte).
+4. **Dette documentaire** : ~~architecture 149 Ko~~ ✅ *(découpée le 2026-10-26 : noyau stable ~26 Ko v4 + extraits verbatim en archives)* ; ~~AGENTS.md~~ ✅ *(créé le 2026-10-26)* ; ~~workflow liens Markdown~~ ✅ *(préparé `workflow_dispatch` seul — activer `on.push` au vert)* ; reste : CONTRIBUTING encore jalon 0 ; prérequis C++ à documenter ; traduction EN de la doc (condition initiale du passage public, non tenue).
+5. **Dette outillage** : ~~contrôle de liens Markdown~~ ✅ *(workflow préparé, activation au vert)* ; ~~AGENTS.md / préférences personnelles~~ ✅ ; branches/PR ✅ *(règle actée conventions v4)* ; main.rs ~5 000 lignes à découper avant la fusion de fonctionnalités risquée ; nettoyage de `preparation/` (fichiers OBSOLÈTES) ; backlog audit n°2 à préparer en fiches SANS pousser tant que le lock n'est pas poussé.
 
 ## Gel en vigueur
 
@@ -40,3 +40,4 @@ description: "État actuel d'OmniFab sur une page : ce qui compile, état de la 
 - v1 (2026-10-26) : création — relevé initial (CI rouge Cargo.lock attendue, backlog audit, gel post-jalon 4, dette documentaire).
 - v2 (2026-10-26, matin) : veille CI — 31 issues ouvertes, commits nocturnes à identifier, anomalie d'accès connecteur (à investiguer).
 - v3 (2026-10-26, après-midi) : diagnostic éclairci — commits nocturnes identifiés (lots du 25 au soir, connus de la Knowledge), `list_issues` renvoie silencieusement 0 (recouper par API publique), lock confirmé absent de forge-cad à la tête, CI rouge cause unique inchangée ; + galerie visuelle étendue — archivage durable des captures sur la branche `galerie` (historique visuel commit par commit), déclenchement élargi à tout code.
+- v4 (2026-10-26, soir) : lot « sans PC » — fiche architecture découpée en noyau stable v4 (~145→~26 Ko, extraits verbatim en archives, `042751b3`) ; AGENTS.md créé (`f754c1f`) ; hygiène build (LICENSE MPL-2.0 ×6, rust-toolchain.toml, rust-version 1.88, `f754c1f`) ; workflow liens-md préparé workflow_dispatch seul (`e429307a`, activer au vert — leçon : une variable modifiée dans un sous-shell de pipe ne remonte pas, collecter dans un fichier).
