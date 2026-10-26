@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version : v10 (2026-10-26) — ajout de l'entrée audit externe n°3 (verdicts du mainteneur sur les 23 signalements)
+**Version :** v10 (2026-10-26) — ajout de l'entrée audit externe n°3 (verdicts du mainteneur sur les 23 signalements)
 
 # Archives des discussions
 
