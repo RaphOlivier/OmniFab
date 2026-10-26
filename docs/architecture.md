@@ -86,3 +86,81 @@ GPL du dépôt ; les crates MPL-2.0 n'en dépendent pas.
 Vendoring : `third_party/planegcs` est un sous-module git figé, décrit
 par `third_party/planegcs-MANIFEST.md` (ADR-0013) ; son contenu n'est
 jamais modifié localement.
+
+
+# Schémas d'interaction
+
+Trois schémas complètent le graphe de dépendances : ils décrivent des
+**invariants** (comportements garantis par les ADR), pas un état
+momentané du code. Toute évolution qui casse un de ces schémas doit
+passer par un ADR ou mettre le schéma à jour dans la même PR.
+
+## Un geste utilisateur : du clic à l'écran
+
+Trajet complet d'une action (ex. déplacer un point de l'esquisse,
+ADR-0018/0021). Rien n'atteint le journal sans validation au `plan()` ;
+les positions résolues ne sont jamais sérialisées (résoudre = état
+dérivé).
+
+```mermaid
+sequenceDiagram
+    participant U as Utilisateur
+    participant UI as apps/omnifab-desktop
+    participant S as forge-session
+    participant D as forge-doc (journal)
+    participant G as forge-gcs (Solveur2D)
+    participant R as forge-render
+
+    U->>UI: glisse une poignée
+    UI->>UI: aperçu résolu sur le fil de travail (muet, rien au journal)
+    UI->>S: MovePoint au relâchement
+    S->>S: plan() valide la commande
+    alt refus (point ancré, croquis DoF 0)
+        S-->>UI: erreur typée OF-SES-0001, rien au journal
+    else accepté
+        S->>D: événement sketch.point.moved (transaction)
+        D-->>S: rejeu des projections
+        S->>G: résolution (graines + contraintes, DogLeg)
+        G-->>S: positions résolues, DoF, diagnostics
+        S-->>UI: état dérivé frais
+        UI->>R: redessin (wgpu)
+        R-->>U: esquisse mise à jour
+    end
+```
+
+## Undo/redo et sauvegarde (event sourcing, ADR-0008)
+
+Le journal est la seule vérité : l'undo ne fait que reculer un curseur
+en mémoire ; la sauvegarde est atomique (tmp + .bak + rename) et ne
+casse pas le redo (ADR-0016-A2/C3).
+
+```mermaid
+stateDiagram-v2
+    [*] --> JournalVide
+    JournalVide --> EnEdition : action utilisateur
+    EnEdition --> EnEdition : nouvel événement appendé
+    EnEdition --> Undo : Ctrl+Z (le curseur recule)
+    Undo --> EnEdition : nouvelle action (événements défaits abandonnés, GC des blobs orphelins)
+    Undo --> Redo : Ctrl+Y (le curseur avance)
+    Redo --> Undo : Ctrl+Z
+    EnEdition --> Sauvegarde : écrire .omnifab (tmp + .bak + rename atomique)
+    Sauvegarde --> EnEdition : curseur inchangé, le redo survit
+```
+
+## Chaîne machine : l'UI ne gèle jamais le pilotage (verrou n°4, cible)
+
+Cible des jalons 4+ (forge-link, forge-gcode) : les traitements longs
+et le pilotage vivent hors du fil d'interface, reliés par des canaux.
+Règle d'or : un freeze de l'UI ne coupe jamais le pilotage machine ;
+la géométrie lourde tourne en blocs parallélisés, jamais en async.
+
+```mermaid
+flowchart LR
+    ui["Fil UI (egui)"] -- "commandes / statut (canaux)" --> mq["Fil machine (tokio, forge-link)"]
+    mq -- "série natif" --> ctrl["Contrôleur GRBL / FluidNC / Marlin / LinuxCNC"]
+    mq -- "WebSocket (pont web)" --> ctrl
+    ctrl --> machine["Machine physique"]
+    mq -- "télémétrie, positions" --> ui
+    ui -- "parses et calculs lourds" --> wt["Fil de travail (std::thread, jamais async)"]
+    wt -- "résultats" --> ui
+```
