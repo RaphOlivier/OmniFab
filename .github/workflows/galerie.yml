@@ -105,46 +105,48 @@ jobs:
         run: |
           set -eu
           DATE=$(date -u +%F)
+          FULL=$(git rev-parse HEAD)
           SHORT=$(git rev-parse --short HEAD)
           DOSSIER="captures/$DATE-$SHORT"
           # recuperer la branche galerie, ou la creer orpheline au premier archivage
           if git fetch origin galerie 2>/dev/null; then
-            git checkout -B galerie origin/galerie -- 2>/dev/null || git checkout -B galerie origin/galerie
+            git checkout -B galerie origin/galerie
           else
-            git checkout -B galerie --orphan
+            git checkout --orphan galerie
             git rm -rf --quiet . || true
-            cat > README.md <<'MDEOF'
-          # Galerie visuelle d'OmniFab
-
-          Historique visuel de l'application, capturé automatiquement par
-          `.github/workflows/galerie.yml` à chaque évolution du code poussée
-          sur `main` (scénarios Xvfb : accueil, atelier-2d, atelier-3d).
-
-          - `captures/<date>-<sha court>/` — un dossier par lot de code,
-            nommé par la date du commit et son SHA court.
-          - Les images sont ajoutées, jamais remplacées : l'historique
-            complet de l'évolution visuelle se lit commit par commit.
-
-          Le dépôt `main` reste la seule source de vérité du code ; cette
-          branche ne contient que des captures.
-          MDEOF
+            {
+              echo "# Galerie visuelle d'OmniFab"
+              echo ""
+              echo "Historique visuel de l'application, capture automatiquement par"
+              echo "`.github/workflows/galerie.yml` a chaque evolution du code poussee"
+              echo "sur `main` (scenarios Xvfb : accueil, atelier-2d, atelier-3d)."
+              echo ""
+              echo "- `captures/<date>-<sha court>/` — un dossier par lot de code,"
+              echo "  nomme par la date du commit et son SHA court ; un INDEX.md"
+              echo "  par dossier renvoie au commit et au run."
+              echo "- Les images sont ajoutees, jamais remplacees : l'historique"
+              echo "  complet de l'evolution visuelle se lit commit par commit."
+              echo ""
+              echo "La branche `main` reste la seule source de verite du code ;"
+              echo "cette branche ne contient que des captures."
+            } > README.md
           fi
           mkdir -p "$DOSSIER"
           cp galerie/*.png "$DOSSIER/"
-          # index du lot, avec un regard arriere vers le lot precedent
           {
             echo "# Lot $DATE - $SHORT"
             echo ""
-            echo "Captures du commit [`$SHORT`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$(git rev-parse HEAD)) (run [$GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID))."
+            echo "Captures du commit $SHORT : $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$FULL"
+            echo "Run : $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             echo ""
             for f in "$DOSSIER"/*.png; do
-              echo "- [`$(basename "$f")`]($f)"
+              echo "- [$(basename "$f")]($f)"
             done
           } > "$DOSSIER/INDEX.md"
-          git add captures
-          git add README.md 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add captures
+          git add README.md 2>/dev/null || true
           git commit -m "captures $DATE @ $SHORT"
           git push origin galerie
       - name: Rapport d'erreurs (issue)
