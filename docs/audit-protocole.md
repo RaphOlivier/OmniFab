@@ -43,7 +43,7 @@ Chaque signalement, numéroté (`A<n>-<nn>`, n = numéro d'audit) :
 | Preuve | scénario d'entrée minimal qui déclenche (pas de « peut-être » : si pas reproductible, dire « non vérifié ») |
 | Correctif proposé | esquisse + test de régression proposé (entrée/attendu) si bug |
 
-Signalement **sans ligne ni scénario = classé « à préciser » et retourné**. Un faux positif documenté (le coût des relectures d'IA successives) : toujours vérifier dans les ADR avant de conclure.
+Signalement **sans ligne ni scénario = classé « à préciser » et retourné**. Un faux positif coûte un cycle de triage à chaque audit suivant : toujours vérifier dans les ADR avant de conclure.
 
 ## 5. Traitement réservé aux signalements
 
