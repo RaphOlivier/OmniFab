@@ -98,6 +98,9 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-10-26-j0-presentation-docs-diagrammes`](knowledge/archives/2026-10-26-j0-presentation-docs-diagrammes.md) | J0 — présentation des docs, diagrammes |
 | [`2026-10-26-j0-protocole-audit`](knowledge/archives/2026-10-26-j0-protocole-audit.md) | J0 — création du protocole d'audit |
 | [`2026-10-26-j0-revue-miroir-dette`](knowledge/archives/2026-10-26-j0-revue-miroir-dette.md) | J0 — revue du miroir, dette documentaire |
+| [`2026-10-26-j3-designs-phases-B-E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des phases B-E : digest 4/4, 3 amendements, note matériaux, veille OCCT |
+| [`2026-10-26-j4-ouverture-lot-adr`](knowledge/archives/2026-10-26-j4-ouverture-lot-adr.md) | J4 — ouverture du jalon 4 : ADR-0029..0034 validés + conventions `expect` |
+| [`2026-10-26-j0-sans-pc-convergence-docs`](knowledge/archives/2026-10-26-j0-sans-pc-convergence-docs.md) | J0 — session sans PC n°2 : spécifs phase D, matrice EN, sommaire général, ADR-0016/0019, patchs `expect` |
 
 ## Code
 
