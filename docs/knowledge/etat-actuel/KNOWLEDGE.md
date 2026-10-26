@@ -2,7 +2,7 @@
 name: etat-actuel
 description: "État actuel d'OmniFab sur une page : ce qui compile, état de la CI, dette ouverte. Mise à jour à chaque lot de travail — la fraîcheur de toutes les autres fiches se lit ici d'un coup d'œil."
 ---
-**Version :** v1 (2026-10-26) — création (revue externe du miroir : « il manque une fiche courte état actuel »)
+**Version :** v3 (2026-10-26) — galerie visuelle étendue (historique durable branche `galerie`) + diagnostic de la veille du matin éclairci (commits nocturnes identifiés, `list_issues` du connecteur défaillant)
 
 # État actuel du projet
 
@@ -13,6 +13,7 @@ description: "État actuel d'OmniFab sur une page : ce qui compile, état de la 
 - Noyau jalon 1-2 complet : forge-units, forge-doc, forge-values, forge-geom, forge-io (SVG/DXF/STL), forge-session (undo/redo), forge-i18n (aide intégrée), forge-render (wgpu 2D/3D), forge-gcs (planegcs via FFI) + démonstrateur desktop egui (esquisse contrainte, moteur de liaisons, imports/exports).
 - Correctifs de l'audit n°2 (2026-10-25) : lexeur à points, substitution d'alias sûre, récursion bornée, export atomique, SVG plat — poussés sur main (`d152080`→`4315374`), tests inclus.
 - Miroir Knowledge au dépôt (`docs/knowledge/`, ADR-0028) synchronisé ; README du miroir écrit.
+- **Historique visuel automatisé** (galerie Xvfb, `.github/workflows/galerie.yml`) : à chaque push de code sur main (`apps/**` + `crates/**`), captures headless des scénarios `accueil`, `atelier-2d`, `atelier-3d` (15 s d'exécution, contrôle « capture noire »), archivées **durablement sur la branche `galerie`** (`captures/<date>-<sha>/` + INDEX.md par lot, branche créée orpheline au premier lot) — l'artefact de run ne sert plus que de commodité (logs). Demande de Raphaël 2026-10-26 : garder un historique visuel de l'évolution de l'application.
 
 ## État de la CI — ⚠️ ROUGE (attendue, cause unique)
 
@@ -32,6 +33,10 @@ description: "État actuel d'OmniFab sur une page : ce qui compile, état de la 
 
 **Jalons 5-10 gelés** tant que le meuble du cas d'école n'est pas fabriqué de bout en bout (décision Raphaël, 2026-10-26 — fiche architecture, section Roadmap).
 
+- **Veille CI du 2026-10-26 (matin) — éclaircie dans l'après-midi** : la veille signalait 31 issues « CI : » ouvertes (#311-#341, Windows/macOS/aarch64) et des « commits nocturnes inconnus » ; **ces commits sont identifiés** : ce sont les lots du 25 au soir (correctifs audit 2 `d152080`→`4315374`, miroir ADR-0028 `314c7b3`→`035edbe`, delta `4e0a8ce`, README `dcbb154`, revue miroir `e0329b9` — cf. journal des fonctions et archives). **Anomalie connecteur du jour** : `github_app` fonctionne pour push/lecture de fichiers/recherche, mais `list_issues` renvoie silencieusement 0 (OPEN et CLOSED) — ne jamais se fier à un « OPEN = [] » de ce connecteur sans recoupement (leçon existante : 401 passagers ; ici : vide silencieux) ; recoupement par l'API publique (`api.github.com/.../issues?state=open`, quota IP), qui a confirmé au moins l'issue **#346** ouverte. **État CI inchangé et confirmé** : `Cargo.lock` à la tête (`abd1981`) **ne contient pas forge-cad** — le lock n'a pas été poussé, `--locked` échoue, la CI reste rouge ; Linux (lint-test) est vraisemblablement rouge aussi (les titres d'issues de la veille ne listant pas Linux reste à confirmer à la lecture des corps quand l'accès sera stable). **Aucun commit de Raphaël sur main** à ce jour : le push du lock (build local OCCT) reste l'action bloquante n°1.
+
 ## Historique
 
 - v1 (2026-10-26) : création — relevé initial (CI rouge Cargo.lock attendue, backlog audit, gel post-jalon 4, dette documentaire).
+- v2 (2026-10-26, matin) : veille CI — 31 issues ouvertes, commits nocturnes à identifier, anomalie d'accès connecteur (à investiguer).
+- v3 (2026-10-26, après-midi) : diagnostic éclairci — commits nocturnes identifiés (lots du 25 au soir, connus de la Knowledge), `list_issues` renvoie silencieusement 0 (recouper par API publique), lock confirmé absent de forge-cad à la tête, CI rouge cause unique inchangée ; + galerie visuelle étendue — archivage durable des captures sur la branche `galerie` (historique visuel commit par commit), déclenchement élargi à tout code.
