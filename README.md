@@ -3,11 +3,33 @@
 [![CI](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml/badge.svg)](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml)
 [![Licence : GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 
-> **🚧 Statut : jalon 0 en cours.** ADR-0000 à 0004 validés (2026-10-11) ; noyau minimal implémenté (`forge-units`, `forge-doc`, `forge-values` + démonstrateur `omnifab-desktop`) et **CI verte** (fmt, clippy `-D warnings`, tests, rustdoc, multi-OS). Reste à livrer pour clore le jalon : la preuve de concept egui sur Android (tactile, clavier virtuel).
+> **🚧 Statut : jalon 3 (CAO paramétrique) en cours — phase A.** Jalons 1 et 2 livrés (noyau + undo + imports/exports SVG/DXF/STL, viewport wgpu, esquisse 2D à contraintes, moteur de liaisons). La CI est **temporairement rouge** : le `Cargo.lock` doit être régénéré après l'ajout de la crate `forge-cad` (OpenCascade, installation système requise) — correction déjà planifiée. Suivi d'avancement détaillé : [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](docs/knowledge/etat-actuel/KNOWLEDGE.md).
 
 **OmniFab** est un logiciel libre de fabrication numérique A→Z : **CAO** (conception assistée par ordinateur), **CAM** (fabrication assistée par ordinateur), génération de **G-code** et **pilotage machine**.
 
 L'objectif : couvrir toute la chaîne, de l'idée du meuble à la pièce usinée, dans une seule application native — sans dépendre de logiciels propriétaires.
+
+## Feuille de route et avancement
+
+Le projet avance par **tranche horizontale** : livrer de bout en bout un cas d'école (fabriquer un meuble — CAO paramétrique → découpe/gravure 2D → CAM 2,5D → LinuxCNC) avant d'élargir.
+
+| # | Jalon | État |
+|---|---|---|
+| 0 | Architecture + ADR + noyau compilable | ✅ clos (2026-10-12) |
+| 1 | Noyau projet + undo + import/export SVG/DXF/STL + aide intégrée | ✅ clos (2026-10-15) |
+| 2 | Viewport wgpu + esquisse 2D contrainte + moteur de liaisons | ✅ livré (phases A–E, CI verte multi-OS) |
+| 3 | CAO paramétrique + éditeur nodal de valeurs (forge-cad / OCCT) | ◐ **en cours** — phase A ouverte (2026-10-25) |
+| 4 | CAM 2,5D + multi-procédés + éditeur G-code + simulateur | ⏸ prochain — gelé jusqu'au meuble fabriqué |
+| 5 | forge-link : LinuxCNC + gestion multi-machines | ⏸ gelé |
+| 6 | Painting raster + calques + filtres | ⏸ gelé |
+| 7 | Android (même noyau, UI adaptée) | ⏸ gelé |
+| 8 | Plugins WASM + communauté | ⏸ gelé |
+| 9 | Cible web (WASM) : egui web + pont machine WebSocket | ⏸ gelé |
+| 10 | Traitement par lots + bibliothèques + assistants de conception guidée | ⏸ gelé |
+
+> **Gel de roadmap** : les jalons 5 à 10 sont **gelés** tant que le meuble du cas d'école n'est pas fabriqué de bout en bout — ils restent listés comme cadre de vision, sans design ni code. Le *pourquoi* de chaque jalon et décision : [`docs/knowledge/`](docs/knowledge/README.md).
+
+Légende : ✅ clos · ◐ en cours · ⏸ gelé (jalons 5-10) / en attente (jalon 4).
 
 ## Vision courte
 
@@ -25,7 +47,7 @@ L'objectif : couvrir toute la chaîne, de l'idée du meuble à la pièce usinée
 | Rendu | wgpu |
 | Géométrie | OpenCascade (OCCT) via bindings |
 | Contraintes 2D | planegcs (via FFI) |
-| Concurrence | tokio + canaux |
+| Concurrence | tokio + canaux (jalons machine — pas encore active, cf. gel) |
 | Licence | GPL-3.0+ (MPL/Apache pour les crates isolées) |
 
 > 📄 **Licences** : GPL-3.0 à la racine (`LICENSE`), MPL-2.0 pour chaque crate (`crates/*/LICENSE`). Les données (matériaux, machines, normes) seront publiées sous licences ouvertes dédiées (ODbL/CC0/CC-BY) — jamais GPL.
@@ -34,15 +56,23 @@ L'objectif : couvrir toute la chaîne, de l'idée du meuble à la pièce usinée
 
 | Chemin | Rôle |
 |---|---|
-| `crates/forge-units` | Newtypes d'unités strictes (longueur, angle) — crate de base, zéro dépendance (ADR-0000, verrou 5) |
+| `crates/forge-units` | Newtypes d'unités strictes (longueur, angle) — zéro dépendance (verrou 5) |
 | `crates/forge-doc` | Conteneur ZIP versionné + journal d'événements JSON Lines, migrations, snapshots non autoritaires (ADR-0001) |
 | `crates/forge-values` | Moteur unique de liaisons : évaluation paresseuse + expressions déterministes (ADR-0002) |
-| `apps/omnifab-desktop` | Démonstrateur egui : fenêtre, viewport, journal d'événements affiché, aller-retour ZIP + rejeu |
+| `crates/forge-geom` | Géométrie minimale : points, chemins 2D, maillages (codes OF-GEO) |
+| `crates/forge-io` | Import/export SVG, DXF, STL — parseurs budgetsés, courbes discrétisées (ADR-0009) |
+| `crates/forge-session` | Commandes, projections, undo/redo par curseur, tout-ou-rien (ADR-0008, ADR-0011) |
+| `crates/forge-i18n` | i18n Fluent + pages d'aide intégrées, clés vérifiées par tests (ADR-0010) |
+| `crates/forge-render` | Rendu wgpu 2D/3D : caméras, scènes, pipelines TriangleList/LineList (ADR-0015) |
+| `crates/forge-gcs-sys`, `crates/forge-gcs` | planegcs (solveur de contraintes de FreeCAD) via FFI + shim C++ (ADR-0013) |
+| `crates/forge-cad` | CAO paramétrique sur OpenCascade (MPL-2.0, liaison dynamique) — jalon 3 (ADR-0023) |
+| `apps/omnifab-desktop` | Démonstrateur egui : esquisse contrainte, liaisons, imports/exports, viewport 2D/3D |
 | `docs/architecture.md` | Schéma cible des crates et invariants de dépendances (garde-fou) |
-| `docs/adr/` | Décisions d'architecture (ADR-0000 à 0004 acceptés) |
+| `docs/adr/` | Décisions d'architecture (ADR-0000 à 0028) |
 | `docs/error-codes.md` | Registre central des codes d'erreur `OF-<DOMAINE>-<NNNN>` (ADR-0003) |
+| `docs/knowledge/` | Copies de référence de la Knowledge du projet : fiches de décisions, archives, feuille de route détaillée (ADR-0028) |
 
-Les crates suivantes (forge-geom, forge-cad, forge-render, forge-paint, forge-cam, forge-gcode, forge-link, forge-io, omnifab-android, omnifab-web) seront créées à leur jalon, conformément à l'ADR-0000 : pas de crates vides.
+Les crates restantes (forge-paint, forge-cam, forge-gcode, forge-link, omnifab-android, omnifab-web) seront créées à leur jalon, conformément à l'ADR-0000 : pas de crates vides.
 
 ## Développement
 
@@ -50,15 +80,18 @@ Les crates suivantes (forge-geom, forge-cad, forge-render, forge-paint, forge-ca
 cargo test --workspace        # tests (dont vérification du registre des codes d'erreur)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
-cargo run -p omnifab-desktop  # démonstrateur : paramètres, journal, viewport, ZIP + rejeu
+cargo run -p omnifab-desktop  # démonstrateur : esquisse, liaisons, viewport, ZIP + rejeu
 ```
+
+Prérequis natifs (forge-gcs/forge-cad) : CMake ≥ 3.26, Eigen, fmt, Boost, libclang, OpenCascade ≥ 7.8 (dynamique), sous-module `third_party/planegcs` (`git clone --recurse-submodules`).
 
 ## Documentation
 
 - [`CONTRIBUTING.md`](CONTRIBUTING.md) — conventions de développement obligatoires.
 - [`docs/architecture.md`](docs/architecture.md) — architecture cible du workspace (garde-fou).
-- [`docs/adr/`](docs/adr/) — décisions d'architecture (ADR).
+- [`docs/adr/`](docs/adr/) — décisions d'architecture, avec alternatives rejetées.
 - [`docs/error-codes.md`](docs/error-codes.md) — registre central des codes d'erreur.
+- [`docs/knowledge/`](docs/knowledge/README.md) — **la Knowledge du projet** : fiches de décisions, état actuel, archives des discussions, journal des fonctions (ADR-0028).
 
 ## Langue
 
