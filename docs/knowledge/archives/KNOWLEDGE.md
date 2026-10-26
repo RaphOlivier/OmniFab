@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v9 (2026-10-26) — ajout de l'entrée protocole d'audit du dépôt (gouvernance des audits externes)
+**Version : v10 (2026-10-26) — ajout de l'entrée audit externe n°3 (verdicts du mainteneur sur les 23 signalements)
 
 # Archives des discussions
 
@@ -12,6 +12,8 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - Format : un fichier par discussion, nommé `AAAA-MM-JJ-slug.md`, classé au fil de l'eau. **Chaque entrée porte le jalon dominant en tête** (format des titres de discussions : `[JX] — <sujet>`, J0 = transversal) ; à chaque fin de discussion, Vibe propose à Raphaël le titre normalisé de la discussion suivante.
 
 ## Index
+
+- [2026-10-26 — [J0] Audit externe n°3 (Claude) : 23 signalements, verdicts du mainteneur — 1 réfuté (B2, opencascade 0.3.0 vérifiée), 6 corrections doc/outillage (D1-D5, D7), backlog au vert (A3-01..A3-18 + B1/B3/B4/B5)](2026-10-26-j0-audit3-claude.md) — rapport intégral + table des verdicts ; re-vérification au code d'A3-01 (gc_blobs, confirmé) et A3-02 (PROFONDEUR_MAX=256 ne borne que l'imbrication, confirmé) ; correctifs de l'audit 2 vérifiés par l'auditeur (N1/N2/N7/N9 ✔, récursion ◐) ; protocole respecté à la lettre (premier audit sous `docs/audit-protocole.md`).
 
 - [2026-10-26 — [J0] Protocole d'audit du dépôt : gouvernance des audits externes réguliers](2026-10-26-j0-protocole-audit.md) — `docs/audit-protocole.md` public + lien README : audit ancré à un SHA, liste anti-faux-positifs (conventions délibérées ADR-citées), dette assumée non re-signalable, format de rapport (A<n>-<nn>, fichier:ligne, sévérité, preuve, test proposé), verdict explicite par signalement (corrigé/dette acceptée/refusé), rapports archivés pour que les audits suivants vérifient les corrections au lieu de re-signaler.
 - [2026-10-26 — [J0] Extraits historiques de la fiche architecture : jalons 0-2, ADR-0016..0027, revue de code, dette d'audit](2026-10-26-arch-extraits-jalons0-2.md) — contenu déplacé **verbatim et sans perte** lors du découpage de la fiche en noyau stable (v4, ~145 Ko → ~26 Ko) : journaux de livraison des jalons 0-2 (phases A-E, rides, leçons egui/usvg/wgpu), résumés étendus des ADR-0016 à 0027, revue de code externe (2026-10-13), dette d'audit (2026-10-17, remplacée par la fiche état actuel). Fichier figé par nature, jamais mis à jour.
@@ -43,3 +45,4 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v7 (2026-10-26) : ajout de l'entrée [J0] revue externe du miroir — statuts datés, clause de reprise, gel post-jalon 4, fiche état actuel.
 - v8 (2026-10-26) : ajout de l'entrée [J0] extraits historiques de la fiche architecture — découpage en noyau stable (v4), contenu déplacé verbatim.
 - v9 (2026-10-26) : ajout de l'entrée [J0] protocole d'audit du dépôt — gouvernance des audits externes réguliers (format de rapport, verdicts, anti-faux-positifs).
+- v10 (2026-10-26) : ajout de l'entrée [J0] audit externe n°3 — 23 signalements, verdicts du mainteneur (B2 réfuté avec preuve crates.io, D1-D5/D7 corrigés en doc, A3-* en backlog au vert).
