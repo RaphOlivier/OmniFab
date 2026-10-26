@@ -93,16 +93,17 @@ La chaîne Rust est pilotée par `rust-toolchain.toml` (stable, Rust ≥ 1.88). 
 
 ```bash
 sudo apt install build-essential cmake pkg-config clang libclang-dev \
-  libeigen3-dev libfmt-dev libboost-dev libocct-*</bash>
-```
-```bash
-# OCCT : les paquets « libocct-data-exchange-7.x » suffisent ; vérifier ≥ 7.8 :
+  libeigen3-dev libfmt-dev libboost-dev libocct-*
+# vérifier OCCT ≥ 7.8 :
 dpkg -l | grep libocctfoundation
+```
+
+dpkg -l | grep libocctfoundation   # vérifier OCCT ≥ 7.8
 ```
 
 **Linux (Fedora)** : `sudo dnf install gcc-c++ cmake clang clang-devel eigen3-devel fmt-devel boost-devel opencascade-devel`.
 
-**Windows** : Visual Studio (MSVC C++17) + [vcpkg](https://vcpkg.io/) : `vcpkg install opencascade eigen3 fmt boost`, puis `set VCPKGS_TRIPLET=x64-windows` et câbler `CMAKE_TOOLCHAIN_FILE` vers le toolchain vcpkg. Premier build ~30-60 min (cache par triplet ensuite).
+**Windows** : Visual Studio (MSVC C++17) + [vcpkg](https://vcpkg.io/) : `vcpkg install opencascade eigen3 fmt boost`, puis `set VCPKG_TRIPLET=x64-windows` et câbler `CMAKE_TOOLCHAIN_FILE` vers le toolchain vcpkg. Premier build ~30-60 min (cache par triplet ensuite).
 
 **macOS** : `brew install cmake llvm eigen fmt boost opencascade` (le `llvm` de Homebrew fournit libclang).
 
