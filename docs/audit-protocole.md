@@ -6,8 +6,8 @@ Ce document s'adresse à **tout auditeur externe** (IA ou humain) chargé de rel
 
 - **Ancrer l'audit à un commit précis** : indiquer toujours le SHA examiné en tête du rapport. Un signalement sans SHA n'est pas exploitable.
 - **Documents de référence à lire avant de signaler** (dans cet ordre) :
-  1. [`AGENTS.md`](AGENTS.md) — règles de travail et interdits ;
-  2. [`CONTRIBUTING.md`](CONTRIBUTING.md) — conventions non négociables ;
+  1. [`AGENTS.md`](../AGENTS.md) — règles de travail et interdits ;
+  2. [`CONTRIBUTING.md`](../CONTRIBUTING.md) — conventions non négociables ;
   3. [`docs/architecture.md`](architecture.md) — frontières entre crates ;
   4. [`docs/error-codes.md`](error-codes.md) — registre des codes `OF-*` ;
   5. [`docs/adr/`](adr/) — le *pourquoi* de chaque décision (un ADR prime sur l'intuition de l'auditeur : si un choix figure dans un ADR accepté, ce n'est pas un défaut) ;
