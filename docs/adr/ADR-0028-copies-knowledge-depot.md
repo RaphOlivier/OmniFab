@@ -23,8 +23,9 @@ fonctionne, il est étendu au reste de la Knowledge.
 
 1. **Sous-ensemble publiable miroité sous `docs/knowledge/`**, structure
    1:1 avec la Knowledge de la plateforme : racine (`KNOWLEDGE.md`),
-   `architecture/`, `conventions/`, `formats/`, `machines/`, `securite/`,
-   `archives/`, `historique/` (journal des fonctions compris).
+   `architecture/`, `conventions/`, `formats/`, `machines/`,
+   `securite/`, `etat-actuel/` (ajout 2026-10-26), `archives/`,
+   `historique/` (journal des fonctions compris).
 2. **Autorité** : la Knowledge de la plateforme **fait foi** ; le dépôt
    est une copie de référence publiable. Jamais l'inverse.
 3. **Règle de synchronisation** : tout bump de version d'une fiche
@@ -72,7 +73,42 @@ fonctionne, il est étendu au reste de la Knowledge.
 - Toute divergence constatée se résout dans un sens : le dépôt reprend
   la version de la plateforme.
 
+## Reprise après perte de plateforme (amendement 2026-10-26)
+
+La question « qui fait foi si la plateforme disparaît ? » est tranchée
+explicitement plutôt que laissée implicite :
+
+- **Tant que la plateforme est accessible** : la Knowledge de la
+  plateforme fait foi, le dépôt est copie de référence (règle ci-dessus,
+  inchangée).
+- **Si la plateforme devient indisponible ou disparaît** :
+  `docs/knowledge/` devient **ipso facto la référence de fait**. Le
+  miroir étant synchronisé à chaque bump (règle 3), sa fraîcheur est
+  celle de la dernière session — perte maximale : la session en cours.
+  Procédure de reprise : reconstituer la Knowledge de travail à partir
+  du miroir, puis recréer au fil du besoin les fiches **non publiées**
+  (`references/`, `preparation/`, fiches de processus Vibe) à partir
+  des documents originaux externes et des archives.
+- **L'inversion des rôles est rejetée** (dépôt = référence,
+  plateforme = copie de travail), pour trois raisons :
+  1. **Coût** : aucune édition chirurgicale côté GitHub — chaque
+     édition d'une fiche exigerait de réémettre le fichier complet
+     (la fiche architecture fait ~150 Ko), contre un simple `edit`
+     local via `file_system` aujourd'hui ; ~5-8× plus cher par
+     édition, et des risques de troncature à ~64 Ko déjà
+     responsables de deux incidents de push.
+  2. **Fonctionnement** : le travail (ADR, brouillons, itérations) se
+     fait sur la plateforme pendant que le dépôt ne reçoit que des
+     états stables et versionnés ; inverser exposerait le dépôt à des
+     états intermédiaires.
+  3. **Équivalence de risque** : le scénario redouté (perte de la
+     plateforme) est déjà couvert par le miroir ; l'inversion
+     n'ajouterait aucune protection supplémentaire, seulement du coût.
+
 ## Statut
 
 **ACCEPTÉ** — validé par Raphaël Olivier le 2026-10-25 (choix du
 sous-ensemble filtré, première synchronisation immédiate).
+**Amendé le 2026-10-26** : clause « reprise après perte de plateforme »
+(référence de fait = miroir ; inversion des rôles rejetée, motivations
+ci-dessus) — décision de Raphaël après revue externe du miroir.

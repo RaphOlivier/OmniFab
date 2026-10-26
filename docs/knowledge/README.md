@@ -18,9 +18,11 @@ projet (un agent peut charger ce dossier comme contexte de travail).
 
 **Comprendre le projet en général**
 1. [`KNOWLEDGE.md`](KNOWLEDGE.md) — index général (ce que couvre chaque fiche) ;
-2. [`architecture/KNOWLEDGE.md`](architecture/KNOWLEDGE.md) — crates, six verrous
+2. [`etat-actuel/KNOWLEDGE.md`](etat-actuel/KNOWLEDGE.md) — relevé d'une page :
+   ce qui compile, état de la CI, dette ouverte (mis à jour à chaque lot) ;
+3. [`architecture/KNOWLEDGE.md`](architecture/KNOWLEDGE.md) — crates, six verrous
    techniques, jalons 0-10, résumé de tous les ADR (0000 à 0027) ;
-3. [`prompt-fondateur.md`](../prompt-fondateur.md) (au `docs/` parent) — la vision
+4. [`prompt-fondateur.md`](../prompt-fondateur.md) (au `docs/` parent) — la vision
    en 15 points.
 
 **Comprendre une décision précise**

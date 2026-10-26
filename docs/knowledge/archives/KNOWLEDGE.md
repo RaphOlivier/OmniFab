@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v6 (2026-10-25) — ajout de l'entrée ADR-0028 (Knowledge au dépôt)
+**Version :** v7 (2026-10-26) — ajout de l'entrée revue externe du miroir (statuts datés, clause de reprise ADR-0028, gel post-jalon 4)
 
 # Archives des discussions
 
@@ -12,6 +12,8 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - Format : un fichier par discussion, nommé `AAAA-MM-JJ-slug.md`, classé au fil de l'eau. **Chaque entrée porte le jalon dominant en tête** (format des titres de discussions : `[JX] — <sujet>`, J0 = transversal) ; à chaque fin de discussion, Vibe propose à Raphaël le titre normalisé de la discussion suivante.
 
 ## Index
+
+- [2026-10-26 — [J0] Revue externe du miroir : statuts datés, clause de reprise ADR-0028, gel post-jalon 4](2026-10-26-j0-revue-miroir-dette.md) — chaque constat de la revue re-vérifié avant correction ; ADR-0028 amendé (miroir = référence de fait si la plateforme disparaît, inversion des rôles rejetée ~5-8×/édition + troncature 64 Ko) ; gel des jalons 5-10 (meuble de bout en bout) ; fiche « état actuel » créée, sécurité v2 (statuts datés), conventions v3 (public depuis 2026-10-22), architecture v3 (gel + tokio annoté).
 
 - [2026-10-25 — [J0] ADR-0028 : copies de référence de la Knowledge au dépôt (`docs/knowledge/`), règle « bump ⇒ repush »](2026-10-25-j0-adr0028-knowledge-depot.md) — sous-ensemble filtré (dépôt public), synchro à coût quasi nul via le connecteur `file_system` du sandbox ; chaîne `314c7b3`→`035edbe`, roundtrip md5.
 
@@ -35,3 +37,4 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v4 (2026-10-25) : ajout de l'entrée phase A lot 1 (forge-cad poussé, CI rouge attendue Cargo.lock).
 - v5 (2026-10-25) : ajout de l'entrée [J0] audit n°2 — 5 correctifs de robustesse (noms en chemin, substitution, récursion bornée, export atomique, SVG plat).
 - v6 (2026-10-25) : ajout de l'entrée [J0] ADR-0028 — copies de référence de la Knowledge au dépôt.
+- v7 (2026-10-26) : ajout de l'entrée [J0] revue externe du miroir — statuts datés, clause de reprise, gel post-jalon 4, fiche état actuel.

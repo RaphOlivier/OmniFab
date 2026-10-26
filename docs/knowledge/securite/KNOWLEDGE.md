@@ -2,7 +2,7 @@
 name: securite
 description: "Modèle de menace et règles de sécurité OmniFab, par jalon : fichiers importés non fiables, réseau forge-link, usinage physique, chaîne d'approvisionnement, plugins WASM. Principe directeur : sécurité par défaut SANS limiter fonctions ni performances — tout arbitrage fonction↔sécurité passe par un ADR explicite."
 ---
-**Version :** v1 (2026-10-25) — versionnage mis en place (fiche historique/KNOWLEDGE.md)
+**Version :** v2 (2026-10-26) — statuts datés ajoutés (revue du miroir : cargo-deny « en place » → « job rédigé, à activer » ; plafond cumulé de blobs précisé) ; v1 (2026-10-25) : versionnage mis en place
 
 # Sécurité — modèle de menace et règles par jalon
 
@@ -23,13 +23,19 @@ description: "Modèle de menace et règles de sécurité OmniFab, par jalon : fi
 4. **Chaîne d'approvisionnement** (continu) : dépendances crates.io ; frontières FFI C++ (OCCT, planegcs, NML) = code non mémoire-sûr à isoler strictement.
 5. **Plugins** (jalon 8) : extension malveillante = porte d'entrée royale si plugins natifs ; sandbox WASM sinon.
 
-## Déjà en place (faits, ne pas régresser)
+## En place ou prévu — chaque règle porte son statut et sa date (protocole 2026-10-26)
 
-- Rust + `#![forbid(unsafe_code)]` dans forge-doc — les données non fiables passent d'abord par du Rust mémoire-sûr.
-- Garde-fous anti-bombe ZIP (revue point 7) : 10 000 entrées, manifeste 1 MiB, journal/snapshot 64 MiB, blob 1 GiB ; noms de blobs validés (OF-DOC-0013, anti zip-slip).
-- cargo-deny (advisories RustSec, sources crates.io uniquement, licences) ; `Cargo.lock` versionné + `--locked` en CI.
-- Erreurs typées ADR-0003 : jamais de panique silencieuse sur entrée malformée.
-- Machines en simulation d'abord ; local-first sans compte cloud ni télémétrie (aucune surface serveur).
+**En place (faits vérifiés au code, ne pas régresser) :**
+
+- Rust + `#![forbid(unsafe_code)]` dans forge-doc — les données non fiables passent d'abord par du Rust mémoire-sûr. *(statut : en place, vérifié 2026-10-17)*
+- Garde-fous anti-bombe ZIP (revue point 7) : 10 000 entrées, manifeste 1 MiB, journal/snapshot 64 MiB, **blob 1 GiB par blob + plafond cumulé de 2 GiB pour l'ensemble des blobs (ADR-0016 A4)** ; noms de blobs validés (OF-DOC-0013, anti zip-slip). *(statut : en place, vérifié audit 2, 2026-10-25)*
+- `Cargo.lock` versionné + `--locked` en CI. *(statut : en place)*
+- Erreurs typées ADR-0003 : jamais de panique silencieuse sur entrée malformée. *(statut : en place)*
+- Machines en simulation d'abord ; local-first sans compte cloud ni télémétrie (aucune surface serveur). *(statut : en place par conception)*
+
+**Rédigé mais pas encore actif :**
+
+- cargo-deny (advisories RustSec, sources crates.io uniquement, licences) : `deny.toml` rédigé, **le job CI est en commentaire dans `ci.yml` — à activer au jalon 1** (ligne « Activer le job CI cargo-deny » du tableau ci-dessous). *(statut : rédigé, inactif — constat de la revue du miroir, 2026-10-26)*
 
 ## Règles par jalon (avec coûts)
 
@@ -60,3 +66,4 @@ description: "Modèle de menace et règles de sécurité OmniFab, par jalon : fi
 ## Historique
 
 - v1 (2026-10-25) : mise en place du versionnage — n° de version en tête + cette section (protocole : fiche historique).
+- v2 (2026-10-26) : statuts + dates sur chaque règle (revue du miroir) — cargo-deny reclassé « rédigé, inactif » (job CI en commentaire, activation jalon 1) ; plafond cumulé 2 GiB des blobs précisé (ADR-0016 A4) ; garde-fous anti-bombe datés de leur vérification.
