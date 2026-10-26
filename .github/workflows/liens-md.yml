@@ -4,6 +4,8 @@ name: Controle des liens Markdown
 # PREPARE le 2026-10-26 — declenchement volontaire uniquement (workflow_dispatch)
 # tant que la CI est rouge (Cargo.lock) ; a activer (on.push.paths: ["**/*.md"])
 # une fois la CI repassee au vert. Ne cree PAS d'issue : echec visible dans Actions.
+# 2026-10-26 (audit n°3, D5) : decodage de l'encodage percent (%20 etc.) et
+# couverture des liens de reference ([texte][ref] + definitions [ref]: cible).
 
 on:
   workflow_dispatch:
@@ -20,24 +22,51 @@ jobs:
       - name: Verification des liens relatifs
         run: |
           set -eu
-          CASSES=$(mktemp)
-          # liens relatifs dans tous les .md du depot (hors target/) ;
-          # collecte dans un fichier : une variable modifiee dans un pipe
-          # reste dans son sous-shell et ne remonte jamais au parent
-          while IFS= read -r f; do
-            dir=$(dirname "$f")
-            grep -oE '\[[^]]*\]\([^)#]+(#[^)]*)?\)' "$f" 2>/dev/null | sed -E 's/^\[[^]]*\]\(//; s/\)$//' | while IFS='#' read -r cible _; do
-              case "$cible" in
-                http* | mailto:* | "") continue ;;
-              esac
-              if [ ! -e "$dir/$cible" ]; then
-                echo "$f -> $cible" >> "$CASSES"
-              fi
-            done
-          done < <(find . -name '*.md' -not -path './target/*')
-          if [ -s "$CASSES" ]; then
-            echo "Liens relatifs casses :"
-            cat "$CASSES"
-            exit 1
-          fi
-          echo "Tous les liens relatifs des .md sont valides."
+          python3 - <<'PY'
+          import os, re, sys, urllib.parse
+
+          casses = []
+          fichiers = []
+          for root, dirs, files in os.walk('.'):
+              dirs[:] = [d for d in dirs if d not in ('target', '.git')]
+              for f in files:
+                  if f.endswith('.md'):
+                      fichiers.append(os.path.join(root, f))
+
+          def existe(base, cible):
+              cible = urllib.parse.unquote(cible)
+              return os.path.exists(os.path.join(base, cible))
+
+          for p in fichiers:
+              base = os.path.dirname(p)
+              texte = open(p, encoding='utf-8', errors='replace').read()
+              # liens inline : [texte](cible)
+              for m in re.finditer(r'\[[^\]\n]*\]\(([^()\s]+)\)', texte):
+                  c = m.group(1).split('#')[0]
+                  if not c or c.startswith(('http://', 'https://', 'mailto:')):
+                      continue
+                  if not existe(base, c):
+                      casses.append('%s -> %s' % (p, m.group(1)))
+              # definitions de liens de reference : [ref]: cible
+              definitions = {}
+              for m in re.finditer(r'^\s{0,3}\[([^\]]+)\]:\s*(\S+)', texte, re.M):
+                  definitions[m.group(1).lower()] = m.group(2)
+              # usages [texte][ref] : la definition doit exister
+              for m in re.finditer(r'\[[^\]\n]*\]\[([^\]]+)\]', texte):
+                  ref = m.group(1).lower()
+                  if ref not in definitions:
+                      casses.append('%s -> reference [%s] non definie' % (p, m.group(1)))
+              # les definitions doivent pointer sur un fichier existant
+              for ref, c in definitions.items():
+                  c2 = c.split('#')[0]
+                  if not c2 or c2.startswith(('http://', 'https://', 'mailto:')):
+                      continue
+                  if not existe(base, c2):
+                      casses.append('%s -> %s (definition [%s])' % (p, c, ref))
+
+          if casses:
+              print('Liens relatifs casses :')
+              print('\n'.join(casses))
+              sys.exit(1)
+          print('Tous les liens relatifs des .md sont valides.')
+          PY

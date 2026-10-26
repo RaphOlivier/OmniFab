@@ -19,3 +19,7 @@
 **Alternatives rejetées** : wrapper cxx d'emblée (ADR-0004 : opencascade-rs d'abord, la bascule est l'exception bornée) ; OCCT statique (LGPL + taille + mises à jour de sécurité) ; forge-io dépendant d'OCCT (casse la frontière ADR-0009) ; parseur STEP maison (délire) ; rust-occ ou occt-rs (moins avancés qu'opencascade-rs à la phase 0 — à réévaluer au spike de la phase A : le spike = compiler un prism depuis un wire, publier le résultat au journal de phase).
 
 **Critères de sortie** : golden tests verts multi-OS ; STEP importé → rendu 3D (wireframe du solide) et exporté (va-et-vient identique aux volumes) ; liaison dynamique vérifiée sur les 3 OS ; CI verte.
+
+**Risques phase A ajoutés par l'audit n°3 (2026-10-26, `docs/knowledge/archives/2026-10-26-j0-audit3-claude.md`)** :
+- **Signatures du binding jamais compilées (B3, retenu)** : les fonctions du module interne `occt` (`Shape::box_with_dimensions`, `Shape::cylinder`, `Solid::extrude_polygon`, `mesh_with_tolerance`, lecture/écriture STEP/BREP) n'ont jamais été compilées (CI rouge depuis `4409a65`, pas de cargo côté assistant). Le premier build local produira vraisemblablement un lot de corrections d'API : « phase A livrée » ne se déclare qu'après compilation verte, spike compris.
+- **Version `opencascade = 0.3` (B2, réfuté)** : vérifié le 2026-10-26 — la version 0.3.0 existe sur crates.io (publiée 2026-08-24, LGPL-2.1, dépend `glam ^0.24` conforme au projet, `opencascade-sys ^0.3`) ; la génération du lock n'est pas compromise par la version.

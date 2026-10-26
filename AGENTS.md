@@ -44,8 +44,10 @@ conventions et architecture. Les décisions tranchées vivent dans
 - Code Rust : **branche courte + PR** fusionnée seulement quand `lint-test`
   est vert (lots ≥ ~3 fichiers ou multi-crates ; micro-correctifs tolérés en
   direct). À activer dès que la CI est repassée au vert.
-- La protection de branche main (status check `lint-test`) est active —
-  ne pas la contourner.
+- La protection de branche main (status check `lint-test`) est à
+  (re)prendre une fois la CI verte ; en attendant (fenêtre de convergence,
+  CI rouge), la règle branches/PR ci-dessus s'applique par discipline.
+  Quand la protection est active : ne pas la contourner.
 - Après tout push via un connecteur : **vérifier le contenu re-fetché**
   (roundtrip) — des pushes tronqués/altérés ont déjà eu lieu sans trace dans
   la réponse du connecteur.
@@ -58,8 +60,9 @@ conventions et architecture. Les décisions tranchées vivent dans
 
 - `docs/knowledge/` est la copie de référence de la Knowledge du projet
   (ADR-0028) : **tout bump de version d'une fiche ⇒ la même fiche repoussée
-  au dépôt dans la foulée**. La copie de travail (qui fait foi) vit sur la
-  plateforme de l'assistant.
+  au dépôt dans la foulée**. La copie de travail vit sur la plateforme de l'assistant ;
+  `docs/knowledge/` au dépôt est la copie de référence (ADR-0028), et le
+  dépôt reste la seule source de vérité du code.
 - Chaque fiche porte `Version : vN (date)` en tête et une section
   `Historique` en pied ; les identifiants stables (`ADR-NNNN`,
   `OF-XXX-NNNN`, `F:<domaine>:<fonction>`) se cherchent par `grep`.

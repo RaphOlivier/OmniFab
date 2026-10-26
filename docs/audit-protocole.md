@@ -20,7 +20,7 @@ Ces choix sont actés (ADR cités) — un signalement à leur sujet n'est utile 
 
 - **Unités strictes** : jamais de `f64` nu pour une grandeur physique (newtypes `Length`, tolérance 1e-6 mm) ; les `f64` aux frontières FFI/GPU sont documentés (ADR-0015 : le GPU reçoit des `f32`).
 - **Codes d'erreur typés** (`thiserror`), registre `OF-*` stable : jamais renommé, jamais réutilisé (ADR-0003) ; pas d'`unwrap()` hors tests.
-- **Licences par zone** : noyau GPL-3.0+ ; crates isolées MPL-2.0 ; `forge-gcs`/`forge-gcs-sys` LGPL-2.1+ (héritage planegcs, ADR-0013) ; **jamais GPL pour les données** (ODbL/CC0/CC-BY). La cohabitation est délibérée et vérifiée par cargo-deny (`deny.toml`).
+- **Licences par zone** : noyau GPL-3.0+ ; crates isolées MPL-2.0 ; `forge-gcs`/`forge-gcs-sys` LGPL-2.1+ (héritage planegcs, ADR-0013) ; **jamais GPL pour les données** (ODbL/CC0/CC-BY). La cohabitation est délibérée ; sa vérification cargo-deny est **prévue** (`deny.toml` rédigé, job CI à activer — audit n°3, B5).
 - **Vendoring figé** : `third_party/planegcs` est un sous-module jamais modifié localement (ADR-0013) — le contenu du sous-module n'est pas auditable ici.
 - **`expect()` en production** : inventaire en cours de résorption avec politique d'exception annotée ; admis à ce jour dans `build.rs`, dans les tests, et pour les invariants garantis par la CI (clés FTL embarquées). Le lot de conversion est planifié.
 - **`unsafe`** : seulement aux frontières FFI (shim C de planegcs, bindings OCCT) — signaler tout `unsafe` ailleurs.
@@ -51,4 +51,4 @@ Engagement du mainteneur : chaque signalement recevra un verdict explicite — *
 
 ## 6. Modèle de consigne à donner à l'auditeur IA
 
-> Tu audites le dépôt public OmniFab au commit `<SHA>`. Lis d'abord `docs/audit-protocole.md` et applique-le à la lettre : conventions délibérées (§2), dette assumée (§3), format de rapport (§4). Périmètre de cet audit : `<crates ou thématique>`. Ne signale que ce qui est actionnable, avec fichier:ligne et scénario. Classe chaque signalement et propose un test de régression pour les bugs. N'émets pas d'opinion sur les décisions couvertes par un ADR sans avoir lu l'ADR.
+> Tu audites le dépôt OmniFab au commit `<SHA>`. Lis d'abord `docs/audit-protocole.md` et applique-le à la lettre : conventions délibérées (§2), dette assumée (§3), format de rapport (§4). Périmètre de cet audit : `<crates ou thématique>`. Ne signale que ce qui est actionnable, avec fichier:ligne et scénario. Classe chaque signalement et propose un test de régression pour les bugs. N'émets pas d'opinion sur les décisions couvertes par un ADR sans avoir lu l'ADR.
