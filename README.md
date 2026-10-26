@@ -119,7 +119,7 @@ Toutes commandes : `cargo test --workspace`, `cargo clippy --workspace --all-tar
 
 ## Langue
 
-> 🌍 La documentation de ce dépôt est **en français**. Une traduction en anglais accompagnera l'ouverture du projet à une communauté internationale.
+> 🌍 La documentation de ce dépôt est **en français** — version de référence. Les pages d'entrée sont traduites en anglais dans [`docs/en/`](docs/en/README.md) (README, CONTRIBUTING, index des ADR), synchronisées par lots ; en cas de divergence, le français fait foi.
 
 ---
 
