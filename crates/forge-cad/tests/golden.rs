@@ -4,7 +4,7 @@
 //! sont exactes au f64 près ; les faces courbes portent l'erreur de la
 //! tessellation, d'autant plus fine que la tolérance est basse.
 
-use forge_cad::{brep, step, CadBudgets, CadError, Solide};
+use forge_cad::{CadBudgets, CadError, Solide, brep, step};
 use forge_units::Length;
 
 /// Millimètres — jamais de f64 nu (verrou n°5).
@@ -131,10 +131,7 @@ fn codes_stables_par_variante() {
 
 #[test]
 fn codes_presents_au_registre() {
-    let chemin = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../docs/error-codes.md"
-    );
+    let chemin = concat!(env!("CARGO_MANIFEST_DIR"), "/../../docs/error-codes.md");
     let registre = std::fs::read_to_string(chemin).unwrap();
     for code in ["OF-CAD-0001", "OF-CAD-0002", "OF-CAD-0003", "OF-CAD-0004"] {
         assert!(

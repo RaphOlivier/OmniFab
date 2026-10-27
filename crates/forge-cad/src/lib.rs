@@ -3,8 +3,8 @@
 //!
 //! Le binding opencascade-rs est isolé ENTIÈREMENT derrière le module
 //! interne `occt` : aucun type OCCT n'apparaît dans l'API publique (même
-//! frontière que le shim planegcs, ADR-0013). La liaison OCCT est
-//! dynamique, sur une OCCT système >= 7.8 (ADR-0023 D1).
+//! frontière que le shim planegcs, ADR-0013). OCCT 7.8 builtin
+//! épinglée par le lock (checkpoint [J3] du 2026-10-26, ADR-0023 D1 amendé).
 //!
 //! Unités strictes à la frontière (verrou n°5) : les dimensions passent en
 //! [`Length`], jamais de `f64` nu dans l'API publique.
@@ -101,8 +101,8 @@ impl Solide {
             .iter()
             .map(|(x, y)| glam::dvec3(x.millimeters(), y.millimeters(), 0.0))
             .collect();
-        let forme = occt::Forme::prisme(points, hauteur.millimeters())
-            .map_err(|e| CadError::Occt {
+        let forme =
+            occt::Forme::prisme(points, hauteur.millimeters()).map_err(|e| CadError::Occt {
                 operation: format!("extrusion du contour : {e}"),
             })?;
         Ok(Self { forme })
@@ -140,16 +140,8 @@ impl Solide {
             .map_err(|e| CadError::Occt {
                 operation: format!("tessellation : {e}"),
             })?;
-        let sommets: Vec<[f64; 3]> = maille
-            .vertices
-            .iter()
-            .map(|v| [v.x, v.y, v.z])
-            .collect();
-        let normales: Vec<[f64; 3]> = maille
-            .normals
-            .iter()
-            .map(|n| [n.x, n.y, n.z])
-            .collect();
+        let sommets: Vec<[f64; 3]> = maille.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
+        let normales: Vec<[f64; 3]> = maille.normals.iter().map(|n| [n.x, n.y, n.z]).collect();
         let triangles: Vec<[u32; 3]> = maille
             .indices
             .chunks(3)

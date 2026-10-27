@@ -837,11 +837,7 @@ pub fn remplacer_identifiants(texte: &str, de: &str, par: &str) -> String {
 /// fonction : « min( » reste un appel, même quand un alias portant
 /// le nom de la fonction est remplacé.
 fn est_un_appel(reste: &[char], de: &str) -> bool {
-    expr::est_nom_de_fonction(de)
-        && matches!(
-            reste.iter().find(|c| !c.is_whitespace()),
-            Some('(')
-        )
+    expr::est_nom_de_fonction(de) && matches!(reste.iter().find(|c| !c.is_whitespace()), Some('('))
 }
 
 /// `true` si le nom désigne une fonction du langage d'expressions

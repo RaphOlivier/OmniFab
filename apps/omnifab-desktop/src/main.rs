@@ -5199,10 +5199,7 @@ mod tests {
         );
         let mut tmp = cible.as_os_str().to_owned();
         tmp.push(".tmp");
-        assert!(
-            !PathBuf::from(tmp).exists(),
-            "aucun temporaire résiduel"
-        );
+        assert!(!PathBuf::from(tmp).exists(), "aucun temporaire résiduel");
         let _ = std::fs::remove_file(&cible);
         // un dossier parent absent : échec propre, retour d'erreur
         let absent = std::env::temp_dir().join("omnifab-audit2-absent/sortie.svg");

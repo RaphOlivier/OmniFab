@@ -2,10 +2,9 @@
 //! module — aucun type d'`opencascade` ne fuit hors de la crate (même
 //! politique de re-encapsulation que le shim planegcs, ADR-0013).
 //!
-//! La liaison est DYNAMIQUE sur une OCCT système (feature `builtin` du
-//! binding désactivée dans le Cargo.toml) : OCCT n'est jamais vendue dans
-//! le dépôt, c'est une dépendance système (apt `libocct-*`, brew
-//! `opencascade`, vcpkg `opencascade`).
+//! OCCT 7.8 BUILTIN (occt-sys 7.8.1) depuis le checkpoint [J3] (2026-10-26) :
+//! OCCT 7.9 casse opencascade-rs 0.3.0 (class→namespace TopoDS), 8.x refusé
+//! par la gate — la version d'OCCT est épinglée par le lock, pas par le système.
 
 use std::path::Path;
 
@@ -93,5 +92,13 @@ impl Forme {
         Ok(Self {
             forme: Shape::read_brep_text(chemin)?,
         })
+    }
+}
+
+// `Shape` OCCT n'implémente pas `Debug` (enveloppe C++) : `Forme` en
+// fournit un minimal, sans divulguer son intérieur (frontière ADR-0023).
+impl std::fmt::Debug for Forme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Forme").finish_non_exhaustive()
     }
 }

@@ -50,10 +50,7 @@ fn la_substitution_respecte_les_noms_en_chemin() {
     assert_eq!(remplacer_identifiants("a + 1.5", "a", "b"), "b + 1.5");
     assert_eq!(remplacer_identifiants("1.5 * a", "5", "b"), "1.5 * a");
     // un appel de fonction du même nom n'est pas une référence
-    assert_eq!(
-        remplacer_identifiants("min(a, 1)", "min", "b"),
-        "min(a, 1)"
-    );
+    assert_eq!(remplacer_identifiants("min(a, 1)", "min", "b"), "min(a, 1)");
     assert_eq!(remplacer_identifiants("min + 1", "min", "b"), "b + 1");
     // remplacer un nom en chemin entier, lui, réécrit
     assert_eq!(
@@ -76,6 +73,7 @@ fn une_expression_trop_imbriquee_est_refusee_sans_deborder() {
     let erreur = g.set_expression("y", &moine).unwrap_err();
     assert_eq!(erreur.code(), "OF-VAL-0003");
     // une imbrication raisonnable passe toujours.
-    g.set_expression("z", "((a + 1) * 2) - -a").expect("expression bornée");
+    g.set_expression("z", "((a + 1) * 2) - -a")
+        .expect("expression bornée");
     assert_eq!(g.value("z").unwrap(), 5.0);
 }
