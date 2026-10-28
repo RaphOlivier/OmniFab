@@ -1,13 +1,16 @@
 name: Controle des liens Markdown
 
 # Verifie que tous les liens relatifs des .md du depot existent (README, docs/, AGENTS.md).
-# PREPARE le 2026-10-26 — declenchement volontaire uniquement (workflow_dispatch)
-# tant que la CI est rouge (Cargo.lock) ; a activer (on.push.paths: ["**/*.md"])
-# une fois la CI repassee au vert. Ne cree PAS d'issue : echec visible dans Actions.
+# ACTIVE le 2026-10-28 : CI repassee au vert (lock d5b4b2c, OCCT 7.8 builtin)
+# declenchement sur push de fichiers .md + declenchement manuel conserve.
+# Ne cree PAS d'issue : echec visible dans Actions.
 # 2026-10-26 (audit n°3, D5) : decodage de l'encodage percent (%20 etc.) et
 # couverture des liens de reference ([texte][ref] + definitions [ref]: cible).
 
 on:
+  push:
+    paths:
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
