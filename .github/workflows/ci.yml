@@ -126,13 +126,21 @@ jobs:
               echo "VCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
               choco install llvm -y --no-progress
               echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" >> "$GITHUB_ENV"
+              # REDUCTION DOCUMENTEE (ADR-0023 D8, validee par Raphael le
+              # 2026-10-28) : forge-cad est exclu sous Windows tant que
+              # opencascade-sys 0.3.0 ne compile pas sous MSVC (pont cxx,
+              # b_rep.hxx C2440 handle->unique_ptr, upstream #234). Reversible
+              # au premier fix upstream (ligne de veille OCCT). Jamais de
+              # continue-on-error silencieux : l'exclusion est explicite,
+              # le reste du workspace (desktop inclus) reste builde.
+              echo "EXCLUDES_BUILD=--exclude forge-cad" >> "$GITHUB_ENV"
               ;;
           esac
       - name: Compilation
         id: compil
         shell: bash
         run: |
-          if cargo build --workspace --locked > build.log 2>&1; then
+          if cargo build --workspace --locked ${EXCLUDES_BUILD:-} > build.log 2>&1; then
             echo "fail=0" >> "$GITHUB_OUTPUT"
           else
             echo "fail=1" >> "$GITHUB_OUTPUT"
