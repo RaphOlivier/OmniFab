@@ -33,6 +33,10 @@ jobs:
         with:
           targets: aarch64-linux-android
       - uses: Swatinem/rust-cache@v2
+      - name: Cible Android sur le toolchain epingle (rust-toolchain.toml)
+        # rustup resout le toolchain depuis rust-toolchain.toml (cwd = depot) :
+        # dtolnay@stable installe la cible sur stable, pas sur le 1.99.1 epingle — fixe #450.
+        run: rustup target add aarch64-linux-android
       - name: Plateforme Android 30 (attendue par cargo-apk)
         run: |
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
