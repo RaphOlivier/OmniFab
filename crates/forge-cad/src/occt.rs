@@ -2,7 +2,7 @@
 //! module — aucun type d'`opencascade` ne fuit hors de la crate (même
 //! politique de re-encapsulation que le shim planegcs, ADR-0013).
 //!
-//! OCCT 7.8 BUILTIN (occt-sys 7.8.1) depuis le checkpoint [J3] (2026-10-26) :
+//! OCCT 7.8 BUILTIN (occt-sys 7.8.1) depuis le checkpoint \[J3] (2026-10-26) :
 //! OCCT 7.9 casse opencascade-rs 0.3.0 (class→namespace TopoDS), 8.x refusé
 //! par la gate — la version d'OCCT est épinglée par le lock, pas par le système.
 

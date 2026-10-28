@@ -4,7 +4,7 @@
 //! Le binding opencascade-rs est isolé ENTIÈREMENT derrière le module
 //! interne `occt` : aucun type OCCT n'apparaît dans l'API publique (même
 //! frontière que le shim planegcs, ADR-0013). OCCT 7.8 builtin
-//! épinglée par le lock (checkpoint [J3] du 2026-10-26, ADR-0023 D1 amendé).
+//! épinglée par le lock (checkpoint \[J3] du 2026-10-26, ADR-0023 D1 amendé).
 //!
 //! Unités strictes à la frontière (verrou n°5) : les dimensions passent en
 //! [`Length`], jamais de `f64` nu dans l'API publique.
