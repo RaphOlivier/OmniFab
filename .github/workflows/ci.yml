@@ -6,6 +6,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: never
+  # occt-sys 7.8.1 builtin : CMake >= 4 (runners 2026) refuse le
+  # cmake_minimum_required(< 3.5) d'OCCT 7.8 — fixe build macos/windows (#452, #453).
+  CMAKE_POLICY_VERSION_MINIMUM: "3.5"
 
 permissions:
   contents: read
@@ -177,6 +180,10 @@ jobs:
         with:
           targets: aarch64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
+      - name: Cible aarch64 sur le toolchain epingle (rust-toolchain.toml)
+        # rustup resout le toolchain depuis rust-toolchain.toml (cwd = depot) :
+        # la cible installee par dtolnay@stable reste sur stable, pas sur le 1.99.1 epingle — fixe #451.
+        run: rustup target add aarch64-unknown-linux-gnu
       - name: Verification croisee
         id: cross
         run: |
