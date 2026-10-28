@@ -17,8 +17,9 @@ permissions:
 jobs:
   lint-test:
     name: fmt + clippy + tests + rustdoc (Linux)
-    # ubuntu-26.04 : OCCT 7.9 via apt (le jalon 3 exige >= 7.8,
-    # ubuntu-24.04 n'offre que 7.6.3 — ADR-0023 D8).
+    # ubuntu-26.04 : Linux recent pour planegcs/bindgen. OCCT ne vient
+    # plus d'apt : occt-sys 7.8.1 builtin est epingle par le lock
+    # (checkpoint d5b4b2c) et compile depuis les sources.
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v5
@@ -28,16 +29,11 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Dependances natives (planegcs + bindgen + OCCT)
+      - name: Dependances natives (planegcs + bindgen)
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libeigen3-dev libfmt-dev libboost-dev libclang-dev cmake \
-            libocct-data-exchange-dev libocct-draw-dev \
-            libocct-foundation-dev libocct-modeling-dev \
-            libocct-ocaf-dev libocct-visualization-dev
-          # forge-cad : OCCT systeme en liaison dynamique (ADR-0023 D1).
-          echo "DEP_OCCT_ROOT=/usr" >> "$GITHUB_ENV"
+            libeigen3-dev libfmt-dev libboost-dev libclang-dev cmake
       - name: Verifications
         id: verifs
         run: |
@@ -99,42 +95,35 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Cache vcpkg (OCCT, ~30-60 min de build la premiere fois - ADR-0023 D8)
+      - name: Cache vcpkg (boost/eigen/fmt pour planegcs)
         if: runner.os == 'Windows'
         uses: actions/cache@v4
         with:
-          key: vcpkg-occt-x64-windows-static-md
+          key: vcpkg-planegcs-x64-windows-static-md
           path: ${{ env.VCPKG_INSTALLATION_ROOT }}/installed
-      - name: Dependances natives (planegcs + bindgen + OCCT, ${{ matrix.os }})
+      - name: Dependances natives (planegcs + bindgen, ${{ matrix.os }})
         shell: bash
         run: |
           case "${{ matrix.os }}" in
             ubuntu-*)
               sudo apt-get update
               sudo apt-get install -y --no-install-recommends \
-                libeigen3-dev libfmt-dev libboost-dev libclang-dev cmake \
-                libocct-data-exchange-dev libocct-draw-dev \
-                libocct-foundation-dev libocct-modeling-dev \
-                libocct-ocaf-dev libocct-visualization-dev
-              echo "DEP_OCCT_ROOT=/usr" >> "$GITHUB_ENV"
+                libeigen3-dev libfmt-dev libboost-dev libclang-dev cmake
               ;;
             macos-*)
-              brew install eigen fmt boost llvm opencascade
+              brew install eigen fmt boost llvm
               # eigen est keg-only : on le rend découvrable par CMake.
               echo "CMAKE_PREFIX_PATH=$(brew --prefix eigen)" >> "$GITHUB_ENV"
               echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
-              # forge-cad : OCCT brew en liaison dynamique (ADR-0023 D1).
-              echo "DEP_OCCT_ROOT=$(brew --prefix opencascade)" >> "$GITHUB_ENV"
               ;;
             windows-*)
               # vcpkg est préinstallé sur les runners Windows ; triplet
               # statique/MD : liaison statique de planegcs sans DLL à copier.
-              # Deviation D1 documentee (ADR-0023) : OCCT vcpkg est statique
-              # sur Windows, la CI Linux/macOS verifie la liaison dynamique.
+              # OCCT n'est plus installe : occt-sys 7.8.1 builtin,
+              # epingle par le lock, compile depuis les sources.
               "${VCPKG_INSTALLATION_ROOT}/vcpkg.exe" install \
-                --triplet x64-windows-static-md boost-graph eigen3 fmt opencascade
+                --triplet x64-windows-static-md boost-graph eigen3 fmt
               echo "VCPKG_TARGET_TRIPLET=x64-windows-static-md" >> "$GITHUB_ENV"
-              echo "DEP_OCCT_ROOT=${VCPKG_INSTALLATION_ROOT}/installed/x64-windows-static-md" >> "$GITHUB_ENV"
               choco install llvm -y --no-progress
               echo "LIBCLANG_PATH=C:\\Program Files\\LLVM\\bin" >> "$GITHUB_ENV"
               ;;
@@ -192,10 +181,10 @@ jobs:
           # cross-build CMake (Eigen3/fmt/g++ cross) est hors du
           # périmètre du spike (ADR-0013) ; l'app desktop dépend du
           # solveur natif (ADR-0018 lot 3b), elle est donc exclue
-          # avec lui. forge-cad est exclu depuis le jalon 3 : OCCT se
-          # lie en dynamique vers une OCCT systeme (ADR-0023 D1),
-          # non cross-installable ici ; la crate reste vérifiée sur
-          # les trois OS du job build.
+          # avec lui. forge-cad est exclu : son OCCT builtin (occt-sys
+          # 7.8.1, epingle par le lock) compilerait C++ natif pour
+          # aarch64 — hors périmètre du spike ; la crate reste
+          # vérifiée sur les trois OS du job build.
           if cargo check --workspace --locked --exclude forge-gcs --exclude forge-gcs-sys --exclude omnifab-desktop --exclude forge-cad --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
             echo "fail=0" >> "$GITHUB_OUTPUT"
           else
