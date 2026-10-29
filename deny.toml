@@ -9,18 +9,21 @@ all-features = true
 [licenses]
 # Noyau : GPL-3.0+ (racine) et crates MPL-2.0 ; dependances : MIT/Apache-2
 # (eframe, serde, thiserror, zip, libm, sha2, uuid, log) + transitives.
-# B5 (audit n°3, validé par Raphaël le 2026-10-26) : les membres du workspace
-# sont privés du contrôle — leurs licences (GPL-3.0+ racine, MPL-2.0 crates)
-# sont des décisions du projet, pas des dépendances. LGPL-2.1 = OCCT + planegcs
-# (dépendances structurelles assumées, ADR-0023/ADR-0020). A4-11 (audit n°4,
-# reformulation validée par Raphaël le 2026-10-29) : OCCT est liée en STATIQUE
-# (occt-sys 7.8.1 builtin, ADR-0023 D1 amendé) et planegcs + shim en statique
-# (ADR-0013) — la conformité LGPL repose sur la distribution des SOURCES
-# RECOMPILABLES de l'ensemble GPL-3.0+, pas sur une liaison dynamique ;
-# GPL-3.0 = racine du projet.
+# B5 (audit n°3, validé par Raphaël le 2026-10-26, corrigé le 2026-10-29) :
+# la clé private = { workspace = true } (documentée dans la doc de
+# développement cargo-deny, mais absente de la release 0.20.2 embarquée
+# par l'action v2) faisait échouer le run : error[unexpected-keys]. Les
+# membres du workspace sont donc vérifiés comme les autres : leurs
+# licences sont des décisions du projet, toutes présentes dans l'allow
+# ci-dessous (GPL-3.0-or-later racine et applications, LGPL-2.1-or-later
+# forge-gcs/-sys — héritage planegcs, ADR-0013/ADR-0023 —, MPL-2.0 crates).
+# A4-11 (audit n°4, reformulation validée par Raphaël le 2026-10-29) : OCCT
+# est liée en STATIQUE (occt-sys 7.8.1 builtin, ADR-0023 D1 amendé) et
+# planegcs + shim en statique (ADR-0013) — la conformité LGPL repose sur la
+# distribution des SOURCES RECOMPILABLES de l'ensemble GPL-3.0+, pas sur une
+# liaison dynamique ; GPL-3.0 = racine du projet.
 # Toute NOUVELLE dépendance tierce LGPL/GPL devra être ajoutée explicitement
 # ici — la dérive reste visible. AGPL et non-listées : toujours refusées.
-private = { workspace = true }
 version = 2
 allow = [
   "MIT",
