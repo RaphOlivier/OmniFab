@@ -12,6 +12,10 @@
 //! (après un `cargo clean` pour mesurer le temps de build froid).
 //! Écrit les témoins `spike_phase_a.step` / `spike_phase_a.brep` dans le
 //! répertoire courant (oracle externe : suite step-conformance de camcraft).
+//!
+//! Un abort C++ (cf. StdFail_NotDone sur les cas dégénérés) abat le
+//! process : chaque cas dégénéré se lance individuellement via
+//! `cargo run -p forge-cad --example spike_phase_a -- <n° 1-4>`.
 
 use forge_cad::{brep, step, CadBudgets, Solide};
 use forge_units::Length;
@@ -80,12 +84,22 @@ fn main() {
     // ---- 4. Journal des formes dégénérées (A3-08.a) ----
     // Ces appels sont volontairement hors garde : le spike JOURNALISE le
     // comportement d'OCCT (panique, erreur propre, forme vide), il ne le corrige pas.
-    for (nom, contour, h) in [
+    // Un abort C++ abat le process (constaté cas 1 : StdFail_NotDone) : chaque
+    // cas se lance individuellement — `-- <n° 1-4>` ; sans argument, tous.
+    let cas_demande = std::env::args().nth(1).and_then(|s| s.parse::<usize>().ok());
+    for (i, (nom, contour, h)) in [
         ("contour dégénéré (points confondus)", vec![(0.0, 0.0); 4], 12.0),
         ("contour à 2 points", vec![(0.0, 0.0), (10.0, 0.0)], 12.0),
         ("hauteur nulle", vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], 0.0),
         ("hauteur négative", vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], -5.0),
-    ] {
+    ]
+    .iter()
+    .enumerate()
+    {
+        let numero = i + 1;
+        if cas_demande.is_some_and(|c| c != numero) {
+            continue;
+        }
         let contour: Vec<(Length, Length)> = contour
             .iter()
             .map(|(x, y)| (Length::from_millimeters(*x), Length::from_millimeters(*y)))
@@ -93,13 +107,15 @@ fn main() {
         let debut = std::time::Instant::now();
         // On attrape les paniques OCCT potentielles via le résultat ;
         // une vraie panique C++ abattrait le process — le noter au journal.
-        let resultat = Solide::prisme(&contour, Length::from_millimeters(h));
+        let resultat = Solide::prisme(&contour, Length::from_millimeters(*h));
         match resultat {
             Ok(s) => {
                 let v = s.volume_mm3(tolerance);
-                println!("[SPIKE] {nom} : Ok, volume={v:?}, {:?}", debut.elapsed());
+                println!("[SPIKE] cas {numero} — {nom} : Ok, volume={v:?}, {:?}", debut.elapsed());
             }
-            Err(e) => println!("[SPIKE] {nom} : Err({e:?}) en {:?}", debut.elapsed()),
+            Err(e) => {
+                println!("[SPIKE] cas {numero} — {nom} : Err({e:?}) en {:?}", debut.elapsed())
+            }
         }
     }
 
