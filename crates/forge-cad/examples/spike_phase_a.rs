@@ -1,7 +1,7 @@
 //! Spike phase A (ADR-0023) — wire → prisme → STEP → relecture.
 //!
 //! Journal du spike à remplir à chaque exécution (consignes checkpoint-pc
-//! §« Consignes du spike phase A ³) :
+//! §« Consignes du spike phase A ») :
 //! - paniques OCCT (formes dégénérées, dimensions ≤ 0 — cf. A3-08.a) ;
 //! - comportement de `Shape::empty()`/`as_solid()` sur booléens vides
 //!   (sonde temporaire dans `src/occt.rs`, `cargo test -p forge-cad`) ;

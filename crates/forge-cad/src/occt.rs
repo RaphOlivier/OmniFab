@@ -61,7 +61,7 @@ impl Forme {
         }
     }
 
-    /// Tessellation (coordongées en millimètres).
+    /// Tessellation (coordonnées en millimètres).
     pub(crate) fn tesseller(&self, tolerance: f64) -> Result<Mesh, opencascade::Error> {
         self.forme.mesh_with_tolerance(tolerance)
     }
@@ -111,7 +111,7 @@ impl std::fmt::Debug for Forme {
 // (frontière ADR-0023). Exécuter : cargo test -p forge-cad -- --nocapture.
 // ----------------------------------------------------------------------------
 
-#[cfh(test)]
+#[cfg(test)]
 mod sonde_spike_phase_a {
     use super::Forme;
 
