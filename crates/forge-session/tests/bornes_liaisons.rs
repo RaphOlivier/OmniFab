@@ -4,6 +4,7 @@
 //! journal forgé ne passe jamais le parseur.
 
 use forge_session::{Session, SetExpression, SetInput};
+use forge_values::LONGUEUR_MAX_EXPRESSION;
 
 /// `SetExpression` refuse au plan un texte d'expression plus long que
 /// la borne de forge-values (4 096 caractères au correctif) : aucun
@@ -11,15 +12,9 @@ use forge_session::{Session, SetExpression, SetInput};
 #[test]
 fn set_expression_rejette_un_texte_trop_long() {
     let mut session = Session::new("tests");
-    session
-        .execute(&SetInput {
-            name: "a".into(),
-            value: 1.0,
-            unite: None,
-        })
-        .expect("entrée");
+    session.execute(&SetInput { name: "a".into(), value: 1.0, unite: None }).expect("entrée");
     // « a+ » répété 4 096 fois, plus le « 1 » final : 8 193 caractères.
-    let trop_long = format!("{}1", "a+".repeat(4096));
+    let trop_long = format!("{}1", "a+".repeat(LONGUEUR_MAX_EXPRESSION));
     let erreur = session
         .execute(&SetExpression {
             name: "hostile".into(),
@@ -28,13 +23,6 @@ fn set_expression_rejette_un_texte_trop_long() {
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
-    assert!(
-        erreur.to_string().contains("caractères"),
-        "le message porte la borne : {erreur}"
-    );
-    assert_eq!(
-        session.document().events().len(),
-        1,
-        "rien de nouveau au journal"
-    );
+    assert!(erreur.to_string().contains("caractères"), "le message porte la borne : {erreur}");
+    assert_eq!(session.document().events().len(), 1, "rien de nouveau au journal");
 }

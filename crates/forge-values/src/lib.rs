@@ -40,6 +40,13 @@ use expr::Expr;
 /// Préfixes de noms réservés aux nœuds système (ADR-0019 §2).
 pub const PREFIXES_RESERVES: [&str; 3] = ["esquisse.", "param.", "doc."];
 
+/// Longueur maximale, en caractères, du texte d'une expression
+/// (ADR-0006 amendé le 2026-10-29, audit n°3 A3-02). La borne vit
+/// dans le parseur de la crate — le journal peut être forgé, il ne
+/// passe jamais — et le plan de la commande la réplique côté
+/// session : rien au journal (OF-VAL-0003 / OF-SES-0001).
+pub const LONGUEUR_MAX_EXPRESSION: usize = 4096;
+
 /// Identifiant interne d'un nœud du graphe.
 pub(crate) type NodeId = u64;
 

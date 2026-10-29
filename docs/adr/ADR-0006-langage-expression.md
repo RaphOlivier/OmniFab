@@ -74,3 +74,23 @@ La revue de code externe (point 10) a constaté que le parseur de forge-values
   paresse de `si`, limite 64 (expression à 65 niveaux rejetée, 64 acceptée).
 - Le doc de référence des expressions (rustdoc forge-values) sera mis à
   jour à l'implémentation.
+
+## Amendement (2026-10-29) — bornes de robustesse (audit n°3, A3-02)
+
+La garde de l'audit n°2 (`PROFONDEUR_MAX = 256` niveaux d'imbrication) ne
+couvrait pas la chaîne d'opérateurs hostile : « 1+1+1+… » sur 200 000 termes
+passe le parseur — sa boucle est itérative — et construit un peigne gauche de
+200 000 niveaux que `collect_references`, `evaluate` et le `Drop` de
+l'arbre débordent tous. Décisions :
+
+- **Longueur du texte d'expression bornée à 4 096 caractères**
+  (`LONGUEUR_MAX_EXPRESSION`, constante publique de forge-values), refusée
+  **dans le parseur de la crate** — le journal peut être forgé, la borne ne
+  vit pas seulement au plan de la commande — et répliquée au plan de
+  `SetExpression` côté session : rien au journal (OF-VAL-0003 / OF-SES-0001).
+- **Compteur de nœuds d'AST plafonné à 4 096** dans le parseur : chaque nœud
+  consomme au moins un caractère du texte, aucune expression sous la borne de
+  longueur ne peut l'atteindre — il garantit l'invariant si la borne de texte
+  venait à bouger (OF-VAL-0003).
+- La décision 7 (imbrication à 64 niveaux) reste en attente
+  d'implémentation : l'implémentation courante garde 256 niveaux.

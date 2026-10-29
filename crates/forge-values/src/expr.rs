@@ -4,6 +4,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::LONGUEUR_MAX_EXPRESSION;
 use crate::NodeId;
 use crate::error::ValuesError;
 
@@ -233,11 +234,20 @@ fn lex(input: &str, node: &str) -> Result<Vec<Token>, ValuesError> {
 /// Android où un fil démarre avec 2 Mio (audit n°2).
 const PROFONDEUR_MAX: usize = 256;
 
+/// Nombre maximal de nœuds d'AST d'une expression (audit n°3, A3-02).
+/// Chaque nœud consomme au moins un caractère du texte : sous la
+/// borne de longueur publique, aucune expression légitime n'atteint
+/// ce plafond — il garantit l'invariant si la borne de texte venait
+/// à bouger.
+const MAX_NOEUDS_AST: usize = 4096;
+
 struct Parser<'a> {
     tokens: Vec<Token>,
     pos: usize,
     /// Profondeur d'imbrication courante, bornée à `PROFONDEUR_MAX`.
     profondeur: usize,
+    /// Nombre de nœuds d'AST construits, borné à `MAX_NOEUDS_AST`.
+    noeuds: usize,
     node: &'a str,
     resolve: &'a dyn Fn(&str) -> Option<NodeId>,
 }
@@ -254,6 +264,21 @@ impl Parser<'_> {
             node: self.node.to_string(),
             reason: format!("expression imbriquée au-delà de {PROFONDEUR_MAX} niveaux"),
         }
+    }
+
+    /// Compte un nœud d'AST construit : la borne garantit qu'aucune
+    /// expression hostile ne construit un arbre hors budget, même si
+    /// la borne de longueur du texte venait à bouger (audit n°3,
+    /// A3-02).
+    fn compte_noeud(&mut self) -> Result<(), ValuesError> {
+        self.noeuds += 1;
+        if self.noeuds > MAX_NOEUDS_AST {
+            return Err(ValuesError::InvalidExpression {
+                node: self.node.to_string(),
+                reason: format!("expression au-delà de {MAX_NOEUDS_AST} nœuds"),
+            });
+        }
+        Ok(())
     }
 
     fn expression(&mut self) -> Result<Expr, ValuesError> {
@@ -273,10 +298,12 @@ impl Parser<'_> {
             match self.peek() {
                 Some(Token::Plus) => {
                     self.pos += 1;
+                    self.compte_noeud()?;
                     lhs = Expr::Binary(BinOp::Add, Box::new(lhs), Box::new(self.term()?));
                 }
                 Some(Token::Minus) => {
                     self.pos += 1;
+                    self.compte_noeud()?;
                     lhs = Expr::Binary(BinOp::Sub, Box::new(lhs), Box::new(self.term()?));
                 }
                 _ => break,
@@ -291,10 +318,12 @@ impl Parser<'_> {
             match self.peek() {
                 Some(Token::Star) => {
                     self.pos += 1;
+                    self.compte_noeud()?;
                     lhs = Expr::Binary(BinOp::Mul, Box::new(lhs), Box::new(self.factor()?));
                 }
                 Some(Token::Slash) => {
                     self.pos += 1;
+                    self.compte_noeud()?;
                     lhs = Expr::Binary(BinOp::Div, Box::new(lhs), Box::new(self.factor()?));
                 }
                 _ => break,
@@ -311,6 +340,7 @@ impl Parser<'_> {
                 return Err(self.erreur_profondeur());
             }
             self.pos += 1;
+            self.compte_noeud()?;
             let interne = self.factor();
             self.profondeur -= 1;
             return Ok(Expr::Negate(Box::new(interne?)));
@@ -322,6 +352,7 @@ impl Parser<'_> {
         match self.tokens.get(self.pos).cloned() {
             Some(Token::Number(value)) => {
                 self.pos += 1;
+                self.compte_noeud()?;
                 Ok(Expr::Number(value))
             }
             Some(Token::Ident(name)) => {
@@ -362,10 +393,14 @@ impl Parser<'_> {
                             ),
                         });
                     }
+                    self.compte_noeud()?;
                     Ok(Expr::Call(function, args))
                 } else {
                     match (self.resolve)(&name) {
-                        Some(id) => Ok(Expr::Ref(id)),
+                        Some(id) => {
+                            self.compte_noeud()?;
+                            Ok(Expr::Ref(id))
+                        }
                         None => Err(ValuesError::UnknownReference {
                             node: self.node.to_string(),
                             name,
@@ -404,11 +439,27 @@ pub(crate) fn parse(
     node: &str,
     resolve: &dyn Fn(&str) -> Option<NodeId>,
 ) -> Result<Expr, ValuesError> {
+    // Borne de longueur du texte (ADR-0006 amendé, audit n°3 A3-02) :
+    // le journal peut être forgé — la borne vit dans la crate, pas
+    // seulement au plan de la commande. Un peigne gauche de
+    // 200 000 termes passait le parseur (boucle itérative) mais
+    // construisait un arbre que collect_references, evaluate et le
+    // Drop débordaient tous.
+    let longueur = input.chars().count();
+    if longueur > LONGUEUR_MAX_EXPRESSION {
+        return Err(ValuesError::InvalidExpression {
+            node: node.to_string(),
+            reason: format!(
+                "texte de {longueur} caractères, au-delà de la borne de {LONGUEUR_MAX_EXPRESSION}"
+            ),
+        });
+    }
     let tokens = lex(input, node)?;
     let mut parser = Parser {
         tokens,
         pos: 0,
         profondeur: 0,
+        noeuds: 0,
         node,
         resolve,
     };
