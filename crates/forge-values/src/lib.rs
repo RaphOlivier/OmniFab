@@ -40,6 +40,20 @@ use expr::Expr;
 /// Préfixes de noms réservés aux nœuds système (ADR-0019 §2).
 pub const PREFIXES_RESERVES: [&str; 3] = ["esquisse.", "param.", "doc."];
 
+/// Longueur maximale, en caractères, du texte d'une expression
+/// (ADR-0006 amendé le 2026-10-29, audit n°3 A3-02). La borne vit
+/// dans le parseur de la crate — le journal peut être forgé, il ne
+/// passe jamais — et le plan de la commande la réplique côté
+/// session : rien au journal (OF-VAL-0003 / OF-SES-0001).
+pub const LONGUEUR_MAX_EXPRESSION: usize = 4096;
+
+/// Profondeur maximale, en niveaux de pile, nécessaire à l'évaluation
+/// d'une expression — la sienne plus celle de sa chaîne de dépendances
+/// (ADR-0006 amendé le 2026-10-29, audit n°3 A3-03). Le refus vient à
+/// la définition, par une erreur typée (OF-VAL-0011) : l'évaluation
+/// récursive d'une chaîne profonde ne déborde jamais la pile.
+pub const PROFONDEUR_MAX_CHAINE: usize = 1024;
+
 /// Identifiant interne d'un nœud du graphe.
 pub(crate) type NodeId = u64;
 
@@ -554,6 +568,27 @@ impl ValueGraph {
                 });
             }
         }
+
+        // Profondeur de chaîne (audit n°3, A3-03) : le coût du candidat
+        // mesure la pile nécessaire à son évaluation — sa profondeur
+        // d'AST plus le saut vers la dépendance la plus chère. La
+        // borne refuse ici, avant l'installation : l'évaluation
+        // récursive d'une chaîne profonde ne débordera jamais la pile
+        // (OF-VAL-0011).
+        let surcout_chaine = refs
+            .iter()
+            .filter(|dep| **dep != id)
+            .map(|dep| 1 + self.cout_evaluation(*dep))
+            .max()
+            .unwrap_or(0);
+        let cout = expr::profondeur_ast(&parsed) + surcout_chaine;
+        if cout > PROFONDEUR_MAX_CHAINE {
+            return Err(ValuesError::ProfondeurChaine {
+                node: nom.clone(),
+                profondeur: cout,
+                max: PROFONDEUR_MAX_CHAINE,
+            });
+        }
         Ok((parsed, refs))
     }
 
@@ -654,6 +689,55 @@ impl ValueGraph {
                 }
             }
         }
+    }
+
+    /// Coût d'évaluation du nœud `id` : la profondeur de pile nécessaire
+    /// à son recalcul — la profondeur de son arbre d'expression plus,
+    /// pour chaque saut de dépendance, le coût de la dépendance la plus
+    /// chère (un nœud d'entrée coûte 1). Itératif — pile explicite et
+    /// mémo — : mesurer une chaîne profonde ne déborde jamais la pile
+    /// (audit n°3, A3-03).
+    fn cout_evaluation(&self, id: NodeId) -> usize {
+        let mut memo: BTreeMap<NodeId, usize> = BTreeMap::new();
+        let mut pile: Vec<(NodeId, bool)> = vec![(id, false)];
+        while let Some((courant, developpe)) = pile.pop() {
+            if memo.contains_key(&courant) {
+                continue;
+            }
+            let Some(node) = self.noeud_par_id(courant) else {
+                memo.insert(courant, 1);
+                continue;
+            };
+            let base = match &node.kind {
+                NodeKind::Input(_) => {
+                    memo.insert(courant, 1);
+                    continue;
+                }
+                NodeKind::Computed { arbre, .. } => expr::profondeur_ast(arbre),
+            };
+            if !developpe {
+                pile.push((courant, true));
+                if let Some(deps) = self.deps.get(&courant) {
+                    for dep in deps {
+                        if !memo.contains_key(dep) {
+                            pile.push((*dep, false));
+                        }
+                    }
+                }
+                continue;
+            }
+            // Ordre LIFO : toutes les dépendances sont dans le mémo.
+            let surcout = match self.deps.get(&courant) {
+                Some(deps) => deps
+                    .iter()
+                    .filter_map(|dep| memo.get(dep).map(|cout| 1 + cout))
+                    .max()
+                    .unwrap_or(0),
+                None => 0,
+            };
+            memo.insert(courant, base + surcout);
+        }
+        memo.get(&id).copied().unwrap_or(1)
     }
 
     /// Chemin de dépendances de `depuis` vers `cible`, si le nœud

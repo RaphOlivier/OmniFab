@@ -47,6 +47,11 @@ fn toutes_les_variantes() -> Vec<ValuesError> {
             name: "x".to_string(),
             references: "y".to_string(),
         },
+        ValuesError::ProfondeurChaine {
+            node: "x".to_string(),
+            profondeur: 1027,
+            max: 1024,
+        },
     ]
 }
 

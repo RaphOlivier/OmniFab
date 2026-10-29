@@ -28,6 +28,9 @@ Réservés : `UNT` (forge-units), `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-VAL-0007 | Incohérence d'unités à la définition | Expression ou entrée déclarée d'une unité incompatible avec ses références (ex. `deg` lisant du `mm`) | Corriger l'unité déclarée |
 | OF-VAL-0008 | Alias réservé | Création sous un préfixe système (`esquisse.`, tableaux) ou écrasement d'un nœud d'une autre origine | Choisir un autre nom |
 | OF-VAL-0009 | Alias référencé | Suppression `Simple` demandée alors que des formules ou cotes lisent encore cet alias | Utiliser Cascade ou Remplacer, ou corriger d'abord les références |
+| OF-VAL-0011 | Chaîne de dépendances trop profonde | Le coût d'évaluation (profondeur d'AST plus sauts de dépendances) dépasse la borne de 1 024 | Restructurer les formules intermédiaires |
+
+Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design de phase D — ADR-0025/0026).
 
 ## forge-doc (DOC) — conteneur et journal d'événements
 

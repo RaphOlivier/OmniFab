@@ -13,7 +13,9 @@ use crate::{Session, SessionError};
 use forge_doc::NewEvent;
 use forge_units::Length;
 use forge_values::ValuesError;
-use forge_values::{ModeSuppression, PREFIXES_RESERVES, Unite, remplacer_identifiants};
+use forge_values::{
+    LONGUEUR_MAX_EXPRESSION, ModeSuppression, PREFIXES_RESERVES, Unite, remplacer_identifiants,
+};
 use std::collections::BTreeSet;
 
 /// Type d'événement : valeur d'entrée fixée (schéma v2 : `name`,
@@ -222,6 +224,14 @@ impl Command for SetExpression {
         if self.expression.trim().is_empty() {
             return Err(SessionError::CommandRejected {
                 reason: "l'expression ne peut pas être vide".to_string(),
+            });
+        }
+        // Borne de longueur (audit n°3, A3-02) : refus au plan, rien
+        // au journal — la borne vit aussi dans forge-values, un
+        // journal forgé ne passe jamais le parseur.
+        if self.expression.chars().count() > LONGUEUR_MAX_EXPRESSION {
+            return Err(SessionError::CommandRejected {
+                reason: format!("l'expression dépasse {LONGUEUR_MAX_EXPRESSION} caractères"),
             });
         }
         Ok(CommandPlan::new(vec![NewEvent::new(
