@@ -424,10 +424,19 @@ impl Session {
     /// Purge les blobs orphelins (ADR-0011) : ne survit qu'un blob
     /// présent dans `references` — l'état courant des projections au
     /// moment de la planification, augmenté des blobs fraîchement
-    /// déposés par une commande validée.
+    /// déposés par une commande validée — ou référencé par un
+    /// événement appliqué du journal (clé `data.blob`, comme
+    /// `to_bytes_prefix`, A3-01 : le rejeu d'un undo profond doit
+    /// retrouver les blobs des imports antérieurs).
     fn gc_blobs(&mut self, references: &[String]) {
+        let appliques: Vec<String> = self.doc.events()[..self.applied]
+            .iter()
+            .filter_map(|event| event.data.get("blob"))
+            .filter_map(serde_json::Value::as_str)
+            .map(str::to_string)
+            .collect();
         for nom in self.doc.blob_names() {
-            if !references.contains(&nom) {
+            if !references.contains(&nom) && !appliques.contains(&nom) {
                 self.doc.remove_blob(&nom);
             }
         }
