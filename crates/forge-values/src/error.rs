@@ -81,6 +81,18 @@ pub enum ValuesError {
         /// Noms des valeurs qui le référencent, joints par « , ».
         references: String,
     },
+    /// Chaîne de dépendances trop profonde (OF-VAL-0011) : le coût
+    /// d'évaluation — profondeur d'AST plus sauts de dépendances —
+    /// dépasse la borne, refus à la définition (audit n°3, A3-03).
+    #[error("OF-VAL-0011 : « {node} » dépasse la profondeur de chaîne : {profondeur} > {max}")]
+    ProfondeurChaine {
+        /// Nom de la valeur refusée.
+        node: String,
+        /// Coût d'évaluation mesuré.
+        profondeur: usize,
+        /// Borne maximale acceptée.
+        max: usize,
+    },
 }
 
 impl ValuesError {
@@ -98,6 +110,7 @@ impl ValuesError {
             Self::UniteIncoherente { .. } => "OF-VAL-0007",
             Self::AliasReserve { .. } => "OF-VAL-0008",
             Self::AliasReference { .. } => "OF-VAL-0009",
+            Self::ProfondeurChaine { .. } => "OF-VAL-0011",
         }
     }
 }

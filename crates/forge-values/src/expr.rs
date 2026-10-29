@@ -550,6 +550,32 @@ pub(crate) fn evaluate(
     }
 }
 
+/// Profondeur d'un arbre d'expression : le nombre maximal de niveaux
+/// imbriqués, racine comprise — c'est la profondeur de pile de son
+/// évaluation récursive. Itératif (pile explicite) : mesurer un arbre
+/// profond ne déborde jamais la pile (audit n°3, A3-03).
+pub(crate) fn profondeur_ast(expr: &Expr) -> usize {
+    let mut profondeur = 0;
+    let mut pile: Vec<(&Expr, usize)> = vec![(expr, 1)];
+    while let Some((courant, niveau)) = pile.pop() {
+        profondeur = profondeur.max(niveau);
+        match courant {
+            Expr::Number(_) | Expr::Ref(_) => {}
+            Expr::Negate(inner) => pile.push((&**inner, niveau + 1)),
+            Expr::Binary(_, lhs, rhs) => {
+                pile.push((&**lhs, niveau + 1));
+                pile.push((&**rhs, niveau + 1));
+            }
+            Expr::Call(_, args) => {
+                for arg in args {
+                    pile.push((arg, niveau + 1));
+                }
+            }
+        }
+    }
+    profondeur
+}
+
 /// Collecte les nœuds référencés par une expression.
 pub(crate) fn collect_references(expr: &Expr, out: &mut BTreeSet<NodeId>) {
     match expr {

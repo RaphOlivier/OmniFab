@@ -94,3 +94,23 @@ l'arbre débordent tous. Décisions :
   venait à bouger (OF-VAL-0003).
 - La décision 7 (imbrication à 64 niveaux) reste en attente
   d'implémentation : l'implémentation courante garde 256 niveaux.
+
+## Amendement (2026-10-29, second) — profondeur de chaîne bornée (audit n°3, A3-03)
+
+Les bornes du premier amendement couvrent le texte d'une expression, pas
+sa chaîne de dépendances : 5 000 alias en ligne (`a1 = a0 + 1`,
+`a2 = a1 + 1`, …) restent honnêtes un par un, et l'évaluation récursive
+de `a4999` déborde la pile du fil de 2 Mio — abort. Décisions :
+
+- **Profondeur de chaîne bornée à 1 024 niveaux de pile**
+  (`PROFONDEUR_MAX_CHAINE`, constante publique de forge-values) : le
+  refus vient à la définition, dans `prepare_expression`, par la
+  nouvelle erreur typée OF-VAL-0011 — la valeur précédente tient.
+- **Métrique : le coût d'évaluation** — la profondeur de l'AST de
+  l'expression plus, pour chaque saut de dépendance, le coût de la
+  dépendance la plus chère (un nœud d'entrée coûte 1). Calcul itératif
+  (pile explicite et mémo) : mesurer une chaîne profonde ne déborde
+  jamais la pile. Une chaîne `a_i = a_{i-1} + 1` coûte `3i + 1` : le
+  refus tombe au 342e maillon, le 341e s'évalue.
+- Le code OF-VAL-0010 reste réservé (table dimensionnelle, design de
+  phase D — ADR-0025/0026) : le registre attribue 0011 directement.

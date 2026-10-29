@@ -44,10 +44,11 @@ fn parse_rejette_une_chaine_d_operateurs_hostile() {
 #[test]
 fn texte_d_expression_borne_au_caractere_pres() {
     let mut graph = ValueGraph::new();
-    // « 1+ » répété 2 047 fois, plus le « 1 » final : 4 095 caractères,
-    // l'espace initial porte le texte à la borne exacte (4 096).
-    let base = format!("{}1", "1+".repeat(LONGUEUR_MAX_EXPRESSION / 2 - 1));
-    let exacte = format!(" {base}");
+    // Un littéral suivi d'espaces : 4 096 caractères exactement — l'AST
+    // reste plat, seule la borne de longueur est en jeu (A3-03 garde
+    // désormais les peignes profonds hors limite de chaîne : 2 048
+    // maillons coûteraient plus de 1 024 niveaux de pile).
+    let exacte = format!("1{}", " ".repeat(LONGUEUR_MAX_EXPRESSION - 1));
     assert_eq!(exacte.chars().count(), LONGUEUR_MAX_EXPRESSION);
     graph.set_expression("borne", &exacte).expect("la limite exacte est acceptée");
     let erreur = graph.set_expression("borne", &format!(" {exacte}")).unwrap_err();
