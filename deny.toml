@@ -28,15 +28,19 @@ all-features = true
 #   de domaine public FSF-free, non-OSI : listée explicitement) ;
 # - OFL-1.1 + LicenseRef-UFL-1.0 (epaint_default_fonts 0.29.1 — polices
 #   embarquées d'egui, double licence SIL Open Font / Ubuntu Font) ;
-# - LGPL-2.1-only : occt-sys 7.8.1, opencascade 0.3.0 et opencascade-sys
-#   0.3.0 déclarent l'identifiant déprécié « LGPL-2.1 » (= only) — SPDX
-#   précis de l'héritage OCCT/planegcs déjà assumé par le B5 ci-dessus
-#   (ADR-0013/ADR-0023) : pas d'élargissement de périmètre copyleft, seul
-#   l'identifiant est corrigé.
+# - héritage OCCT/planegcs : occt-sys 7.8.1, opencascade 0.3.0 et
+#   opencascade-sys 0.3.0 déclarent « LGPL-2.1 » (identifiant SPDX
+#   déprécié = 2.1 only) — cargo-deny >= 0.18.4 traite les licences GNU
+#   pédantiquement : une crate déclarant la forme dépréciée ne peut être
+#   matchée QUE par l'allow « LGPL-2.1 » littéral, jamais par
+#   « LGPL-2.1-only » (doc licenses/cfg) — les deux formes sont donc
+#   listées, sans élargissement de périmètre copyleft (assumé ADR-0013/
+#   ADR-0023, B5 ci-dessus).
 # Toute NOUVELLE dépendance tierce LGPL/GPL devra être ajoutée explicitement
 # ici — la dérive reste visible. AGPL et non-listées : toujours refusées.
-# Les allow non rencontrés (MIT-0, Unicode-DFS-2016, CDLA-Permissive-2.0)
-# ne produisent qu'un avertissement : conservés à titre préventif.
+# Les allow non rencontrés (MIT-0, Unicode-DFS-2016, CDLA-Permissive-2.0,
+# LGPL-2.1-only) ne produisent qu'un avertissement : conservés à titre
+# préventif.
 version = 2
 allow = [
   "MIT",
@@ -53,6 +57,7 @@ allow = [
   "CDLA-Permissive-2.0",
   "LGPL-2.1-or-later",
   "LGPL-2.1-only",
+  "LGPL-2.1",
   "GPL-3.0-or-later",
   "BSL-1.0",
   "CC0-1.0",
