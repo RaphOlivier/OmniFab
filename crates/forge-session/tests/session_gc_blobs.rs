@@ -27,9 +27,13 @@ fn import(octets: &[u8], traces: usize, sommets: usize) -> ImportTraces {
 #[test]
 fn undo_profond_conserve_les_blobs_des_imports_anterieurs() {
     let mut session = Session::new("tests");
-    session.execute(&import(b"<svg a/>", 1, 3)).expect("import A");
+    session
+        .execute(&import(b"<svg a/>", 1, 3))
+        .expect("import A");
     let nom_a = session.geom().traces().expect("géométrie A").blob.clone();
-    session.execute(&import(b"<svg b/>", 2, 6)).expect("import B");
+    session
+        .execute(&import(b"<svg b/>", 2, 6))
+        .expect("import B");
     session
         .execute(&SetInput {
             name: "x".into(),
@@ -63,7 +67,9 @@ fn undo_profond_conserve_les_blobs_des_imports_anterieurs() {
 #[test]
 fn import_defait_puis_nouvelle_action_purge_son_blob() {
     let mut session = Session::new("tests");
-    session.execute(&import(b"<svg a/>", 1, 3)).expect("import A");
+    session
+        .execute(&import(b"<svg a/>", 1, 3))
+        .expect("import A");
     let nom_a = session.geom().traces().expect("géométrie A").blob.clone();
     session.undo().expect("undo");
     session
@@ -108,10 +114,14 @@ impl Command for ReimportTraces {
 #[test]
 fn blob_partage_applique_tronque_est_conserve() {
     let mut session = Session::new("tests");
-    session.execute(&import(b"<svg a/>", 1, 3)).expect("import A");
+    session
+        .execute(&import(b"<svg a/>", 1, 3))
+        .expect("import A");
     let nom_a = session.geom().traces().expect("géométrie A").blob.clone();
     session
-        .execute(&ReimportTraces { blob: nom_a.clone() })
+        .execute(&ReimportTraces {
+            blob: nom_a.clone(),
+        })
         .expect("second événement sur le même blob");
     session.undo().expect("undo du second événement");
     // Le redo du second événement est abandonné : nom_a reste pourtant
