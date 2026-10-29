@@ -67,3 +67,45 @@ fn peigne_gauche_legitime_evalue() {
         assert!((total - 1001.0).abs() < 1e-9);
     });
 }
+
+/// A3-03 : une chaîne de dépendances de 5 000 alias est refusée par
+/// une erreur typée avant que l'évaluation récursive ne déborde la
+/// pile — le refus vient à la définition, jamais d'abort
+/// (OF-VAL-0011).
+#[test]
+fn chaine_de_dependances_longue_ne_plante_pas() {
+    sur_fil_de_2_mio(|| {
+        let mut graph = ValueGraph::new();
+        graph.set_input("a0", 1.0).expect("entrée");
+        let mut dernier_ok = "a0".to_string();
+        let mut indice_ok = 0usize;
+        let mut refus = None;
+        for i in 1..5000usize {
+            let nom = format!("a{i}");
+            match graph.set_expression(&nom, &format!("{dernier_ok} + 1")) {
+                Ok(()) => {
+                    dernier_ok = nom;
+                    indice_ok = i;
+                }
+                Err(erreur) => {
+                    refus = Some(erreur);
+                    break;
+                }
+            }
+        }
+        let Some(erreur) = refus else {
+            // Rouge attendu aujourd'hui (audit n°3, A3-03) : la
+            // chaîne complète existe, l'évaluation récursive de
+            // 5 000 nœuds déborde le fil de 2 Mio — abort.
+            graph.value("a4999").expect("jamais atteint : abort avant");
+            panic!("la chaîne doit finir par dépasser la borne de profondeur");
+        };
+        assert!(
+            erreur.to_string().starts_with("OF-VAL-0011"),
+            "le refus porte le code : {erreur}"
+        );
+        let valeur = graph.value(&dernier_ok).expect("le dernier alias accepté s'évalue");
+        assert!((valeur - (indice_ok + 1) as f64).abs() < 1e-9);
+        assert!(graph.value("a4999").is_err(), "rien n'existe au-delà du dernier refus");
+    });
+}
