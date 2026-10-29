@@ -37,7 +37,7 @@ Les audits convergent sur des défauts réels dans trois zones : le contrat tout
 **A7 — identifiants v7 horodatés par l'horloge injectable.** `Document::append` et le `txn` de `Session::execute` tirent l'horodatage du trait `Clock` (précision ms) pour construire l'UUIDv7 (`uuid::Builder::from_unix_timestamp_millis`), au lieu de `Uuid::now_v7()` (horloge système : non-déterminisme en test, comportement wasm32 incertain).
 *Tests :* `FixedClock` → identifiants reproductibles ; deux appends → séquences monotones.
 
-**A8 — invariants noms et finitude.** `SetInput`/`SetExpression` valident le nom contre le jeu du lexeur actuel (`[A-Za-z_][A-Za-z0-9_]*`, à élargir en Unicode à l'implémentation de l'ADR-0006) : plus d'entrée créable mais jamais référençable. `ValueGraph::set_input` refuse les non-finis (réutilisation du garde de la revue point 5) : l'invariant tient au niveau du graphe, pas seulement de la commande.
+**A8 — invariants noms et finitude.** `SetInput`/`SetExpression` valident le nom contre le jeu du lexeur actuel (`[A-Za-z_]` puis `[A-Za-z0-9_]*`, à élargir en Unicode à l'implémentation de l'ADR-0006) : plus d'entrée créable mais jamais référençable. `ValueGraph::set_input` refuse les non-finis (réutilisation du garde de la revue point 5) : l'invariant tient au niveau du graphe, pas seulement de la commande.
 *Tests :* nom avec espace/accent/chiffre initial refusé ; `set_input(NaN/±inf)` → erreur.
 
 ### Lot B — interop (forge-io)
