@@ -50,8 +50,12 @@ fn texte_d_expression_borne_au_caractere_pres() {
     // maillons coûteraient plus de 1 024 niveaux de pile).
     let exacte = format!("1{}", " ".repeat(LONGUEUR_MAX_EXPRESSION - 1));
     assert_eq!(exacte.chars().count(), LONGUEUR_MAX_EXPRESSION);
-    graph.set_expression("borne", &exacte).expect("la limite exacte est acceptée");
-    let erreur = graph.set_expression("borne", &format!(" {exacte}")).unwrap_err();
+    graph
+        .set_expression("borne", &exacte)
+        .expect("la limite exacte est acceptée");
+    let erreur = graph
+        .set_expression("borne", &format!(" {exacte}"))
+        .unwrap_err();
     assert!(matches!(&erreur, ValuesError::InvalidExpression { .. }));
 }
 
@@ -63,7 +67,9 @@ fn peigne_gauche_legitime_evalue() {
     sur_fil_de_2_mio(|| {
         let mut graph = ValueGraph::new();
         let longue = format!("{}1", "1+".repeat(1000));
-        graph.set_expression("somme", &longue).expect("sous la borne");
+        graph
+            .set_expression("somme", &longue)
+            .expect("sous la borne");
         let total = graph.value("somme").expect("le peigne s'évalue");
         assert!((total - 1001.0).abs() < 1e-9);
     });
@@ -105,8 +111,13 @@ fn chaine_de_dependances_longue_ne_plante_pas() {
             erreur.to_string().starts_with("OF-VAL-0011"),
             "le refus porte le code : {erreur}"
         );
-        let valeur = graph.value(&dernier_ok).expect("le dernier alias accepté s'évalue");
+        let valeur = graph
+            .value(&dernier_ok)
+            .expect("le dernier alias accepté s'évalue");
         assert!((valeur - (indice_ok + 1) as f64).abs() < 1e-9);
-        assert!(graph.value("a4999").is_err(), "rien n'existe au-delà du dernier refus");
+        assert!(
+            graph.value("a4999").is_err(),
+            "rien n'existe au-delà du dernier refus"
+        );
     });
 }

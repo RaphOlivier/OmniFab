@@ -12,7 +12,13 @@ use forge_values::LONGUEUR_MAX_EXPRESSION;
 #[test]
 fn set_expression_rejette_un_texte_trop_long() {
     let mut session = Session::new("tests");
-    session.execute(&SetInput { name: "a".into(), value: 1.0, unite: None }).expect("entrée");
+    session
+        .execute(&SetInput {
+            name: "a".into(),
+            value: 1.0,
+            unite: None,
+        })
+        .expect("entrée");
     // « a+ » répété 4 096 fois, plus le « 1 » final : 8 193 caractères.
     let trop_long = format!("{}1", "a+".repeat(LONGUEUR_MAX_EXPRESSION));
     let erreur = session
@@ -23,6 +29,13 @@ fn set_expression_rejette_un_texte_trop_long() {
         })
         .unwrap_err();
     assert_eq!(erreur.code(), "OF-SES-0001");
-    assert!(erreur.to_string().contains("caractères"), "le message porte la borne : {erreur}");
-    assert_eq!(session.document().events().len(), 1, "rien de nouveau au journal");
+    assert!(
+        erreur.to_string().contains("caractères"),
+        "le message porte la borne : {erreur}"
+    );
+    assert_eq!(
+        session.document().events().len(),
+        1,
+        "rien de nouveau au journal"
+    );
 }
