@@ -17,4 +17,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - name: Licences
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: check licenses
+      - name: Advisories (CVE)
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: check advisories
+      - name: Sources
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: check sources
+      - name: Bans
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          arguments: check bans
