@@ -17,7 +17,7 @@
 //! process : chaque cas dégénéré se lance individuellement via
 //! `cargo run -p forge-cad --example spike_phase_a -- <n° 1-4>`.
 
-use forge_cad::{brep, step, CadBudgets, Solide};
+use forge_cad::{CadBudgets, Solide, brep, step};
 use forge_units::Length;
 
 fn main() {
@@ -26,9 +26,18 @@ fn main() {
     let hauteur = Length::from_millimeters(12.0);
     let contour = [
         (Length::from_millimeters(0.0), Length::from_millimeters(0.0)),
-        (Length::from_millimeters(40.0), Length::from_millimeters(0.0)),
-        (Length::from_millimeters(40.0), Length::from_millimeters(25.0)),
-        (Length::from_millimeters(0.0), Length::from_millimeters(25.0)),
+        (
+            Length::from_millimeters(40.0),
+            Length::from_millimeters(0.0),
+        ),
+        (
+            Length::from_millimeters(40.0),
+            Length::from_millimeters(25.0),
+        ),
+        (
+            Length::from_millimeters(0.0),
+            Length::from_millimeters(25.0),
+        ),
     ];
     let debut = std::time::Instant::now();
     let prisme = match Solide::prisme(&contour, hauteur) {
@@ -86,12 +95,26 @@ fn main() {
     // comportement d'OCCT (panique, erreur propre, forme vide), il ne le corrige pas.
     // Un abort C++ abat le process (constaté cas 1 : StdFail_NotDone) : chaque
     // cas se lance individuellement — `-- <n° 1-4>` ; sans argument, tous.
-    let cas_demande = std::env::args().nth(1).and_then(|s| s.parse::<usize>().ok());
+    let cas_demande = std::env::args()
+        .nth(1)
+        .and_then(|s| s.parse::<usize>().ok());
     for (i, (nom, contour, h)) in [
-        ("contour dégénéré (points confondus)", vec![(0.0, 0.0); 4], 12.0),
+        (
+            "contour dégénéré (points confondus)",
+            vec![(0.0, 0.0); 4],
+            12.0,
+        ),
         ("contour à 2 points", vec![(0.0, 0.0), (10.0, 0.0)], 12.0),
-        ("hauteur nulle", vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], 0.0),
-        ("hauteur négative", vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)], -5.0),
+        (
+            "hauteur nulle",
+            vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)],
+            0.0,
+        ),
+        (
+            "hauteur négative",
+            vec![(0.0, 0.0), (10.0, 0.0), (10.0, 10.0), (0.0, 10.0)],
+            -5.0,
+        ),
     ]
     .iter()
     .enumerate()
@@ -111,10 +134,16 @@ fn main() {
         match resultat {
             Ok(s) => {
                 let v = s.volume_mm3(tolerance);
-                println!("[SPIKE] cas {numero} — {nom} : Ok, volume={v:?}, {:?}", debut.elapsed());
+                println!(
+                    "[SPIKE] cas {numero} — {nom} : Ok, volume={v:?}, {:?}",
+                    debut.elapsed()
+                );
             }
             Err(e) => {
-                println!("[SPIKE] cas {numero} — {nom} : Err({e:?}) en {:?}", debut.elapsed())
+                println!(
+                    "[SPIKE] cas {numero} — {nom} : Err({e:?}) en {:?}",
+                    debut.elapsed()
+                )
             }
         }
     }
