@@ -1,0 +1,20 @@
+# Audit supply-chain des dépendances (revue point 13, docs/ci-cargo-deny.md).
+# Activé le 2026-10-29 (décision Raphaël, audit n°4 A4-12). ci.yml reste inchangé ;
+# ce workflow ne crée jamais d'issue — un échec est visible dans le run.
+name: cargo-deny
+
+on:
+  push:
+    branches: [main]
+    paths: ["Cargo.lock", "deny.toml", ".github/workflows/cargo-deny.yml"]
+  pull_request:
+    paths: ["Cargo.lock", "deny.toml", ".github/workflows/cargo-deny.yml"]
+  workflow_dispatch:
+
+jobs:
+  deny:
+    name: cargo-deny (licences + advisories + sources)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: EmbarkStudios/cargo-deny-action@v2

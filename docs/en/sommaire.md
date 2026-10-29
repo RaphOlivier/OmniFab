@@ -59,7 +59,8 @@ Public reference copy of the decision notes (ADR-0028): reasoning, rejected alte
 | [`android.yml`](../../.github/workflows/android.yml) | Android APK build (aarch64) + signing + artifact |
 | [`cargo-lock.yml`](../../.github/workflows/cargo-lock.yml) | Automatic `Cargo.lock` completion on `Cargo.toml` changes |
 | [`galerie.yml`](../../.github/workflows/galerie.yml) | Headless screenshots of the demonstrator, archived on the `galerie` branch (visual history) |
-| [`liens-md.yml`](../../.github/workflows/liens-md.yml) | Markdown link checker (workflow_dispatch) |
+| [`liens-md.yml`](../../.github/workflows/liens-md.yml) | Markdown link checker (push `*.md` + workflow_dispatch) |
+| [`cargo-deny.yml`](../../.github/workflows/cargo-deny.yml) | Supply-chain audit of dependencies: licenses/CVE/sources via `deny.toml` (enabled 2026-10-29) |
 
 ---
 

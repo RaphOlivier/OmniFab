@@ -16,3 +16,7 @@ Thumbs.db
 # Fichiers locaux
 *.local.*
 .env
+
+# Témoins CAO des exemples (audit n°4 A4-15 — spike_phase_a.step/.brep)
+*.step
+*.brep

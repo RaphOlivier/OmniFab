@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v13 (2026-10-26) — ajout de l'entrée session sans PC n°2 (convergence documentation + patchs expect)
+**Version :** v14 (2026-10-29) — ajout de l'entrée audit externe n°4 (rapport + verdicts validés en bloc : 0 réfuté, A4-11/12/15 corrigés le jour même, A4-14 confirmé par l'exécution du spike) ; v13 (2026-10-26) — ajout de l'entrée session sans PC n°2 (convergence documentation + patchs expect)
 
 # Archives des discussions
 
@@ -13,13 +13,11 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 
 ## Index
 
+- [2026-10-29 — [J0] Audit externe n°4 (Claude) : 15 signalements A4 + vérification des correctifs du n°3 — verdicts validés en bloc (0 réfuté ; A4-11/12/15 corrigés le jour même, A4-14 confirmé par l'exécution du spike v41)](2026-10-29-j0-audit4-claude.md) — A4-01/02/03 (gels à l'ouverture : boucle de grille non bornée → OOM, wireframe STL par frame, `unknown` O(n²)) insérés après A3-02/03 (décision Raphaël) ; workflow cargo-deny activé ; conformité licence réécrite (sources recompilables + GPL-3.0+) ; corps de la fiche état-actuel rafraîchi (v42) ; backlog `preparation/backlog-audit4.md` ; SHA d'ancrage à rattacher par Raphaël.
+
 - [2026-10-26 — [J0] Session sans PC n°2 : convergence documentation + patchs `expect` pré-spécifiés (spécifs phase D, lot EN matrice, sommaire général, ADR-0016/0019 comblés)](2026-10-26-j0-sans-pc-convergence-docs.md) — 21 spécifs test-first phase D (OF-VAL-0010 seul nouveau code) ; matrice EN en-têtes (conventions v6) ; sommaire général cliquable FR+EN demandé par Raphaël (conventions v7 : règle de maintenance) ; ADR-0016/0019 poussés (0019 fusionné) — numérotation 0000→0028 complète ; patchs expect pré-spécifiés lots A-E (un seul vrai chemin de panique, refus typé OF-SES) + reliquat « PRÉPARATION » de aide.rs repéré.
 
-- [2026-10-26 — [J4] Ouverture du jalon 4 : lot d'ADR ADR-0029..0034 validé en une session + conventions `expect` tranchées](2026-10-26-j4-ouverture-lot-adr.md) — session sans PC : 4 conventions `expect` + `formes_max` tranchés, puis digest 4/4 (2,5D + découpe/gravure 2D ; simulateur D1+D2 heightmap avec porte de sortie, destination collisions montages 3D ; langage déclaratif de contrôleurs dès le jalon 4 ; clôture au G-code prêt+simulé, gel 5-10 intact) ; phase A forge-gcode indépendante du jalon 3.
-
 - [2026-10-26 — [J3] Designs détaillés des phases B-E du jalon 3 : digest schémas 4/4 + validation, 3 amendements (croquis éditable, couleurs journalisées — ADR-0027 D3 amendé, suppression de croquis en suspens)](2026-10-26-j3-designs-phases-B-E.md) — quatre fiches prep VALIDÉES par Raphaël (checklists livrées au début de phase, découpages en lots, points « SUSPENDU AU SPIKE » isolés) ; exécution bloquée à la clôture de la phase A (checkpoint PC).
-
-- [2026-10-26 — [J0] Présentation du projet et schémas d'interaction dans la documentation](2026-10-26-j0-presentation-docs-diagrammes.md) — deck développeur + 6 diagrammes Mermaid (canvases, hors dépôt) ; argumentaire accepté : invariants → `docs/architecture.md` (commit `d08e6d7` : geste utilisateur, undo/redo+sauvegarde, chaîne machine cible verrou n°4, règle « casser un schéma ⇒ ADR ou maj dans la même PR »), récit/bilan → page de présentation datée, jamais la doc de référence ; pas d'ADR (doc d'invariants existants).
 
 - [2026-10-26 — [J0] Présentation du projet et schémas d'interaction dans la documentation](2026-10-26-j0-presentation-docs-diagrammes.md) — deck développeur + 6 diagrammes Mermaid (canvases, hors dépôt) ; argumentaire accepté : invariants → `docs/architecture.md` (commit `d08e6d7` : geste utilisateur, undo/redo+sauvegarde, chaîne machine cible verrou n°4, règle « casser un schéma ⇒ ADR ou maj dans la même PR »), récit/bilan → page de présentation datée, jamais la doc de référence ; pas d'ADR (doc d'invariants existants).
 
@@ -27,6 +25,8 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 
 - [2026-10-26 — [J0] Protocole d'audit du dépôt : gouvernance des audits externes réguliers](2026-10-26-j0-protocole-audit.md) — `docs/audit-protocole.md` public + lien README : audit ancré à un SHA, liste anti-faux-positifs (conventions délibérées ADR-citées), dette assumée non re-signalable, format de rapport (A<n>-<nn>, fichier:ligne, sévérité, preuve, test proposé), verdict explicite par signalement (corrigé/dette acceptée/refusé), rapports archivés pour que les audits suivants vérifient les corrections au lieu de re-signaler.
 - [2026-10-26 — [J0] Extraits historiques de la fiche architecture : jalons 0-2, ADR-0016..0027, revue de code, dette d'audit](2026-10-26-arch-extraits-jalons0-2.md) — contenu déplacé **verbatim et sans perte** lors du découpage de la fiche en noyau stable (v4, ~145 Ko → ~26 Ko) : journaux de livraison des jalons 0-2 (phases A-E, rides, leçons egui/usvg/wgpu), résumés étendus des ADR-0016 à 0027, revue de code externe (2026-10-13), dette d'audit (2026-10-17, remplacée par la fiche état actuel). Fichier figé par nature, jamais mis à jour.
+
+- [2026-10-26 — [J4] Ouverture du jalon 4 : lot d'ADR ADR-0029..0034 validé en une session + conventions `expect` tranchées](2026-10-26-j4-ouverture-lot-adr.md) — session sans PC : 4 conventions `expect` + `formes_max` tranchés, puis digest 4/4 (2,5D + découpe/gravure 2D ; simulateur D1+D2 heightmap avec porte de sortie, destination collisions montages 3D ; langage déclaratif de contrôleurs dès le jalon 4 ; clôture au G-code prêt+simulé, gel 5-10 intact) ; phase A forge-gcode indépendante du jalon 3.
 
 - [2026-10-26 — [J0] Revue externe du miroir : statuts datés, clause de reprise ADR-0028, gel post-jalon 4](2026-10-26-j0-revue-miroir-dette.md) — chaque constat de la revue re-vérifié avant correction ; ADR-0028 amendé (miroir = référence de fait si la plateforme disparaît, inversion des rôles rejetée ~5-8×/édition + troncature 64 Ko) ; gel des jalons 5-10 (meuble de bout en bout) ; fiche « état actuel » créée, sécurité v2 (statuts datés), conventions v3 (public depuis 2026-10-22), architecture v3 (gel + tokio annoté).
 
@@ -57,6 +57,6 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v9 (2026-10-26) : ajout de l'entrée [J0] protocole d'audit du dépôt — gouvernance des audits externes réguliers (format de rapport, verdicts, anti-faux-positifs).
 - v10 (2026-10-26) : ajout de l'entrée [J0] audit externe n°3 — 23 signalements, verdicts du mainteneur (B2 réfuté avec preuve crates.io, D1-D5/D7 corrigés en doc, A3-* en backlog au vert).
 - v11 (2026-10-26) : ajout de l'entrée [J0] présentation du projet — 3 schémas d'invariants Mermaid ajoutés à docs/architecture.md (d08e6d7), récit/bilan hors doc de référence.
-- v11 (2026-10-26) : ajout de l'entrée [J0] présentation du projet — 3 schémas d'invariants Mermaid ajoutés à docs/architecture.md (d08e6d7), récit/bilan hors doc de référence.
 - v12 (2026-10-26) : ajout de l'entrée [J4] ouverture du jalon 4 — lot ADR-0029..0034 validé en une session sans PC + conventions `expect` tranchées.
 - v13 (2026-10-26, soir) : ajout de l'entrée [J0] session sans PC n°2 (spécifs phase D, lot EN matrice, sommaire général, ADR-0016/0019, patchs expect) ; constat : l'index miroir dépôt était en retard (v10) — resynchronisation dans la foulée (3 fichiers + index).
+- v14 (2026-10-29) : ajout de l'entrée [J0] audit externe n°4 (rapport + verdicts du mainteneur validés en bloc — 0 réfuté ; A4-11/12/15 corrigés le jour même en doc/outillage, A4-14 confirmé par l'exécution du spike, A4-01/02/03 insérés après A3-02/03).

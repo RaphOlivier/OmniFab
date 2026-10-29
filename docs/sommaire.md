@@ -101,6 +101,7 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-10-26-j3-designs-phases-B-E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des phases B-E : digest 4/4, 3 amendements, note matériaux, veille OCCT |
 | [`2026-10-26-j4-ouverture-lot-adr`](knowledge/archives/2026-10-26-j4-ouverture-lot-adr.md) | J4 — ouverture du jalon 4 : ADR-0029..0034 validés + conventions `expect` |
 | [`2026-10-26-j0-sans-pc-convergence-docs`](knowledge/archives/2026-10-26-j0-sans-pc-convergence-docs.md) | J0 — session sans PC n°2 : spécifs phase D, matrice EN, sommaire général, ADR-0016/0019, patchs `expect` |
+| [`2026-10-29-j0-audit4-claude`](knowledge/archives/2026-10-29-j0-audit4-claude.md) | J0 — audit externe n°4 (rapport + verdicts) |
 
 ## Code
 
@@ -134,7 +135,8 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`android.yml`](../.github/workflows/android.yml) | Build APK Android (aarch64) + signature + artefact |
 | [`cargo-lock.yml`](../.github/workflows/cargo-lock.yml) | Complétion automatique du `Cargo.lock` à chaque changement de `Cargo.toml` (issue de rapport en cas d'échec de résolution) |
 | [`galerie.yml`](../.github/workflows/galerie.yml) | Captures d'écran headless du démonstrateur à chaque push, archivées sur la branche `galerie` (historique visuel) |
-| [`liens-md.yml`](../.github/workflows/liens-md.yml) | Contrôle des liens Markdown (workflow_dispatch) |
+| [`liens-md.yml`](../.github/workflows/liens-md.yml) | Contrôle des liens Markdown (push `*.md` + workflow_dispatch) |
+| [`cargo-deny.yml`](../.github/workflows/cargo-deny.yml) | Audit supply-chain des dépendances : licences/CVE/sources via `deny.toml` (activé le 2026-10-29) |
 
 ---
 
