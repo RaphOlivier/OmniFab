@@ -64,8 +64,7 @@ jobs:
           if cargo apk build --package omnifab-android --target aarch64-linux-android > apk.log 2>&1; then
             BUILD=0
           else
-     
-       BUILD=1
+            BUILD=1
           fi
           APK=$(find target -name '*.apk' -print -quit)
           if [ "$BUILD" = "0" ] && [ -n "$APK" ]; then
@@ -110,8 +109,7 @@ jobs:
       - name: Rapport d'erreurs (issue)
         if: steps.apk.outputs.fail == '1'
         env:
-          GH_TOKEN: 
-${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHORT=$(git rev-parse --short HEAD)
           {

@@ -77,8 +77,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHORT=$(git rev-parse --short
- HEAD)
+          SHORT=$(git rev-parse --short HEAD)
           {
             echo "Echec des verifications CI sur le job **lint-test** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
             for f in clippy.log fmt.log test.log doc.log; do
@@ -130,8 +129,7 @@ jobs:
               ;;
             macos-*)
               brew install eigen fmt boost llvm
-              # eigen est keg-only : o
-n le rend découvrable par CMake.
+              # eigen est keg-only : on le rend découvrable par CMake.
               echo "CMAKE_PREFIX_PATH=$(brew --prefix eigen)" >> "$GITHUB_ENV"
               echo "LIBCLANG_PATH=$(brew --prefix llvm)/lib" >> "$GITHUB_ENV"
               ;;
@@ -171,8 +169,7 @@ n le rend découvrable par CMake.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          SHORT=$(git rev-parse --
-short HEAD)
+          SHORT=$(git rev-parse --short HEAD)
           {
             echo "Echec de compilation CI sur le job **build (${{ matrix.os }})** - commit $SHORT - [run $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)."
             echo '```text'
@@ -214,8 +211,7 @@ short HEAD)
           # 7.8.1, epingle par le lock) compilerait C++ natif pour
           # aarch64 — hors périmètre du spike ; la crate reste
           # vérifiée sur les trois OS du job build.
-          if cargo check --workspace -
--locked --exclude forge-gcs --exclude forge-gcs-sys --exclude omnifab-desktop --exclude forge-cad --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
+          if cargo check --workspace --locked --exclude forge-gcs --exclude forge-gcs-sys --exclude omnifab-desktop --exclude forge-cad --target aarch64-unknown-linux-gnu > aarch64.log 2>&1; then
             echo "fail=0" >> "$GITHUB_OUTPUT"
           else
             echo "fail=1" >> "$GITHUB_OUTPUT"
