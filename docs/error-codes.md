@@ -11,7 +11,7 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs), `CAD` (forge-cad).
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs), `CAD` (forge-cad), `WORK` (omnifab-desktop).
 Réservés : `UNT` (forge-units), `CAM`, `GCO`, `LNK`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
@@ -51,6 +51,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-DOC-0013 | Nom de blob invalide | Nom vide, traversée de répertoire (`..`), chemin absolu, séparateur Windows ou octet nul | Corriger le nom du blob |
 | OF-DOC-0014 | Blobs cumulés trop volumineux | La somme des objets binaires dépasse le plafond global du chargement (garde-fou « bombe ZIP » cumulative) | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0015 | Entrée en doublon dans le conteneur | L'archive contient deux entrées de même nom (archive forgée) | Fichier projet anormal — restaurer une copie saine |
+| OF-DOC-0016 | Fichier projet trop volumineux | Le fichier .omnifab dépasse le budget d'octets du chargement avant même d'être lu (audit n°3 A3-07) | Fichier anormal — vérifier le fichier |
 
 ## forge-session (SES) — session, commandes et undo/redo
 
@@ -109,3 +110,9 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-CAD-0002 | Forme nulle ou invalide | Une opération a produit une forme vide (contour dégénéré, booléen sans résultat) | Corriger la géométrie source |
 | OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
 | OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets ou de formes du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
+
+## omnifab-desktop (WORK) — fil de travail de l'interface
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-WORK-0001 | Travail terminé en échec inopiné | Panique du fil de travail pendant un import, un export ou une résolution (bug logiciel, audit n°3 N8) | Signaler le bug ; le fil survit et le travail suivant est traité |

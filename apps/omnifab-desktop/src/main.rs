@@ -16,7 +16,9 @@
 //!   via les sélecteurs natifs** (ADR-0014) ;
 //! - **fil de travail** (ADR-0016 C1) : lectures, parses et exports
 //!   détachés du fil d'interface, échecs de parse mémorisés — un
-//!   fichier invalide n'est plus re-parsé à chaque frame ;
+//!   fichier invalide n'est plus re-parsé à chaque frame ; le fil
+//!   survit à une panique du travail — échec typé OF-WORK-0001, le
+//!   travail suivant est traité (audit n°3 N8) ;
 //! - **résolution du croquis contraint** (ADR-0018 D3) : la demande
 //!   part au fil de travail, qui instancie le solveur natif —
 //!   jamais sur le fil d’interface (ADR-0016 C1), jamais dans
@@ -30,7 +32,9 @@
 //!   enregistré » posé par toute commande effective et levé par la
 //!   sauvegarde — le titre de la fenêtre porte `*`, « Réinitialiser »,
 //!   « Ouvrir » et « Reprendre » demandent confirmation, et
-//!   l'enregistrement ne casse plus la pile redo ;
+//!   l'enregistrement ne casse plus la pile redo ; la croix est
+//!   interceptée : confirmation Enregistrer / Quitter sans
+//!   enregistrer / Annuler avant de fermer (audit n°3 A3-06) ;
 //! - **messages d'état fidèles** (ADR-0016 C4) : une commande refusée
 //!   n'affiche jamais de succès, l'action suivante efface l'erreur —
 //!   plus de rouge persistant après correction ;
@@ -161,6 +165,39 @@ enum ActionDestructrice {
     },
     /// Reprise de la session en cours depuis l'écran d'accueil.
     Reprendre,
+    /// Fermeture de la fenêtre demandée à la croix (audit n°3
+    /// A3-06) : « Enregistrer » sauve puis ferme, « Quitter sans
+    /// enregistrer » ferme, « Annuler » ramène au travail.
+    Quitter,
+}
+
+/// Décision de la garde de fermeture de la fenêtre (audit n°3
+/// A3-06) : la croix ne doit pas perdre un travail non
+/// enregistré.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DecisionFermeture {
+    /// Laisser la fenêtre se fermer : rien n'est à perdre.
+    LaisserFermer,
+    /// Bloquer la fermeture : la confirmation est déjà ouverte.
+    Bloquer,
+    /// Bloquer la fermeture et ouvrir la confirmation.
+    BloquerEtConfirmer,
+}
+
+/// Garde de fermeture de la fenêtre (audit n°3 A3-06) : du
+/// travail non enregistré ne se perd pas au clic sur la croix —
+/// la fermeture est annulée (ViewportCommand::CancelClose,
+/// exemple egui « confirm_exit ») et la confirmation demandée,
+/// sauf si elle est déjà ouverte.
+fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> DecisionFermeture {
+    if !dirty {
+        return DecisionFermeture::LaisserFermer;
+    }
+    if confirmation_en_cours {
+        DecisionFermeture::Bloquer
+    } else {
+        DecisionFermeture::BloquerEtConfirmer
+    }
 }
 
 /// Choix des unités d'un maillage minuscule demandé à l'import
@@ -248,21 +285,51 @@ enum Travail {
         /// posée à la position visée.
         croquis: EsquisseProjection,
     },
+    /// Travail de test qui panique toujours (audit n°3 N8) : vérifie
+    /// que le fil de travail survit à une panique et traite le
+    /// travail suivant.
+    #[cfg(test)]
+    Bogue {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+    },
 }
 
 impl Travail {
+    /// Génération de l'état au moment de l'envoi (audit n°3 N8) :
+    /// connue avant l'exécution — un travail qui panique garde sa
+    /// génération pour le retour d'erreur typé.
+    fn generation(&self) -> u64 {
+        match self {
+            Travail::ImportTraces { generation, .. }
+            | Travail::ImportMaillage { generation, .. }
+            | Travail::ExportTraces { generation, .. }
+            | Travail::ExportMaillage { generation, .. }
+            | Travail::ResoudreEsquisse { generation, .. }
+            | Travail::ResoudreApercu { generation, .. } => *generation,
+            #[cfg(test)]
+            Travail::Bogue { generation } => *generation,
+        }
+    }
+
     /// Exécute le travail hors du fil d'interface : tout échec
     /// devient un retour d'erreur à message (ADR-0016 C1).
     fn executer(self) -> Retour {
         match self {
+            // Travail de test qui panique (audit n°3 N8) : le fil
+            // doit survivre et le traiter comme un échec typé.
+            #[cfg(test)]
+            Travail::Bogue { generation } => {
+                panic!("bogue de test : le travail {generation} doit paniquer")
+            }
             Travail::ImportTraces {
                 generation,
                 format,
                 chemin,
             } => {
-                let octets = match std::fs::read(&chemin) {
+                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
                     Ok(octets) => octets,
-                    Err(error) => return erreur_de_travail(generation, error),
+                    Err(message) => return erreur_de_travail(generation, message),
                 };
                 let parse = if format == "svg" {
                     svg::import(&octets, &svg::SvgBudgets::default())
@@ -285,9 +352,9 @@ impl Travail {
                 }
             }
             Travail::ImportMaillage { generation, chemin } => {
-                let octets = match std::fs::read(&chemin) {
+                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
                     Ok(octets) => octets,
-                    Err(error) => return erreur_de_travail(generation, error),
+                    Err(message) => return erreur_de_travail(generation, message),
                 };
                 match stl::import(&octets, &stl::StlBudgets::default()) {
                     Ok(maillage) => {
@@ -458,10 +525,42 @@ impl Retour {
 
 /// Boucle du fil de travail : chaque travail reçu est exécuté et son
 /// retour émis ; le fil s'éteint quand l'émetteur des travaux est
-/// abandonné (ADR-0016 C1).
+/// abandonné (ADR-0016 C1). Le fil survit à une panique du travail
+/// (audit n°3 N8) : l'échec inopiné devient un retour d'erreur typé
+/// OF-WORK-0001 — code du registre central docs/error-codes.md — et
+/// le travail suivant est traité normalement.
 fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Retour>) {
+    use std::panic::AssertUnwindSafe;
     for travail in recepteur {
-        let _ = emetteur.send(travail.executer());
+        let generation = travail.generation();
+        let execution = std::panic::catch_unwind(AssertUnwindSafe(|| travail.executer()));
+        let retour = match execution {
+            Ok(retour) => retour,
+            Err(poigne) => {
+                let message = format!(
+                    "OF-WORK-0001 : le travail a échoué inopinément : {}",
+                    resume_de_poigne(&poigne)
+                );
+                Retour::Erreur {
+                    generation,
+                    message,
+                }
+            }
+        };
+        let _ = emetteur.send(retour);
+    }
+}
+
+/// Message d'une panique rattrapée (audit n°3 N8) : `&str`, `String`
+/// ou résumé générique — le fil ne panique jamais pour afficher une
+/// erreur.
+fn resume_de_poigne(poigne: &(dyn std::any::Any + Send)) -> String {
+    if let Some(texte) = poigne.downcast_ref::<&str>() {
+        (*texte).to_string()
+    } else if let Some(texte) = poigne.downcast_ref::<String>() {
+        texte.clone()
+    } else {
+        "panique sans message".to_string()
     }
 }
 
@@ -568,6 +667,48 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
         generation,
         message: erreur.to_string(),
     }
+}
+
+/// Budget d'octets d'un fichier importé (audit n°3 A3-07,
+/// ADR-0009) : un fichier d'import démesuré est refusé avant
+/// lecture — 1 Gio dépasse déjà de loin les budgets des parseurs
+/// SVG, DXF et STL.
+const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
+
+/// Lit un fichier d'import sous un budget d'octets, refusé AVANT
+/// lecture (audit n°3 A3-07, ADR-0009) : la taille du fichier est
+/// mesurée sur ses métadonnées, un fichier démesuré est refusé sans
+/// être lu — ni la mémoire ni le fil de travail ne paient pour un
+/// fichier que les parseurs refuseraient. Le refus porte le code
+/// OF-IO-0001 du registre central docs/error-codes.md ; la lecture
+/// elle-même reste bornée : la taille peut changer entre la mesure
+/// et la lecture.
+fn lire_borne(chemin: &Path, budget: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    let annonce = std::fs::metadata(chemin)
+        .map_err(|erreur| erreur.to_string())?
+        .len();
+    if annonce > budget {
+        return Err(forge_io::IoError::TooLarge {
+            found: annonce as usize,
+            max: budget as usize,
+        }
+        .to_string());
+    }
+    let fichier = std::fs::File::open(chemin).map_err(|erreur| erreur.to_string())?;
+    let mut octets = Vec::new();
+    fichier
+        .take(budget + 1)
+        .read_to_end(&mut octets)
+        .map_err(|erreur| erreur.to_string())?;
+    if octets.len() as u64 > budget {
+        return Err(forge_io::IoError::TooLarge {
+            found: octets.len(),
+            max: budget as usize,
+        }
+        .to_string());
+    }
+    Ok(octets)
 }
 
 /// Écrit les octets exportés au chemin choisi (ADR-0016 C1) —
@@ -731,6 +872,10 @@ struct DemoApp {
     /// Action destructive demandée, en attente de confirmation
     /// (ADR-0016 C3).
     demande: Option<ActionDestructrice>,
+    /// Fermeture de la fenêtre confirmée par le dialogue (audit n°3
+    /// A3-06) : la garde ne bloque plus la demande de fermeture
+    /// qu'elle vient d'émettre.
+    fermeture_confirmee: bool,
     /// Choix des unités d'un maillage minuscule, en attente de la
     /// réponse de l'utilisateur (ADR-0017).
     demande_echelle: Option<DemandeEchelle>,
@@ -897,6 +1042,7 @@ impl DemoApp {
             dirty: false,
             titre_sale: false,
             demande: None,
+            fermeture_confirmee: false,
             demande_echelle: None,
             croquis_resolu: None,
             derniere_resolution_bonne: None,
@@ -1189,6 +1335,10 @@ impl DemoApp {
                 self.effacer_messages();
                 self.ecran = Ecran::Atelier;
             }
+            // La croix ne passe jamais par ici : la garde de l'update
+            // l'annule et la fenêtre dédiée pilote enregistrer /
+            // quitter / annuler avant la fermeture (audit n°3 A3-06).
+            ActionDestructrice::Quitter => {}
         }
     }
 
@@ -1201,25 +1351,62 @@ impl DemoApp {
 
     /// Fenêtre de confirmation d'une action destructive (ADR-0016 C3) :
     /// « Continuer » exécute l'action, « Annuler » la rejette — du
-    /// travail non enregistré serait perdu.
+    /// travail non enregistré serait perdu. Fermeture demandée à la
+    /// croix (audit n°3 A3-06) : « Enregistrer » sauve puis ferme,
+    /// « Quitter sans enregistrer » ferme, « Annuler » ramène au
+    /// travail.
     fn fenetre_confirmation(&mut self, ctx: &egui::Context) {
+        /// Choix du dialogue de fermeture (audit n°3 A3-06).
+        #[derive(Debug, Clone, Copy)]
+        enum ChoixFermeture {
+            /// Enregistrer puis fermer.
+            Enregistrer,
+            /// Fermer sans enregistrer.
+            Quitter,
+            /// Rester dans le travail courant.
+            Annuler,
+        }
         let Some(action) = self.demande.clone() else {
             return;
         };
+        let fermeture = matches!(action, ActionDestructrice::Quitter);
         let mut decision: Option<bool> = None;
+        let mut choix: Option<ChoixFermeture> = None;
+        let cle_texte = if fermeture {
+            "confirmation-fermeture-texte"
+        } else {
+            "confirmation-texte"
+        };
         egui::Window::new(self.texte("confirmation-titre"))
             .collapsible(false)
             .show(ctx, |ui| {
-                ui.label(self.texte("confirmation-texte"));
+                ui.label(self.texte(cle_texte));
                 ui.horizontal(|ui| {
-                    let reponse = ui.button(self.texte("confirmation-confirmer"));
-                    avec_aide(&reponse, "aide-confirmation-perte", &mut self.aide);
-                    if reponse.clicked() {
-                        decision = Some(true);
-                    }
-                    let reponse = ui.button(self.texte("confirmation-annuler"));
-                    if reponse.clicked() {
-                        decision = Some(false);
+                    if fermeture {
+                        let reponse = ui.button(self.texte("confirmation-enregistrer"));
+                        avec_aide(&reponse, "aide-confirmation-enregistrer", &mut self.aide);
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Enregistrer);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-quitter"));
+                        avec_aide(&reponse, "aide-confirmation-quitter", &mut self.aide);
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Quitter);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-annuler"));
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Annuler);
+                        }
+                    } else {
+                        let reponse = ui.button(self.texte("confirmation-confirmer"));
+                        avec_aide(&reponse, "aide-confirmation-perte", &mut self.aide);
+                        if reponse.clicked() {
+                            decision = Some(true);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-annuler"));
+                        if reponse.clicked() {
+                            decision = Some(false);
+                        }
                     }
                 });
             });
@@ -1229,6 +1416,26 @@ impl DemoApp {
                 self.executer_action(action);
             }
             Some(false) => self.demande = None,
+            None => {}
+        }
+        match choix {
+            Some(ChoixFermeture::Enregistrer) => {
+                // Enregistrer d'abord : sans fichier courant,
+                // « Enregistrer sous… » s'ouvre — la fenêtre ne
+                // ferme que si la sauvegarde a eu lieu.
+                self.enregistrer();
+                if !self.dirty {
+                    self.demande = None;
+                    self.fermeture_confirmee = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            Some(ChoixFermeture::Quitter) => {
+                self.demande = None;
+                self.fermeture_confirmee = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Some(ChoixFermeture::Annuler) => self.demande = None,
             None => {}
         }
     }
@@ -1298,15 +1505,47 @@ impl DemoApp {
     }
     /// Confie un travail au fil de travail : compteur des travaux en
     /// attente et message d'information (ADR-0016 C1) ; sans fil
-    /// disponible, la demande est abandonnée en silence.
+    /// disponible, la demande est abandonnée en silence. Le fil mort
+    /// est relancé au prochain envoi (audit n°3 N8) : il laissait un
+    /// « travail en cours » permanent — compteur jamais
+    /// décrémenté, repaint infini — et des envois abandonnés en
+    /// silence.
     fn envoyer_travail(&mut self, travail: Travail) {
         let Some(emetteur) = &self.travaux else {
             return;
         };
-        if emetteur.send(travail).is_ok() {
-            self.travaux_en_attente += 1;
-            self.info = Some(self.texte("info-travail-en-cours"));
+        match emetteur.send(travail) {
+            Ok(()) => {
+                self.travaux_en_attente += 1;
+                self.info = Some(self.texte("info-travail-en-cours"));
+            }
+            Err(erreur) => {
+                let travail = erreur.0;
+                self.relancer_fil_de_travail();
+                if let Some(emetteur) = &self.travaux
+                    && emetteur.send(travail).is_ok()
+                {
+                    self.travaux_en_attente += 1;
+                    self.info = Some(self.texte("info-travail-en-cours"));
+                }
+            }
         }
+    }
+
+    /// Relance le fil de travail mort (audit n°3 N8) : un fil neuf
+    /// repart sur des canaux neufs — les travaux en vol du fil mort
+    /// ne reviendront jamais, le compteur des travaux en attente
+    /// repart de zéro.
+    fn relancer_fil_de_travail(&mut self) {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        self.travaux = std::thread::Builder::new()
+            .name("omnifab-travail".to_string())
+            .spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours))
+            .is_ok()
+            .then_some(emetteur_travaux);
+        self.retours = recepteur_retours;
+        self.travaux_en_attente = 0;
     }
     /// Applique un retour du fil de travail à l'état : commande de
     /// session pour un import, message pour un export, canal
@@ -3033,11 +3272,28 @@ impl eframe::App for DemoApp {
                 self.viewport(ui);
             }
         });
+        // Garde de fermeture (audit n°3 A3-06) : la fenêtre ne se
+        // ferme pas tant que du travail non enregistré existe — la
+        // demande de fermeture est annulée (CancelClose) et la
+        // confirmation demandée (exemple egui « confirm_exit ») ;
+        // l'annonce d'avant le correctif, « fermeture non
+        // interceptable », était fausse (audit n°3, D6). Une
+        // fermeture confirmée par le dialogue passe : la garde ne
+        // bloque plus la demande qu'elle vient d'émettre.
+        if !self.fermeture_confirmee && ctx.input(|i| i.viewport().close_requested()) {
+            match garde_fermeture(self.dirty, self.demande.is_some()) {
+                DecisionFermeture::LaisserFermer => {}
+                DecisionFermeture::Bloquer => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                }
+                DecisionFermeture::BloquerEtConfirmer => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    self.demande = Some(ActionDestructrice::Quitter);
+                }
+            }
+        }
         // Titre de la fenêtre : « * » signale le travail non
-        // enregistré, levé par la sauvegarde (ADR-0016 C3). La
-        // fermeture de la fenêtre n'est pas interceptable dans
-        // eframe 0.29 (pas de `on_request_exit`) : limite documentée
-        // du démonstrateur.
+        // enregistré, levé par la sauvegarde (ADR-0016 C3).
         if self.titre_sale != self.dirty {
             let cle = if self.dirty {
                 "titre-fenetre-modifie"
@@ -3143,6 +3399,181 @@ mod tests {
             sommets,
         })
         .expect("import de test");
+    }
+
+    /// La croix ne doit pas perdre le travail non enregistré (audit
+    /// n°3 A3-06) : la fermeture est bloquée, la confirmation
+    /// demandée — trois cas.
+    #[test]
+    fn doit_bloquer_la_fermeture() {
+        // Travail non enregistré, confirmation déjà ouverte : la
+        // fermeture reste bloquée, sans rouvrir la confirmation.
+        assert_eq!(
+            garde_fermeture(true, true),
+            DecisionFermeture::Bloquer,
+            "la fermeture reste bloquée tant que la confirmation est ouverte"
+        );
+        // Travail non enregistré, rien d'ouvert : bloquer et
+        // demander.
+        assert_eq!(
+            garde_fermeture(true, false),
+            DecisionFermeture::BloquerEtConfirmer,
+            "la confirmation de perte doit s'ouvrir avant de fermer"
+        );
+        // Rien à perdre : la fenêtre se ferme.
+        assert_eq!(
+            garde_fermeture(false, false),
+            DecisionFermeture::LaisserFermer,
+            "sans travail non enregistré, la fermeture passe"
+        );
+    }
+
+    // --- Lecture bornée avant allocation (audit n°3 A3-07) ---
+
+    /// La lecture d'un fichier d'import est bornée AVANT lecture
+    /// (audit n°3 A3-07, ADR-0009) : un fichier plus gros que le
+    /// budget est refusé sans être lu — le refus porte le code
+    /// OF-IO-0001 du registre.
+    #[test]
+    fn lire_borne_refuse_avant_lecture() {
+        let chemin = std::env::temp_dir().join("omnifab-audit3-import.bin");
+        std::fs::write(&chemin, [0u8; 32]).expect("écriture du fichier test");
+        // 32 octets sous un budget de 64 : lecture entière.
+        assert_eq!(
+            lire_borne(&chemin, 64).expect("lecture sous budget"),
+            vec![0u8; 32]
+        );
+        // 32 octets au-dessus d'un budget de 16 : refus avant
+        // lecture, code OF-IO-0001 (ADR-0009).
+        let erreur = lire_borne(&chemin, 16).expect_err("refus attendu");
+        assert!(
+            erreur.contains("OF-IO-0001"),
+            "le refus doit porter le code du registre : {erreur}"
+        );
+        assert!(
+            erreur.contains("32") && erreur.contains("16"),
+            "le refus cite la taille et le budget : {erreur}"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
+    // --- Fil de travail résilient (audit n°3 N8) ---
+
+    /// Pompe les retours du fil de travail jusqu'à en recevoir le
+    /// nombre attendu, 10 secondes au plus (audit n°3 N8).
+    fn pomper_retours(recepteur: &mpsc::Receiver<Retour>, attendus: usize) -> Vec<Retour> {
+        let mut retours: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            retours.extend(recepteur.try_iter());
+            if retours.len() >= attendus {
+                return retours;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        retours
+    }
+
+    /// Le fil survit à une panique du travail (audit n°3 N8) : le
+    /// travail qui panique revient en erreur typée OF-WORK-0001 —
+    /// code à inscrire au registre central — et le travail suivant
+    /// est traité normalement.
+    #[test]
+    fn le_fil_survit_a_une_panique_de_travail() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        emetteur_travaux
+            .send(Travail::Bogue { generation: 1 })
+            .expect("envoi du travail bogué");
+        emetteur_travaux
+            .send(Travail::ResoudreApercu {
+                generation: 2,
+                croquis: EsquisseProjection::default(),
+            })
+            .expect("envoi du travail sain");
+        let retours = pomper_retours(&recepteur_retours, 2);
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil se termine proprement à la déconnexion");
+        assert_eq!(retours.len(), 2, "un retour par travail, même bogué");
+        match &retours[0] {
+            Retour::Erreur {
+                generation,
+                message,
+            } => {
+                assert_eq!(
+                    *generation, 1,
+                    "l'erreur porte la génération du travail bogué"
+                );
+                assert!(
+                    message.contains("OF-WORK-0001"),
+                    "l'échec inopiné doit porter le code du registre : {message}"
+                );
+            }
+            _ => panic!("le travail bogué doit revenir en erreur typée"),
+        }
+        assert_eq!(retours[1].generation(), 2, "le travail suivant est traité");
+    }
+
+    /// La déconnexion de l'émetteur éteint le fil comme un état, pas
+    /// un crash (audit n°3 N8) : le fil se termine proprement.
+    #[test]
+    fn la_deconnexion_eteint_le_fil_proprement() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, _recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil s'éteint proprement à la déconnexion");
+    }
+
+    /// Le fil mort ne laisse pas un « travail en cours » permanent
+    /// (audit n°3 N8) : l'envoi suivant relance un fil neuf, le
+    /// compteur des travaux repart de zéro et le travail est traité.
+    #[test]
+    fn le_fil_mort_est_relance_au_prochain_envoi() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        // Simule un fil mort : l'émetteur en place n'a plus de fil.
+        let (emetteur_mort, recepteur_mort) = mpsc::channel::<Travail>();
+        drop(recepteur_mort);
+        app.travaux = Some(emetteur_mort);
+        app.travaux_en_attente = 7;
+        app.envoyer_travail(Travail::ResoudreApercu {
+            generation: app.generation,
+            croquis: EsquisseProjection::default(),
+        });
+        assert_eq!(
+            app.travaux_en_attente, 1,
+            "le compteur repart de zéro puis compte le travail relancé"
+        );
+        // Le travail relancé revient : le fil neuf le traite.
+        let mut recus: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            recus.extend(app.retours.try_iter());
+            if !recus.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            matches!(recus.first(), Some(Retour::EsquisseApercue { .. })),
+            "le travail relancé est traité par le fil neuf"
+        );
+    }
+
+    /// Le code du fil de travail vit au registre central des codes
+    /// d'erreur (ADR-0003, audit n°3 N8) : OF-WORK-0001 doit y
+    /// figurer, comme les codes des crates du noyau.
+    #[test]
+    fn of_work_0001_est_au_registre() {
+        const REGISTRE: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/error-codes.md"
+        ));
+        assert!(
+            REGISTRE.contains("OF-WORK-0001"),
+            "OF-WORK-0001 absent du registre docs/error-codes.md"
+        );
     }
 
     /// L'import est une action annulable : undo vide la géométrie de

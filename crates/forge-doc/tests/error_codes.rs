@@ -54,6 +54,7 @@ fn toutes_les_variantes() -> Vec<DocError> {
         DocError::DuplicateEntry {
             entry: "objects/x".to_string(),
         },
+        DocError::FileTooLarge { found: 2, max: 1 },
     ]
 }
 

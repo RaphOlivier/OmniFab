@@ -63,6 +63,12 @@ pub const BLOBS_PREFIX: &str = "objects/";
 /// ADR-0016 A4 — garde-fou « bombe ZIP » cumulative).
 pub const MAX_TOTAL_BLOB_BYTES: u64 = container::MAX_TOTAL_BLOB_BYTES;
 
+/// Budget d'octets d'un fichier projet ouvert depuis le disque
+/// (audit n°3 A3-07, ADR-0009) : le double du plafond des blobs
+/// cumulés — un fichier légitime peut embarquer 2 Gio de blobs, le
+/// refus ne touche que les fichiers démesurés.
+pub const MAX_FICHIER_OCTETS: u64 = 2 * MAX_TOTAL_BLOB_BYTES;
+
 /// Document OmniFab : conteneur ZIP versionné + journal d'événements.
 #[derive(Debug)]
 pub struct Document {
@@ -362,10 +368,12 @@ impl Document {
         ecrire_atomiquement(path, &self.to_bytes_prefix(applied)?)
     }
 
-    /// Charge un document depuis un fichier (feature `native`).
+    /// Charge un document depuis un fichier (feature `native`),
+    /// sous le budget d'octets [`MAX_FICHIER_OCTETS`] : un fichier
+    /// démesuré est refusé avant lecture (audit n°3 A3-07).
     #[cfg(feature = "native")]
     pub fn open_from_path(path: &std::path::Path) -> Result<Self, DocError> {
-        Self::from_bytes(&std::fs::read(path)?)
+        Self::open_from_path_with_budget(path, MigrationRegistry::new(), MAX_FICHIER_OCTETS)
     }
 
     /// Charge un document depuis un fichier en appliquant les
@@ -378,6 +386,27 @@ impl Document {
         path: &std::path::Path,
         migrations: MigrationRegistry,
     ) -> Result<Self, DocError> {
+        Self::open_from_path_with_budget(path, migrations, MAX_FICHIER_OCTETS)
+    }
+
+    /// Charge un document depuis un fichier sous un budget d'octets
+    /// (feature `native`), refusé AVANT lecture si le fichier le
+    /// dépasse (audit n°3 A3-07, ADR-0009) : la taille mesurée sur
+    /// les métadonnées suffit — rien n'est lu ni alloué, le refus
+    /// porte le code OF-DOC-0016 du registre central.
+    #[cfg(feature = "native")]
+    pub fn open_from_path_with_budget(
+        path: &std::path::Path,
+        migrations: MigrationRegistry,
+        max: u64,
+    ) -> Result<Self, DocError> {
+        let annonce = std::fs::metadata(path)?.len();
+        if annonce > max {
+            return Err(DocError::FileTooLarge {
+                found: annonce,
+                max,
+            });
+        }
         Self::from_bytes_with(&std::fs::read(path)?, migrations)
     }
 }
@@ -546,5 +575,30 @@ mod tests {
         let retires = document.remove_blob("geometry/traces");
         assert_eq!(retires, Some(vec![1, 2, 3]));
         assert!(document.blob("geometry/traces").is_none());
+    }
+
+    /// Le chargement depuis un fichier refuse AVANT lecture un
+    /// fichier plus gros que le budget d'octets (audit n°3 A3-07,
+    /// ADR-0009) : rien n'est lu en mémoire, le refus porte le code
+    /// OF-DOC-0016 du registre central.
+    #[cfg(feature = "native")]
+    #[test]
+    fn open_from_path_refuse_fichier_hors_budget() {
+        let chemin = std::env::temp_dir().join("omnifab-audit3-budget.ofdoc");
+        std::fs::write(&chemin, [0u8; 32]).expect("écriture du fichier test");
+        let erreur = match Document::open_from_path_with_budget(
+            &chemin,
+            super::MigrationRegistry::new(),
+            16,
+        ) {
+            Err(erreur) => erreur,
+            Ok(_) => panic!("un fichier de 32 octets doit être refusé au budget de 16"),
+        };
+        assert_eq!(
+            erreur.code(),
+            "OF-DOC-0016",
+            "le refus doit porter le code du registre"
+        );
+        let _ = std::fs::remove_file(&chemin);
     }
 }

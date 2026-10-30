@@ -150,6 +150,9 @@ confirmation-titre = Travail non enregistré
 confirmation-texte = Le projet comporte des modifications non enregistrées : continuer les perdra définitivement.
 confirmation-confirmer = Continuer
 confirmation-annuler = Annuler
+confirmation-fermeture-texte = Le projet comporte des modifications non enregistrées : fermer la fenêtre les perdrait définitivement.
+confirmation-enregistrer = Enregistrer
+confirmation-quitter = Quitter sans enregistrer
 
 # --- Unités du maillage importé (ADR-0017) ---
 echelle-titre = Unités du modèle
@@ -387,6 +390,16 @@ aide-confirmation-perte =
     .description = Confirmation demandée avant une action destructive (nouveau projet, ouverture, reprise) quand des modifications non enregistrées existent : les continuer abandonne définitivement — « Enregistrer sous… » les met à l'abri d'abord.
     .exemple = Modifiez la largeur puis cliquez « Réinitialiser » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.
 
+aide-confirmation-enregistrer =
+    .titre = Enregistrer
+    .description = Enregistre le projet puis ferme la fenêtre (audit n°3 A3-06) : sans fichier courant, « Enregistrer sous… » s'ouvre — la fenêtre ne ferme que si la sauvegarde a eu lieu.
+    .exemple = Modifiez la largeur, cliquez la croix puis « Enregistrer » : le projet est écrit et la fenêtre se ferme.
+
+aide-confirmation-quitter =
+    .titre = Quitter sans enregistrer
+    .description = Ferme la fenêtre en abandonnant les modifications non enregistrées, après la confirmation demandée à la croix (audit n°3 A3-06).
+    .exemple = Cliquez la croix puis « Quitter sans enregistrer » : la fenêtre se ferme, les modifications sont perdues.
+
 aide-echelle-metres =
     .titre = Mètres (× 1000)
     .description = Les coordonnées du modèle sont multipliées par 1000 : un export en mètres (Blender, par exemple) retrouve sa taille en millimètres. Le facteur d'échelle est enregistré dans le projet avec l'import, et l'export STL écrit toujours des millimètres.
@@ -544,3 +557,8 @@ aide-of-val-0009 =
     .titre = Alias référencé (OF-VAL-0009)
     .description = Suppression « Simple » refusée : des formules lisent encore cet alias. Le dialogue de suppression propose la cascade ou le remplacement.
     .exemple = Supprimez la hauteur alors que la diagonale la lit : le dialogue propose les deux modes au lieu de la suppression simple.
+
+aide-of-work-0001 =
+    .titre = Travail terminé en échec inopiné (OF-WORK-0001)
+    .description = Le fil de travail a terminé un import, un export ou une résolution sur un échec inopiné (bug logiciel) : le fil survit et le travail suivant est traité normalement — rien n'est perdu. Signalez le bug avec le message affiché.
+    .exemple = Un import échoue avec ce code : relancez l'import, il se comporte comme d'habitude ; le bug sous-jacent mérite un signalement.
