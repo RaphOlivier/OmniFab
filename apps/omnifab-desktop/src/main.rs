@@ -295,9 +295,9 @@ impl Travail {
                 format,
                 chemin,
             } => {
-                let octets = match std::fs::read(&chemin) {
+                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
                     Ok(octets) => octets,
-                    Err(error) => return erreur_de_travail(generation, error),
+                    Err(message) => return erreur_de_travail(generation, message),
                 };
                 let parse = if format == "svg" {
                     svg::import(&octets, &svg::SvgBudgets::default())
@@ -320,9 +320,9 @@ impl Travail {
                 }
             }
             Travail::ImportMaillage { generation, chemin } => {
-                let octets = match std::fs::read(&chemin) {
+                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
                     Ok(octets) => octets,
-                    Err(error) => return erreur_de_travail(generation, error),
+                    Err(message) => return erreur_de_travail(generation, message),
                 };
                 match stl::import(&octets, &stl::StlBudgets::default()) {
                     Ok(maillage) => {
@@ -603,6 +603,52 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
         generation,
         message: erreur.to_string(),
     }
+}
+
+/// Budget d'octets d'un fichier importé (audit n°3 A3-07,
+/// ADR-0009) : un fichier d'import démesuré est refusé avant
+/// lecture — 1 Gio dépasse déjà de loin les budgets des parseurs
+/// SVG, DXF et STL.
+const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
+
+/// Lit un fichier d'import sous un budget d'octets, refusé AVANT
+/// lecture (audit n°3 A3-07, ADR-0009) : la taille du fichier est
+/// mesurée sur ses métadonnées, un fichier démesuré est refusé sans
+/// être lu — ni la mémoire ni le fil de travail ne paient pour un
+/// fichier que les parseurs refuseraient. Le refus porte le code
+/// OF-IO-0001 du registre central docs/error-codes.md ; la lecture
+/// elle-même reste bornée : la taille peut changer entre la mesure
+/// et la lecture.
+fn lire_borne(chemin: &Path, budget: u64) -> Result<Vec<u8>, String> {
+    use std::io::Read as _;
+    let annonce = std::fs::metadata(chemin)
+        .map_err(|erreur| erreur.to_string())?
+        .len();
+    if annonce > budget {
+        return Err(
+            forge_io::IoError::TooLarge {
+                found: annonce as usize,
+                max: budget as usize,
+            }
+            .to_string(),
+        );
+    }
+    let mut fichier = std::fs::File::open(chemin).map_err(|erreur| erreur.to_string())?;
+    let mut octets = Vec::new();
+    fichier
+        .take(budget + 1)
+        .read_to_end(&mut octets)
+        .map_err(|erreur| erreur.to_string())?;
+    if octets.len() as u64 > budget {
+        return Err(
+            forge_io::IoError::TooLarge {
+                found: octets.len(),
+                max: budget as usize,
+            }
+            .to_string(),
+        );
+    }
+    Ok(octets)
 }
 
 /// Écrit les octets exportés au chemin choisi (ADR-0016 C1) —
@@ -3291,13 +3337,6 @@ mod tests {
     }
 
     // --- Lecture bornée avant allocation (audit n°3 A3-07) ---
-
-    /// Bouchon du comportement actuel (audit n°3 A3-07) : la lecture
-    /// d'un fichier d'import n'est pas bornée — le fichier entier est
-    /// lu quelle que soit sa taille.
-    fn lire_borne(chemin: &Path, _budget: u64) -> Result<Vec<u8>, String> {
-        std::fs::read(chemin).map_err(|erreur| erreur.to_string())
-    }
 
     /// La lecture d'un fichier d'import est bornée AVANT lecture
     /// (audit n°3 A3-07, ADR-0009) : un fichier plus gros que le

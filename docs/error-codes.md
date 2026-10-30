@@ -51,6 +51,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-DOC-0013 | Nom de blob invalide | Nom vide, traversée de répertoire (`..`), chemin absolu, séparateur Windows ou octet nul | Corriger le nom du blob |
 | OF-DOC-0014 | Blobs cumulés trop volumineux | La somme des objets binaires dépasse le plafond global du chargement (garde-fou « bombe ZIP » cumulative) | Fichier projet anormal — restaurer une copie saine |
 | OF-DOC-0015 | Entrée en doublon dans le conteneur | L'archive contient deux entrées de même nom (archive forgée) | Fichier projet anormal — restaurer une copie saine |
+| OF-DOC-0016 | Fichier projet trop volumineux | Le fichier .omnifab dépasse le budget d'octets du chargement avant même d'être lu (audit n°3 A3-07) | Fichier anormal — vérifier le fichier |
 
 ## forge-session (SES) — session, commandes et undo/redo
 

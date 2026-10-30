@@ -115,6 +115,16 @@ pub enum DocError {
         /// Nom de l'entrée dupliquée.
         entry: String,
     },
+    /// Fichier projet plus volumineux que le budget d'octets du
+    /// chargement (OF-DOC-0016), refusé avant lecture (audit n°3
+    /// A3-07).
+    #[error("OF-DOC-0016 : fichier trop volumineux : {found} octets (maximum {max})")]
+    FileTooLarge {
+        /// Taille rencontrée, en octets.
+        found: u64,
+        /// Taille maximale acceptée, en octets.
+        max: u64,
+    },
 }
 
 impl DocError {
@@ -138,6 +148,7 @@ impl DocError {
             Self::InvalidBlobName { .. } => "OF-DOC-0013",
             Self::TotalBlobsTooLarge { .. } => "OF-DOC-0014",
             Self::DuplicateEntry { .. } => "OF-DOC-0015",
+            Self::FileTooLarge { .. } => "OF-DOC-0016",
         }
     }
 }
