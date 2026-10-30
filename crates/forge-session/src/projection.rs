@@ -8,6 +8,7 @@ use crate::command::{
 };
 use forge_doc::NewEvent;
 use forge_values::{Origine, PREFIXES_RESERVES, Unite, ValueGraph};
+use std::collections::HashSet;
 
 /// Version de schéma des événements restés en v1 —
 /// `geom.traces.imported` (ADR-0016 A3), `value.alias_removed`
@@ -26,6 +27,57 @@ const VERSION_SCHEMA_VALEURS: u32 = 2;
 /// (ADR-0019 §1) : les journaux v1 non migrés rejouent sans unité,
 /// le registre les aligne en v2 à l'ouverture.
 const VERSIONS_VALEURS: &[u32] = &[1, VERSION_SCHEMA_VALEURS];
+
+/// Plafond de types inconnus retenus : au-delà, les suivants ne sont
+/// plus mémorisés un à un, seulement comptés (audit n°4 A4-03,
+/// constaté le 2026-10-30).
+pub(crate) const MAX_TYPES_INCONNUS: usize = 256;
+
+/// Types d'événements ignorés, plafonnés : les premiers retenus un à
+/// un, les suivants seulement comptés — un journal hostile ne fait
+/// plus croître la mémoire linéairement ni payer le dédoublonnage
+/// O(n²) du `Vec::contains` historique (audit n°4 A4-03).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct TypesIgnores {
+    /// Types retenus, uniques, dans l'ordre de rencontre.
+    retenus: Vec<String>,
+    /// Types déjà vus, pour le dédoublonnage en O(1).
+    vus: HashSet<String>,
+    /// Événements ignorés au-delà du plafond, seulement comptés.
+    supplementaires: usize,
+}
+
+impl TypesIgnores {
+    /// Note un type ignoré : retenu s'il est nouveau tant que le
+    /// plafond [`MAX_TYPES_INCONNUS`] n'est pas atteint, sinon
+    /// seulement compté.
+    pub(crate) fn noter(&mut self, nom: &str) {
+        if self.vus.len() >= MAX_TYPES_INCONNUS {
+            self.supplementaires += 1;
+            return;
+        }
+        if self.vus.insert(nom.to_string()) {
+            self.retenus.push(nom.to_string());
+        }
+    }
+
+    /// Types retenus, uniques, dans l'ordre de rencontre.
+    pub(crate) fn retenus(&self) -> &[String] {
+        &self.retenus
+    }
+
+    /// Événements ignorés au-delà du plafond, seulement comptés.
+    pub(crate) fn supplementaires(&self) -> usize {
+        self.supplementaires
+    }
+
+    /// Remet à vide.
+    pub(crate) fn clear(&mut self) {
+        self.retenus.clear();
+        self.vus.clear();
+        self.supplementaires = 0;
+    }
+}
 
 /// Projection d'un domaine métier : l'état du domaine reconstruit par
 /// rejeu du journal. Les domaines futurs (esquisse, CAO, CAM…)
@@ -60,8 +112,8 @@ pub trait Projection {
 pub struct ValuesProjection {
     /// Graphe de liaisons reconstruit par rejeu.
     graph: ValueGraph,
-    /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
-    unknown: Vec<String>,
+    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
+    unknown: TypesIgnores,
 }
 
 impl ValuesProjection {
@@ -83,7 +135,12 @@ impl ValuesProjection {
 
     /// Types d'événements ignorés par cette projection.
     pub fn unknown_types(&self) -> &[String] {
-        &self.unknown
+        self.unknown.retenus()
+    }
+
+    /// Événements ignorés au-delà du plafond, seulement comptés.
+    pub fn unknown_supplementaires(&self) -> usize {
+        self.unknown.supplementaires()
     }
 }
 
@@ -135,9 +192,7 @@ impl Projection for ValuesProjection {
                 Ok(())
             }
             _ => {
-                if !self.unknown.contains(&event.event_type) {
-                    self.unknown.push(event.event_type.clone());
-                }
+                self.unknown.noter(&event.event_type);
                 Ok(())
             }
         }
@@ -185,8 +240,8 @@ pub struct GeomProjection {
     traces_courantes: Option<TracesImportees>,
     /// Maillage importé courant, le cas échéant.
     maillage_courant: Option<MaillageImporte>,
-    /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
-    unknown: Vec<String>,
+    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
+    unknown: TypesIgnores,
 }
 
 impl GeomProjection {
@@ -207,7 +262,7 @@ impl GeomProjection {
 
     /// Types d'événements ignorés par cette projection.
     pub fn unknown_types(&self) -> &[String] {
-        &self.unknown
+        self.unknown.retenus()
     }
 }
 
@@ -265,9 +320,7 @@ impl Projection for GeomProjection {
                 Ok(())
             }
             _ => {
-                if !self.unknown.contains(&event.event_type) {
-                    self.unknown.push(event.event_type.clone());
-                }
+                self.unknown.noter(&event.event_type);
                 Ok(())
             }
         }
@@ -412,9 +465,6 @@ pub(crate) fn champ_entier(event: &NewEvent, champ: &str) -> Result<usize, Sessi
 mod tests {
     use super::*;
 
-    /// Plafond de types retenus attendu (audit n°4 A4-03).
-    const MAX_TYPES_INCONNUS: usize = 256;
-
     /// Un journal hostile fourmille de types inconnus distincts :
     /// au-delà du plafond, les types supplémentaires ne sont plus
     /// retenus un à un (audit n°4 A4-03).
@@ -434,6 +484,11 @@ mod tests {
             projection.unknown_types().len(),
             MAX_TYPES_INCONNUS,
             "seuls {MAX_TYPES_INCONNUS} types retenus"
+        );
+        assert_eq!(
+            projection.unknown_supplementaires(),
+            44,
+            "les 44 événements au-delà du plafond sont comptés"
         );
     }
 }

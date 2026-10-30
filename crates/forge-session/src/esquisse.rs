@@ -23,7 +23,8 @@ use crate::command::{
     EVENT_SKETCH_POINT_MOVED,
 };
 use crate::projection::{
-    Projection, champ_entier, champ_nombre, champ_str, verifie_schema, verifie_schema_parmi,
+    Projection, TypesIgnores, champ_entier, champ_nombre, champ_str, verifie_schema,
+    verifie_schema_parmi,
 };
 use forge_doc::NewEvent;
 use forge_gcs::{
@@ -783,8 +784,8 @@ pub struct EsquisseProjection {
     /// avec la graine courante, elle donne le vecteur du dernier
     /// geste — un croquis rigide en translation le suit en entier.
     graine_avant_dernier: Option<(Length, Length)>,
-    /// Types d'événements ignorés, uniques, dans l'ordre de rencontre.
-    unknown: Vec<String>,
+    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
+    unknown: TypesIgnores,
     /// Ancrages capturés à la pose (ADR-0021 D2, révisée le
     /// 2026-10-23) : identifiant du point ancré → position affichée
     /// au moment de la pose, portée au journal par le
@@ -942,7 +943,7 @@ impl EsquisseProjection {
 
     /// Types d'événements ignorés par cette projection.
     pub fn unknown_types(&self) -> &[String] {
-        &self.unknown
+        self.unknown.retenus()
     }
 
     /// Raison du refus d'une entité au plan (ADR-0018 D2), ou `None`
@@ -1981,9 +1982,7 @@ impl Projection for EsquisseProjection {
                 Ok(())
             }
             _ => {
-                if !self.unknown.contains(&event.event_type) {
-                    self.unknown.push(event.event_type.clone());
-                }
+                self.unknown.noter(&event.event_type);
                 Ok(())
             }
         }
