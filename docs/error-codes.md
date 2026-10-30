@@ -11,7 +11,7 @@
 >   dérivent tous de ce registre — la colonne « Aide intégrée » sera reliée aux pages d'aide
 >   dès le jalon 1 (système d'aide).
 
-Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs), `CAD` (forge-cad).
+Droits de domaine attribués : `VAL` (forge-values), `DOC` (forge-doc), `SES` (forge-session), `GEO` (forge-geom), `IO` (forge-io), `I18` (forge-i18n), `GCS` (forge-gcs), `CAD` (forge-cad), `WORK` (omnifab-desktop).
 Réservés : `UNT` (forge-units), `CAM`, `GCO`, `LNK`, `PNT` —
 à attribuer à la création de leur crate, via un ADR si la frontière bouge.
 
@@ -110,3 +110,9 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-CAD-0002 | Forme nulle ou invalide | Une opération a produit une forme vide (contour dégénéré, booléen sans résultat) | Corriger la géométrie source |
 | OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
 | OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets ou de formes du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
+
+## omnifab-desktop (WORK) — fil de travail de l'interface
+
+| Code | Signification | Cause probable | Action corrective |
+|---|---|---|---|
+| OF-WORK-0001 | Travail terminé en échec inopiné | Panique du fil de travail pendant un import, un export ou une résolution (bug logiciel, audit n°3 N8) | Signaler le bug ; le fil survit et le travail suivant est traité |

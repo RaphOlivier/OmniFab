@@ -557,3 +557,8 @@ aide-of-val-0009 =
     .titre = Alias référencé (OF-VAL-0009)
     .description = Suppression « Simple » refusée : des formules lisent encore cet alias. Le dialogue de suppression propose la cascade ou le remplacement.
     .exemple = Supprimez la hauteur alors que la diagonale la lit : le dialogue propose les deux modes au lieu de la suppression simple.
+
+aide-of-work-0001 =
+    .titre = Travail terminé en échec inopiné (OF-WORK-0001)
+    .description = Le fil de travail a terminé un import, un export ou une résolution sur un échec inopiné (bug logiciel) : le fil survit et le travail suivant est traité normalement — rien n'est perdu. Signalez le bug avec le message affiché.
+    .exemple = Un import échoue avec ce code : relancez l'import, il se comporte comme d'habitude ; le bug sous-jacent mérite un signalement.

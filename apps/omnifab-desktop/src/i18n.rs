@@ -202,6 +202,7 @@ mod tests {
         "aide-of-val-0007",
         "aide-of-val-0008",
         "aide-of-val-0009",
+        "aide-of-work-0001",
         "aide-geom-compteur",
         "aide-confirmation-perte",
         "aide-confirmation-enregistrer",

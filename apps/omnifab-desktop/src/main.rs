@@ -16,7 +16,9 @@
 //!   via les sélecteurs natifs** (ADR-0014) ;
 //! - **fil de travail** (ADR-0016 C1) : lectures, parses et exports
 //!   détachés du fil d'interface, échecs de parse mémorisés — un
-//!   fichier invalide n'est plus re-parsé à chaque frame ;
+//!   fichier invalide n'est plus re-parsé à chaque frame ; le fil
+//!   survit à une panique du travail — échec typé OF-WORK-0001, le
+//!   travail suivant est traité (audit n°3 N8) ;
 //! - **résolution du croquis contraint** (ADR-0018 D3) : la demande
 //!   part au fil de travail, qui instancie le solveur natif —
 //!   jamais sur le fil d’interface (ADR-0016 C1), jamais dans
@@ -294,6 +296,22 @@ enum Travail {
 }
 
 impl Travail {
+    /// Génération de l'état au moment de l'envoi (audit n°3 N8) :
+    /// connue avant l'exécution — un travail qui panique garde sa
+    /// génération pour le retour d'erreur typé.
+    fn generation(&self) -> u64 {
+        match self {
+            Travail::ImportTraces { generation, .. }
+            | Travail::ImportMaillage { generation, .. }
+            | Travail::ExportTraces { generation, .. }
+            | Travail::ExportMaillage { generation, .. }
+            | Travail::ResoudreEsquisse { generation, .. }
+            | Travail::ResoudreApercu { generation, .. } => *generation,
+            #[cfg(test)]
+            Travail::Bogue { generation } => *generation,
+        }
+    }
+
     /// Exécute le travail hors du fil d'interface : tout échec
     /// devient un retour d'erreur à message (ADR-0016 C1).
     fn executer(self) -> Retour {
@@ -507,10 +525,41 @@ impl Retour {
 
 /// Boucle du fil de travail : chaque travail reçu est exécuté et son
 /// retour émis ; le fil s'éteint quand l'émetteur des travaux est
-/// abandonné (ADR-0016 C1).
+/// abandonné (ADR-0016 C1). Le fil survit à une panique du travail
+/// (audit n°3 N8) : l'échec inopiné devient un retour d'erreur typé
+/// OF-WORK-0001 — code du registre central docs/error-codes.md — et
+/// le travail suivant est traité normalement.
 fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Retour>) {
     for travail in recepteur {
-        let _ = emetteur.send(travail.executer());
+        let generation = travail.generation();
+        let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(travail.executer));
+        let retour = match execution {
+            Ok(retour) => retour,
+            Err(poigne) => {
+                let message = format!(
+                    "OF-WORK-0001 : le travail a échoué inopinément : {}",
+                    resume_de_poigne(&poigne)
+                );
+                Retour::Erreur {
+                    generation,
+                    message,
+                }
+            }
+        };
+        let _ = emetteur.send(retour);
+    }
+}
+
+/// Message d'une panique rattrapée (audit n°3 N8) : `&str`, `String`
+/// ou résumé générique — le fil ne panique jamais pour afficher une
+/// erreur.
+fn resume_de_poigne(poigne: &(dyn std::any::Any + Send)) -> String {
+    if let Some(texte) = poigne.downcast_ref::<&str>() {
+        (*texte).to_string()
+    } else if let Some(texte) = poigne.downcast_ref::<String>() {
+        texte.clone()
+    } else {
+        "panique sans message".to_string()
     }
 }
 
@@ -1455,15 +1504,45 @@ impl DemoApp {
     }
     /// Confie un travail au fil de travail : compteur des travaux en
     /// attente et message d'information (ADR-0016 C1) ; sans fil
-    /// disponible, la demande est abandonnée en silence.
+    /// disponible, la demande est abandonnée en silence. Le fil mort
+    /// est relancé au prochain envoi (audit n°3 N8) : il laissait un
+    /// « travail en cours » permanent — compteur jamais
+    /// décrémenté, repaint infini — et des envois abandonnés en
+    /// silence.
     fn envoyer_travail(&mut self, travail: Travail) {
         let Some(emetteur) = &self.travaux else {
             return;
         };
-        if emetteur.send(travail).is_ok() {
-            self.travaux_en_attente += 1;
-            self.info = Some(self.texte("info-travail-en-cours"));
+        match emetteur.send(travail) {
+            Ok(()) => {
+                self.travaux_en_attente += 1;
+                self.info = Some(self.texte("info-travail-en-cours"));
+            }
+            Err(erreur) => {
+                let travail = erreur.0;
+                self.relancer_fil_de_travail();
+                if let Some(emetteur) = &self.travaux && emetteur.send(travail).is_ok() {
+                    self.travaux_en_attente += 1;
+                    self.info = Some(self.texte("info-travail-en-cours"));
+                }
+            }
         }
+    }
+
+    /// Relance le fil de travail mort (audit n°3 N8) : un fil neuf
+    /// repart sur des canaux neufs — les travaux en vol du fil mort
+    /// ne reviendront jamais, le compteur des travaux en attente
+    /// repart de zéro.
+    fn relancer_fil_de_travail(&mut self) {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        self.travaux = std::thread::Builder::new()
+            .name("omnifab-travail".to_string())
+            .spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours))
+            .is_ok()
+            .then_some(emetteur_travaux);
+        self.retours = recepteur_retours;
+        self.travaux_en_attente = 0;
     }
     /// Applique un retour du fil de travail à l'état : commande de
     /// session pour un import, message pour un export, canal
