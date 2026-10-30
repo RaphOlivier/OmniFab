@@ -621,30 +621,28 @@ const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
 /// et la lecture.
 fn lire_borne(chemin: &Path, budget: u64) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
-    let annonce = std::fs::metadata(chemin).map_err(|erreur| erreur.to_string())?.len();
+    let annonce = std::fs::metadata(chemin)
+        .map_err(|erreur| erreur.to_string())?
+        .len();
     if annonce > budget {
-        return Err(
-            forge_io::IoError::TooLarge {
-                found: annonce as usize,
-                max: budget as usize,
-            }
-            .to_string(),
-        );
+        return Err(forge_io::IoError::TooLarge {
+            found: annonce as usize,
+            max: budget as usize,
+        }
+        .to_string());
     }
-    let mut fichier = std::fs::File::open(chemin).map_err(|erreur| erreur.to_string())?;
+    let fichier = std::fs::File::open(chemin).map_err(|erreur| erreur.to_string())?;
     let mut octets = Vec::new();
     fichier
         .take(budget + 1)
         .read_to_end(&mut octets)
         .map_err(|erreur| erreur.to_string())?;
     if octets.len() as u64 > budget {
-        return Err(
-            forge_io::IoError::TooLarge {
-                found: octets.len(),
-                max: budget as usize,
-            }
-            .to_string(),
-        );
+        return Err(forge_io::IoError::TooLarge {
+            found: octets.len(),
+            max: budget as usize,
+        }
+        .to_string());
     }
     Ok(octets)
 }
