@@ -314,3 +314,66 @@ fn export_relit_aux_memes_dimensions() {
     assert_eq!(points[1].x().millimeters(), 20.0);
     assert_eq!(points[1].y().millimeters(), 10.0);
 }
+#[test]
+fn viewbox_d_un_symbol_ne_s_applique_pas() {
+    // Seule la `viewBox` de l'élément racine compte (ADR-0016 B3) :
+    // celle d'un `<symbol>` ne doit pas décaler tout l'import
+    // (audit n°3, A3-04) — le tracé racine garde ses coordonnées.
+    let source = br#"<svg width="100mm" height="100mm">
+<symbol viewBox="10 10 20 20"><path d="M 0 0 L 10 0"/></symbol>
+<path d="M 5 5 L 15 5"/>
+</svg>"#;
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    let mut racine_presente = false;
+    for trace in &traces {
+        for point in trace.points() {
+            let x = point.x().millimeters();
+            let y = point.y().millimeters();
+            if (x - 5.0).abs() < 1e-3 && (y + 5.0).abs() < 1e-3 {
+                racine_presente = true;
+            }
+            assert!(
+                (x - 55.0).abs() > 1e-3 || (y + 55.0).abs() > 1e-3,
+                "la viewBox du symbol ne doit pas s'appliquer : sommet ({x}, {y})"
+            );
+        }
+    }
+    assert!(
+        racine_presente,
+        "le tracé racine doit rester à ses coordonnées"
+    );
+}
+
+#[test]
+fn viewbox_avec_virgules_est_compensee() {
+    // Une `viewBox` est une liste de nombres au format SVG :
+    // espaces **et** virgules sont des séparateurs valides.
+    // La compensation restitue les coordonnées utilisateur à
+    // l'échelle physique (ADR-0016 B3) : le point dessiné en
+    // (0, 0) revient en (0, 0) ; sans compensation (virgules
+    // non lues), il serait importé en (50, -50) (audit n°3,
+    // A3-04).
+    let source = br#"<svg viewBox="-50,-50,100,100"><path d="M 0 0 L 10 0"/></svg>"#;
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 1);
+    let points = traces[0].points();
+    assert_eq!(points[0].x().millimeters(), 0.0);
+    assert_eq!(points[0].y().millimeters(), 0.0);
+    assert_eq!(points[1].x().millimeters(), 10.0);
+    assert_eq!(points[1].y().millimeters(), 0.0);
+}
+
+#[test]
+fn viewbox_dans_un_commentaire_est_ignoree() {
+    // Un `viewBox` cité dans un commentaire n'est pas celui du
+    // document : la compensation ne se lit jamais dans le texte
+    // brut (audit n°3, A3-04).
+    let source = br#"<!-- viewBox='1 1 2 2' --><svg width="10mm" height="10mm"><path d="M 1 2 L 3 4"/></svg>"#;
+    let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
+    assert_eq!(traces.len(), 1);
+    let points = traces[0].points();
+    assert_eq!(points[0].x().millimeters(), 1.0);
+    assert_eq!(points[0].y().millimeters(), -2.0);
+    assert_eq!(points[1].x().millimeters(), 3.0);
+    assert_eq!(points[1].y().millimeters(), -4.0);
+}

@@ -1538,6 +1538,7 @@ dependencies = [
  "dxf",
  "forge-geom",
  "forge-units",
+ "roxmltree 0.21.1",
  "thiserror 2.0.21",
  "usvg",
 ]

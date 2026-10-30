@@ -137,3 +137,59 @@ fn export_puis_import() {
     assert_eq!(traces[0].len(), 2);
     assert_eq!(traces[0].points()[0].x().millimeters(), 10.0);
 }
+/// SECTION ENTITIES contenant une `LINE` en espace papier
+/// (code 67) — la mise en page, pas le dessin.
+const LIGNE_ESPACE_PAPIER: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n67\n1\n10\n10.0\n20\n20.0\n11\n30.0\n21\n40.0\n0\nENDSEC\n0\nEOF\n";
+
+/// SECTION ENTITIES contenant une `LINE` invisible (code 60).
+const LIGNE_INVISIBLE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n60\n1\n10\n10.0\n20\n20.0\n11\n30.0\n21\n40.0\n0\nENDSEC\n0\nEOF\n";
+
+/// Table `LAYER` déclarant le calque `ETEINT` (couleur négative
+/// au code 62 : calque éteint) puis SECTION ENTITIES avec une
+/// `LINE` sur ce calque.
+const LIGNE_CALQUE_ETEINT: &[u8] = b"0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n0\nLAYER\n2\nETEINT\n70\n0\n62\n-7\n6\nCONTINUOUS\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nLINE\n8\nETEINT\n10\n10.0\n20\n20.0\n11\n30.0\n21\n40.0\n0\nENDSEC\n0\nEOF\n";
+
+#[test]
+fn espace_papier_ignore() {
+    // L'espace papier (code 67) est la mise en page, pas le
+    // dessin : ses entités ne deviennent pas des tracés
+    // (audit n°3, A3-05).
+    let traces = dxf::import(LIGNE_ESPACE_PAPIER, &DxfBudgets::default()).expect("dxf valide");
+    assert!(traces.is_empty(), "l'espace papier est ignoré");
+}
+
+#[test]
+fn entite_invisible_ignoree() {
+    // Une entité invisible (code 60) n'est pas dessinée : elle ne
+    // devient pas un tracé (audit n°3, A3-05).
+    let traces = dxf::import(LIGNE_INVISIBLE, &DxfBudgets::default()).expect("dxf valide");
+    assert!(traces.is_empty(), "l'entité invisible est ignorée");
+}
+
+#[test]
+fn calque_eteint_ignore() {
+    // Les entités d'un calque éteint (couleur négative dans la
+    // table LAYER) ne sont pas dessinées : elles ne deviennent
+    // pas des tracés (audit n°3, A3-05).
+    let traces = dxf::import(LIGNE_CALQUE_ETEINT, &DxfBudgets::default()).expect("dxf valide");
+    assert!(traces.is_empty(), "le calque éteint est ignoré");
+}
+
+/// Table `LAYER` déclarant le calque éteint `ETEINT` (couleur
+/// négative au code 62) puis SECTION ENTITIES : une `LINE` en
+/// espace papier (67), une invisible (60), une sur le calque
+/// éteint, une normale.
+const MIXTE: &[u8] = b"0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n0\nLAYER\n2\nETEINT\n70\n0\n62\n-7\n6\nCONTINUOUS\n0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n67\n1\n10\n0.0\n20\n0.0\n11\n1.0\n21\n1.0\n0\nLINE\n8\n0\n60\n1\n10\n2.0\n20\n2.0\n11\n3.0\n21\n3.0\n0\nLINE\n8\nETEINT\n10\n4.0\n20\n4.0\n11\n5.0\n21\n5.0\n0\nLINE\n8\n0\n10\n6.0\n20\n6.0\n11\n7.0\n21\n7.0\n0\nENDSEC\n0\nEOF\n";
+
+#[test]
+fn rapport_compte_les_entites_ecartees() {
+    // Chaque sorte d'entité écartée est comptée dans le rapport
+    // (audit n°3, A3-05) ; seule l'entité dessinée devient un
+    // tracé.
+    let resultat = dxf::import_avec_rapport(MIXTE, &DxfBudgets::default()).expect("dxf valide");
+    assert_eq!(resultat.traces.len(), 1);
+    assert_eq!(resultat.rapport.espace_papier, 1);
+    assert_eq!(resultat.rapport.invisibles, 1);
+    assert_eq!(resultat.rapport.calques_eteints, 1);
+    assert_eq!(resultat.rapport.total_ignorees(), 3);
+}

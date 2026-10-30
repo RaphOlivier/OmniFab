@@ -8,7 +8,14 @@
 //! (B-splines rationnelles discrétisées par l'algorithme de
 //! de Boor — l'export DXF d'Inkscape y code toute courbe, cercle
 //! et arc) ; les entités non géométriques (textes, cotes,
-//! blocs…) sont ignorées par conception (ADR-0009). À l'export,
+//! blocs…) sont ignorées par conception (ADR-0009) ; à l'import,
+//! les entités hors dessin sont écartées (audit n°3, A3-05) :
+//! espace papier (code 67 — la mise en page, pas le dessin),
+//! entités invisibles (code 60), calques éteints (couleur
+//! négative dans la table `LAYER`) — [`import_avec_rapport`]
+//! en donne le décompte. Limite connue : un calque gelé
+//! (code 70, bit 0) est indistinguable d'un calque actif, la
+//! crate `dxf` 0.6.2 n'expose pas ce drapeau. À l'export,
 //! chaque segment devient une entité `LINE` au z nul.
 //!
 //! Sécurité (ADR-0009) : tout dépassement de [`DxfBudgets`] est une
@@ -18,6 +25,7 @@ use crate::IoError;
 use dxf::entities::{Arc, Circle, Entity, EntityType, Line, Spline};
 use forge_geom::{Path2, Point2};
 use forge_units::Length;
+use std::collections::HashSet;
 
 /// Nombre de sommets de la discrétisation d'un cercle.
 pub const POINTS_CERCLE: usize = 64;
@@ -65,7 +73,46 @@ impl Default for DxfBudgets {
 /// échantillonnées à [`SEGMENTS_SPLINE`] segments par intervalle
 /// de nœuds (algorithme de de Boor). Les budgets protègent contre
 /// les documents démesurés (ADR-0009).
+/// Délègue à [`import_avec_rapport`], sans exposer le rapport.
 pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError> {
+    Ok(import_avec_rapport(bytes, budgets)?.traces)
+}
+
+/// Comptes des entités écartées de l'import (audit n°3, A3-05).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RapportImport {
+    /// Entités de l'espace papier (code 67) : la mise en page,
+    /// pas le dessin.
+    pub espace_papier: usize,
+    /// Entités invisibles (code 60).
+    pub invisibles: usize,
+    /// Entités des calques éteints (couleur négative au code 62).
+    pub calques_eteints: usize,
+}
+
+impl RapportImport {
+    /// Total des entités écartées.
+    pub fn total_ignorees(&self) -> usize {
+        self.espace_papier + self.invisibles + self.calques_eteints
+    }
+}
+
+/// Résultat d'un import DXF avec rapport (audit n°3, A3-05) :
+/// les tracés importés et le décompte des entités écartées.
+#[derive(Debug, Clone)]
+pub struct ImportDxf {
+    /// Tracés importés.
+    pub traces: Vec<Path2>,
+    /// Décompte des entités écartées.
+    pub rapport: RapportImport,
+}
+
+/// Importe un DXF en tracés 2D avec rapport des entités
+/// écartées (audit n°3, A3-05) : espace papier (code 67),
+/// invisibles (code 60), calques éteints (couleur négative).
+/// Le reste de la convention est celui de [`import`] ; les
+/// budgets protègent contre les documents démesurés (ADR-0009).
+pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportDxf, IoError> {
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
             found: bytes.len(),
@@ -76,9 +123,30 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
     let dessin = dxf::Drawing::load(&mut curseur).map_err(|erreur| IoError::InvalidDxf {
         raison: erreur.to_string(),
     })?;
+    // Calques éteints (couleur négative au code 62) : leurs
+    // entités ne sont pas dessinées par les éditeurs — elles ne
+    // deviennent pas des tracés.
+    let calques_eteints: HashSet<&str> = dessin
+        .layers()
+        .filter(|calque| !calque.is_layer_on)
+        .map(|calque| calque.name.as_str())
+        .collect();
+    let mut rapport = RapportImport::default();
     let mut traces: Vec<Path2> = Vec::new();
     let mut total = 0usize;
     for entite in dessin.entities() {
+        if entite.common.is_in_paper_space {
+            rapport.espace_papier += 1;
+            continue;
+        }
+        if !entite.common.is_visible {
+            rapport.invisibles += 1;
+            continue;
+        }
+        if calques_eteints.contains(entite.common.layer.as_str()) {
+            rapport.calques_eteints += 1;
+            continue;
+        }
         let mut points: Vec<Point2> = Vec::new();
         let mut ferme = false;
         let geometrique = match &entite.specific {
@@ -134,7 +202,7 @@ pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError>
         }
         traces.push(Path2::from_points(points, ferme));
     }
-    Ok(traces)
+    Ok(ImportDxf { traces, rapport })
 }
 
 /// Exporte les tracés en DXF : chaque segment devient une entité
