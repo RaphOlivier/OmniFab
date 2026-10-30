@@ -113,7 +113,6 @@ pub struct ImportDxf {
 /// Le reste de la convention est celui de [`import`] ; les
 /// budgets protègent contre les documents démesurés (ADR-0009).
 pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportDxf, IoError> {
-
     if bytes.len() > budgets.max_bytes {
         return Err(IoError::TooLarge {
             found: bytes.len(),
