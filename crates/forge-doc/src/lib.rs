@@ -402,7 +402,10 @@ impl Document {
     ) -> Result<Self, DocError> {
         let annonce = std::fs::metadata(path)?.len();
         if annonce > max {
-            return Err(DocError::FileTooLarge { found: annonce, max });
+            return Err(DocError::FileTooLarge {
+                found: annonce,
+                max,
+            });
         }
         Self::from_bytes_with(&std::fs::read(path)?, migrations)
     }

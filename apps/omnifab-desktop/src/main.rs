@@ -621,9 +621,7 @@ const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
 /// et la lecture.
 fn lire_borne(chemin: &Path, budget: u64) -> Result<Vec<u8>, String> {
     use std::io::Read as _;
-    let annonce = std::fs::metadata(chemin)
-        .map_err(|erreur| erreur.to_string())?
-        .len();
+    let annonce = std::fs::metadata(chemin).map_err(|erreur| erreur.to_string())?.len();
     if annonce > budget {
         return Err(
             forge_io::IoError::TooLarge {
