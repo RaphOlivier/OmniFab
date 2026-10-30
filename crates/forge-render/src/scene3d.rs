@@ -288,4 +288,45 @@ mod tests {
             "cinq verticales et trois horizontales"
         );
     }
+
+    /// Plafond de lignes de grille attendu par axe (audit n°4
+    /// A4-01).
+    const MAX_LIGNES_GRILLE: usize = 4096;
+
+    /// Un pas négatif, nul ou non fini ne boucle pas : la grille
+    /// reste vide (audit n°4 A4-01 — l'API publique accepte
+    /// n'importe quel flottant).
+    #[test]
+    fn grille_refuse_pas_invalide() {
+        let mut scene = Scene3D::vide();
+        let boite = Boite3D::du_point(0.0, 0.0, 0.0).etendre(200.0, 100.0, 50.0);
+        scene.ajouter_grille(&boite, -1.0, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas négatif : aucune ligne");
+        scene.ajouter_grille(&boite, 0.0, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas nul : aucune ligne");
+        scene.ajouter_grille(&boite, f64::NAN, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas non fini : aucune ligne");
+    }
+
+    /// Une boîte démesurée ne met pas la grille en boucle infinie :
+    /// la grille doit être plafonnée par axe (audit n°4 A4-01).
+    #[test]
+    fn grille_bornee_zone_demensuree() {
+        let mut scene = Scene3D::vide();
+        let boite = Boite3D {
+            min_x: 2.0e12,
+            min_y: 0.0,
+            min_z: 0.0,
+            max_x: 2.0e12 + 1.0e-3,
+            max_y: 1.0e-3,
+            max_z: 1.0,
+        };
+        scene.ajouter_grille(&boite, 1.0e-4, [1.0, 1.0, 1.0, 1.0]);
+        assert!(
+            scene.segments.len() <= 2 * MAX_LIGNES_GRILLE,
+            "grille plafonnée à deux axes de {} lignes, ici {}",
+            MAX_LIGNES_GRILLE,
+            scene.segments.len(),
+        );
+    }
 }

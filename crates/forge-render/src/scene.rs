@@ -227,4 +227,37 @@ mod tests {
             .count();
         assert_eq!(verticales, 4, "x = 0, 64, 128, 192 mm");
     }
+
+    /// Plafond de lignes de grille attendu par axe (audit n°4
+    /// A4-01).
+    const MAX_LIGNES_GRILLE: usize = 4096;
+
+    /// Une zone visible démesurée ne met pas la grille en boucle
+    /// infinie : à |x| >= 2^53 fois le pas, l'addition `x += pas`
+    /// n'avance plus (arrondi f64) et la boucle historique ne
+    /// terminait plus — la grille doit être plafonnée (audit n°4
+    /// A4-01).
+    #[test]
+    fn grille_bornee_zone_demensuree() {
+        let mut scene = Scene2D::vide();
+        // Échelle 1e6 px/mm : pas de grille 2^-13 mm autour de
+        // 2e12 mm — l'addition n'y avance plus.
+        scene.ajouter_grille(
+            Boite2 {
+                min_x: 2.0e12,
+                min_y: 0.0,
+                max_x: 2.0e12 + 1.0e-3,
+                max_y: 1.0e-3,
+            },
+            1.0e6,
+            80.0,
+            [1.0, 1.0, 1.0, 0.1],
+        );
+        assert!(
+            scene.segments.len() <= 2 * MAX_LIGNES_GRILLE,
+            "grille plafonnée à deux axes de {} lignes, ici {}",
+            MAX_LIGNES_GRILLE,
+            scene.segments.len(),
+        );
+    }
 }
