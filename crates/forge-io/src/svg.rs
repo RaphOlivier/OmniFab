@@ -127,7 +127,8 @@ fn decalage_viewbox(bytes: &[u8], taille: usvg::Size) -> (f64, f64) {
 /// valides au format SVG.
 fn lis_viewbox(bytes: &[u8]) -> Option<(f64, f64, f64, f64)> {
     let texte = std::str::from_utf8(bytes).ok()?;
-    let racine = roxmltree::Document::parse(texte).ok()?.root_element();
+    let document = roxmltree::Document::parse(texte).ok()?;
+    let racine = document.root_element();
     let attribut = racine.attribute("viewBox")?;
     let nombres: Vec<f64> = attribut
         .split(|c: char| c == ',' || c.is_whitespace())

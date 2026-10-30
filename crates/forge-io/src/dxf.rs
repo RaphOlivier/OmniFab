@@ -99,7 +99,7 @@ impl RapportImport {
 
 /// Résultat d'un import DXF avec rapport (audit n°3, A3-05) :
 /// les tracés importés et le décompte des entités écartées.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct ImportDxf {
     /// Tracés importés.
     pub traces: Vec<Path2>,
