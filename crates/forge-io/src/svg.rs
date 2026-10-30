@@ -117,24 +117,21 @@ fn decalage_viewbox(bytes: &[u8], taille: usvg::Size) -> (f64, f64) {
     (x * echelle_x, y * echelle_y)
 }
 
-/// Extrait la `viewBox` déclarée dans l'en-tête du document —
-/// `min_x min_y largeur hauteur` — ou `None` si absente ou mal
-/// formée : le contrôle échoue silencieusement, l'import
-/// continue sans compensation.
+/// Extrait la `viewBox` de l'élément racine — `min_x min_y
+/// largeur hauteur` — ou `None` si absente ou mal formée : le
+/// contrôle échoue silencieusement, l'import continue sans
+/// compensation. La lecture se fait dans l'arbre XML (audit
+/// n°3, A3-04), jamais dans le texte brut : une `viewBox` citée
+/// dans un commentaire ou portée par un `<symbol>` ne
+/// s'applique pas ; virgules et espaces sont des séparateurs
+/// valides au format SVG.
 fn lis_viewbox(bytes: &[u8]) -> Option<(f64, f64, f64, f64)> {
     let texte = std::str::from_utf8(bytes).ok()?;
-    let debut = texte.find("viewBox")?;
-    let suite = texte[debut + "viewBox".len()..]
-        .trim_start()
-        .strip_prefix('=')?
-        .trim_start();
-    let separateur = suite.chars().next()?;
-    if separateur != '"' && separateur != '\'' {
-        return None;
-    }
-    let fin = suite[1..].find(separateur)? + 1;
-    let nombres: Vec<f64> = suite[1..fin]
-        .split_whitespace()
+    let racine = roxmltree::Document::parse(texte).ok()?.root_element();
+    let attribut = racine.attribute("viewBox")?;
+    let nombres: Vec<f64> = attribut
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|nombre| !nombre.is_empty())
         .map(|nombre| nombre.parse::<f64>().ok())
         .collect::<Option<Vec<f64>>>()?;
     if nombres.len() == 4 {

@@ -338,7 +338,10 @@ fn viewbox_d_un_symbol_ne_s_applique_pas() {
             );
         }
     }
-    assert!(racine_presente, "le tracé racine doit rester à ses coordonnées");
+    assert!(
+        racine_presente,
+        "le tracé racine doit rester à ses coordonnées"
+    );
 }
 
 #[test]
