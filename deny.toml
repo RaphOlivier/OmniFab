@@ -70,7 +70,50 @@ exceptions = []
 [advisories]
 version = 2
 yanked = "deny"
-ignore = []
+# Releve CI du 2026-10-29 (PR #485, premier run reel du check) : le
+# passage Advisories revele 11 detections — 5 advisories unmaintained,
+# 5 vulnerabilites et 1 version yankee. Aucune n'est corrigeable par un
+# simple cargo update : toutes vivent dans des transitives de la pile
+# UI (egui 0.29 / wgpu 22 / accesskit) epinglee par les versions
+# majeures du projet. Chaque ignore est date et motive ; un ignore
+# devenu inutile (dependance montee) ne produit qu'un avertissement
+# « unused » — la derive reste visible. Le champ ignore_yanked est
+# SEPARE en cargo-deny 0.20.2 (la doc en ligne, plus recente, fusionne
+# les deux listes dans ignore — ne pas suivre, cf. cle private).
+ignore = [
+  # --- unmaintained : transitives verrouillees, « no safe upgrade »
+  # (a revisiter a la prochaine montee d'egui/eframe) ---
+  { id = "RUSTSEC-2024-0436", reason = "paste 1.0.15 : transitive de accesskit_windows 0.23 (egui-winit) et metal 0.29 (wgpu-hal) ; pas d'upgrade compatible dans egui 0.29 (2026-10-29)" },
+  { id = "RUSTSEC-2026-0192", reason = "ttf-parser 0.25.1 : transitive de ab_glyph/epaint (egui 0.29) ; l'alternative skrifa suppose une montee d'egui (2026-10-29)" },
+  { id = "RUSTSEC-2026-0370", reason = "zvariant 4.2.0 : transitive de la pile accessibilite AT-SPI (zbus 4.4/accesskit) ; fusionnee dans zbus 6 = montee d'accesskit (2026-10-29)" },
+  { id = "RUSTSEC-2026-0371", reason = "zbus_names 3.0.0 : idem zvariant, pile AT-SPI verrouillee par accesskit (2026-10-29)" },
+  { id = "RUSTSEC-2026-0372", reason = "zvariant_derive 4.2.0 : idem zvariant, pile AT-SPI verrouillee par accesskit (2026-10-29)" },
+  # --- quick-xml 0.30 : vulnerabilites de parsing d'XML non fiable
+  # (DoS CPU/memoire). Surface reelle : accessibilite AT-SPI locale —
+  # le XML traite vient des APIs D-Bus locales, jamais d'un document
+  # distant ; les scenarios RPKI des advisories ne s'appliquent pas.
+  # Fix >= 0.41.0 impossible : zbus_xml 4.0.0 exige quick-xml 0.30
+  # (2026-10-29) ---
+  { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.30 : attributs quadratiques (DoS CPU) — accessible uniquement via atspi/zbus sur XML local ; verrouille par zbus_xml 4.0.0 (2026-10-29)" },
+  { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.30 : declarations de namespaces non bornees (DoS memoire) — meme surface AT-SPI locale, verrouille par zbus_xml 4.0.0 (2026-10-29)" },
+  # --- zip 2.4.2 : les 3 CVE ciblent exclusivement
+  # ZipArchive::extract()/ZipStreamReader::extract() (extraction sur
+  # disque). Code NON AFFECTE : forge-doc (seule crate a dependre de
+  # zip) n'appelle jamais extract() — lecture ciblee by_name/by_index
+  # en memoire, bornee par entree (OF-DOC-0011) et cumulée
+  # (OF-DOC-0014), ecriture via ZipWriter en memoire. Dette : monter
+  # zip en 9.x (Cargo.toml « 2 ») lors d'une passe dediee
+  # (2026-10-29) ---
+  { id = "RUSTSEC-2026-0367", reason = "zip 2.4.2 : bits SUID/SGID preserves a l'extraction — extract() jamais appele (lecture bornee en memoire) ; dette : montee zip 9.x (2026-10-29)" },
+  { id = "RUSTSEC-2026-0368", reason = "zip 2.4.2 : symlinks hors destination a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
+  { id = "RUSTSEC-2026-0369", reason = "zip 2.4.2 : permissions appliquees via symlinks a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
+]
+# Version yankee du registry : arboard 3.6.1 accepte ^5.3.1 — a monter
+# au prochain passage de mise a jour des dependances (l'ignore
+# deviendra « unused » de lui-meme).
+ignore_yanked = [
+  { crate = "clipboard-win@5.4.1", reason = "version yankee du registry, transitive egui/arboard ; arboard accepte ^5.3.1, a monter au prochain cargo update (2026-10-29)" },
+]
 
 [bans]
 # Les doublons de versions sont frequents dans l'ecosysteme winit/egui :
