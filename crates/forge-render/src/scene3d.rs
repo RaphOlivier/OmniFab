@@ -85,6 +85,24 @@ pub struct Scene3D {
     pub segments: Vec<Segment3D>,
 }
 
+/// Plafond d'arêtes du wireframe (2^21 ≈ 100 Mio de tampons GPU) :
+/// au-delà, les triangles sont décimés — jamais plus d'arêtes que ce
+/// plafond ne part au GPU, la limite wgpu de 256 Mio par tampon ne
+/// peut plus être atteinte (audit n°4 A4-02).
+pub const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+/// Pas de décimation d'un maillage de `triangles` triangles : `1`
+/// tant que les arêtes restent sous [`MAX_ARETES_WIREFRAME`], sinon
+/// le rapport qui les y ramène (audit n°4 A4-02).
+pub fn pas_decimation(triangles: usize) -> usize {
+    let aretes = triangles.saturating_mul(3);
+    if aretes <= MAX_ARETES_WIREFRAME {
+        1
+    } else {
+        aretes / MAX_ARETES_WIREFRAME + 1
+    }
+}
+
 impl Scene3D {
     /// Scêne vide.
     pub fn vide() -> Self {
@@ -99,11 +117,19 @@ impl Scene3D {
     /// Wireframe d'un maillage : une arête par paire de sommets
     /// voisine, dédupliquée — chaque arête est dessinée une fois et le
     /// plafond d'affichage de la phase B est supprimé (ADR-0015).
+    /// Au-delà de [`MAX_ARETES_WIREFRAME`] arêtes, les triangles sont
+    /// parcourus un sur deux ou davantage : le wireframe est décimé,
+    /// la mémoire et les tampons GPU restent bornés (audit n°4
+    /// A4-02).
     pub fn depuis_maillage(maillage: &Mesh, couleur: Couleur) -> Self {
         let sommets = maillage.vertices();
+        let triangles = maillage.triangles();
+        // Décimation au-delà du plafond : un maillage démesuré ne
+        // déborde plus des tampons GPU (audit n°4 A4-02).
+        let pas = pas_decimation(triangles.len());
         let mut vues: HashSet<(u32, u32)> = HashSet::new();
         let mut scene = Self::vide();
-        for triangle in maillage.triangles() {
+        for triangle in triangles.iter().step_by(pas) {
             for arete in [
                 (triangle[0], triangle[1]),
                 (triangle[1], triangle[2]),

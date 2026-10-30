@@ -73,7 +73,7 @@ use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
     Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
-    Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille,
+    Segment3D, dessiner_scene, dessiner_wireframe, pas_decimation, pas_de_grille,
 };
 use forge_session::{
     AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_ALIAS_REMOVED,
@@ -682,6 +682,12 @@ struct DemoApp {
     /// blob + maillage ou échec de parse), invalidé quand la référence
     /// change (ADR-0014, ADR-0016 C1).
     cache_maillage: Option<(String, Result<Mesh, String>)>,
+    /// Wireframe 3D du maillage en cache, à clé d'édition (ADR-0027,
+    /// patron `camera_cle`) : les segments ne sont reconstruits que
+    /// quand la référence du maillage change, jamais à chaque frame
+    /// — un STL de centaines de milliers de triangles ne repaye
+    /// plus le dédoublonnage à chaque draw (audit n°4 A4-02).
+    wireframe_maillage: Option<(Option<String>, Vec<Segment3D>)>,
     /// Caméra du viewport : ajustée automatiquement quand la scêne
     /// change, pilotée ensuite par l'utilisateur (ADR-0015).
     camera: Camera2D,
@@ -877,6 +883,7 @@ impl DemoApp {
             chemin_projet: None,
             cache: None,
             cache_maillage: None,
+            wireframe_maillage: None,
             camera: Camera2D::nouvelle(),
             camera_cle: None,
             camera3d: Camera3D::nouvelle(),
@@ -1758,12 +1765,18 @@ impl DemoApp {
 
     /// Ajoute à une scêne 2D le wireframe du maillage en projection
     /// de dessus : trois arêtes par triangle, cyan, un pixel —
-    /// dessiné par le GPU (ADR-0015, phase C2), sans plafond. Le
+    /// dessiné par le GPU (ADR-0015, phase C2), plafonné : au-delà
+    /// d'un plafond d'arêtes, les triangles sont décimés (audit n°4
+    /// A4-02). Le
     /// STL reste visible en vue 2D sans repasser par le painter
     /// (validation C2, round 5).
     fn ajouter_maillage_2d(scene: &mut Scene2D, maillage: &Mesh) {
+        let triangles = maillage.triangles();
+        // Décimation au-delà du plafond : un maillage démesuré ne
+        // déborde plus des tampons GPU (audit n°4 A4-02).
+        let pas = pas_decimation(triangles.len());
         let sommets = maillage.vertices();
-        for triangle in maillage.triangles() {
+        for triangle in triangles.iter().step_by(pas) {
             let mut points: Vec<(f64, f64)> = Vec::new();
             for index in triangle.iter() {
                 let sommet = sommets[*index as usize];
@@ -1783,14 +1796,16 @@ impl DemoApp {
 
     /// Scêne 3D du viewport : grille au sol, tracés posés sur le
     /// plan z = 0, contour du rectangle paramétrique, wireframe du
-    /// maillage. L'ordre d'ajout est la priorité d'affichage : le
+    /// maillage, donné déjà construit par l'appelant — cache à clé
+    /// d'édition (ADR-0027, audit n°4 A4-02). L'ordre d'ajout est
+    /// la priorité d'affichage : le
     /// pipeline de lignes ne teste pas la profondeur, le dernier
     /// segment dessiné recouvre les précédents — la grille passe
     /// sous les tracés et le rectangle, qui ne disparaissent plus
     /// quand ils coïncident avec elle (validation C2, round 2).
     fn scene_vue_3d(
         traces: &[Path2],
-        maillage: Option<&Mesh>,
+        wireframe: &[Segment3D],
         camera: &Camera3D,
         width: f64,
         height: f64,
@@ -1831,11 +1846,7 @@ impl DemoApp {
             arrivee: (0.0, 0.0, 0.0),
             couleur: COULEUR_RECTANGLE_3D,
         });
-        if let Some(maillage) = maillage {
-            scene
-                .segments
-                .extend(Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME).segments);
-        }
+        scene.segments.extend(wireframe.iter().copied());
         scene
     }
 
@@ -1937,6 +1948,29 @@ impl DemoApp {
         if let Some((_, Err(erreur))) = &self.cache_maillage {
             self.error = Some(erreur.clone());
         }
+    }
+    /// Reconstruit le wireframe 3D du maillage seulement si la clé
+    /// d'édition a changé (ADR-0027, patron `camera_cle`, audit n°4
+    /// A4-02) : le dédoublonnage O(triangles) n'est plus payé à
+    /// chaque frame, le wireframe décimé vit en cache jusqu'au
+    /// prochain import.
+    fn rafraichir_wireframe(&mut self, cle: &Option<String>) {
+        if self
+            .wireframe_maillage
+            .as_ref()
+            .is_some_and(|(cle_cache, _)| cle_cache == cle)
+        {
+            return;
+        }
+        let maillage: Option<&Mesh> = match &self.cache_maillage {
+            Some((_, Ok(maillage))) => Some(maillage),
+            _ => None,
+        };
+        let segments = match maillage {
+            Some(maillage) => Scene3D::depuis_maillage(maillage, COULEUR_WIREFRAME).segments,
+            None => Vec::new(),
+        };
+        self.wireframe_maillage = Some((cle.clone(), segments));
     }
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         let reponse = ui.add_enabled(
@@ -2517,6 +2551,9 @@ impl DemoApp {
             .maillage()
             .map(|reference| reference.blob.clone());
         let cle = (cle_traces, cle_maillage);
+        // Wireframe 3D : reconstruit seulement si la clé du maillage
+        // a changé, jamais à chaque frame (audit n°4 A4-02).
+        self.rafraichir_wireframe(&cle.1);
         let traces: &[Path2] = match &self.cache {
             Some((_, Ok(traces))) => traces,
             _ => &[],
@@ -2686,7 +2723,12 @@ impl DemoApp {
             }
             Vue::TroisD => {
                 if self.viewport_wgpu {
-                    let scene = Self::scene_vue_3d(traces, maillage, &self.camera3d, width, height);
+                    let wireframe: &[Segment3D] = match &self.wireframe_maillage {
+                        Some((_, segments)) => segments,
+                        None => &[],
+                    };
+                    let scene =
+                        Self::scene_vue_3d(traces, wireframe, &self.camera3d, width, height);
                     dessiner_wireframe(&painter, rect, scene, self.camera3d);
                 } else {
                     ui.label(
@@ -3299,7 +3341,7 @@ mod tests {
         let b = Point2::new(un, Length::ZERO).expect("fini");
         let trace = Path2::from_points(vec![a, b], false);
         let camera = Camera3D::nouvelle();
-        let scene = DemoApp::scene_vue_3d(&[trace], None, &camera, 800.0, 600.0);
+        let scene = DemoApp::scene_vue_3d(&[trace], &[], &camera, 800.0, 600.0);
         let grille = premiere_couleur(&scene, COULEUR_GRILLE);
         let trace_pos = premiere_couleur(&scene, COULEUR_TRACES);
         let rectangle = premiere_couleur(&scene, COULEUR_RECTANGLE_3D);
@@ -3600,6 +3642,38 @@ mod tests {
             "le wireframe 2D est plafonné à {} arêtes, pas {}",
             MAX_ARETES_WIREFRAME,
             scene.segments.len()
+        );
+    }
+
+    /// Le wireframe 3D vit en cache à clé d'édition (ADR-0027,
+    /// patron `camera_cle`, audit n°4 A4-02) : deux frames de
+    /// suite ne reconstruisent pas le wireframe, une clé changée
+    /// le reconstruit.
+    #[test]
+    fn le_wireframe_3d_vit_en_cache_a_cle_edition() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.cache_maillage = Some(("blob-stl".to_string(), Ok(maillage)));
+        app.rafraichir_wireframe(&Some("blob-stl".to_string()));
+        let segments = app.wireframe_maillage.as_ref().expect("cache posé").1.len();
+        assert!(segments > 0, "le wireframe est construit une première fois");
+        // Sabotage du cache : s'il survit à la frame suivante, le
+        // wireframe n'est pas reconstruit à chaque frame.
+        app.wireframe_maillage.as_mut().expect("cache posé").1.clear();
+        app.rafraichir_wireframe(&Some("blob-stl".to_string()));
+        assert!(
+            app.wireframe_maillage.as_ref().expect("cache posé").1.is_empty(),
+            "même clé : le sabotage survit, pas de reconstruction"
+        );
+        // Clé d'édition changée : le wireframe est reconstruit.
+        app.rafraichir_wireframe(&None);
+        assert!(
+            !app.wireframe_maillage.as_ref().expect("cache posé").1.is_empty(),
+            "une clé d'édition changée reconstruit le wireframe"
         );
     }
 
