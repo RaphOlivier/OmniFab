@@ -3290,6 +3290,42 @@ mod tests {
         );
     }
 
+    // --- Lecture bornée avant allocation (audit n°3 A3-07) ---
+
+    /// Bouchon du comportement actuel (audit n°3 A3-07) : la lecture
+    /// d'un fichier d'import n'est pas bornée — le fichier entier est
+    /// lu quelle que soit sa taille.
+    fn lire_borne(chemin: &Path, _budget: u64) -> Result<Vec<u8>, String> {
+        std::fs::read(chemin).map_err(|erreur| erreur.to_string())
+    }
+
+    /// La lecture d'un fichier d'import est bornée AVANT lecture
+    /// (audit n°3 A3-07, ADR-0009) : un fichier plus gros que le
+    /// budget est refusé sans être lu — le refus porte le code
+    /// OF-IO-0001 du registre.
+    #[test]
+    fn lire_borne_refuse_avant_lecture() {
+        let chemin = std::env::temp_dir().join("omnifab-audit3-import.bin");
+        std::fs::write(&chemin, [0u8; 32]).expect("écriture du fichier test");
+        // 32 octets sous un budget de 64 : lecture entière.
+        assert_eq!(
+            lire_borne(&chemin, 64).expect("lecture sous budget"),
+            vec![0u8; 32]
+        );
+        // 32 octets au-dessus d'un budget de 16 : refus avant
+        // lecture, code OF-IO-0001 (ADR-0009).
+        let erreur = lire_borne(&chemin, 16).expect_err("refus attendu");
+        assert!(
+            erreur.contains("OF-IO-0001"),
+            "le refus doit porter le code du registre : {erreur}"
+        );
+        assert!(
+            erreur.contains("32") && erreur.contains("16"),
+            "le refus cite la taille et le budget : {erreur}"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
     /// L'import est une action annulable : undo vide la géométrie de
     /// l'état (ADR-0011).
     #[test]

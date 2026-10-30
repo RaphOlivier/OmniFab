@@ -380,6 +380,20 @@ impl Document {
     ) -> Result<Self, DocError> {
         Self::from_bytes_with(&std::fs::read(path)?, migrations)
     }
+
+    /// Charge un document depuis un fichier sous un budget d'octets
+    /// (feature `native`), refusé AVANT lecture si le fichier le
+    /// dépasse (audit n°3 A3-07, ADR-0009) ; bouchon du comportement
+    /// actuel : le budget n'est pas encore vérifié.
+    #[cfg(feature = "native")]
+    pub fn open_from_path_with_budget(
+        path: &std::path::Path,
+        migrations: MigrationRegistry,
+        max: u64,
+    ) -> Result<Self, DocError> {
+        let _ = max;
+        Self::from_bytes_with(&std::fs::read(path)?, migrations)
+    }
 }
 
 /// Écrit les octets au chemin donné, de manière atomique : temporaire
@@ -546,5 +560,30 @@ mod tests {
         let retires = document.remove_blob("geometry/traces");
         assert_eq!(retires, Some(vec![1, 2, 3]));
         assert!(document.blob("geometry/traces").is_none());
+    }
+
+    /// Le chargement depuis un fichier refuse AVANT lecture un
+    /// fichier plus gros que le budget d'octets (audit n°3 A3-07,
+    /// ADR-0009) : rien n'est lu en mémoire, le refus porte le code
+    /// OF-DOC-0016 du registre central.
+    #[cfg(feature = "native")]
+    #[test]
+    fn open_from_path_refuse_fichier_hors_budget() {
+        let chemin = std::env::temp_dir().join("omnifab-audit3-budget.ofdoc");
+        std::fs::write(&chemin, [0u8; 32]).expect("écriture du fichier test");
+        let erreur = match Document::open_from_path_with_budget(
+            &chemin,
+            super::MigrationRegistry::new(),
+            16,
+        ) {
+            Err(erreur) => erreur,
+            Ok(_) => panic!("un fichier de 32 octets doit être refusé au budget de 16"),
+        };
+        assert_eq!(
+            erreur.code(),
+            "OF-DOC-0016",
+            "le refus doit porter le code du registre"
+        );
+        let _ = std::fs::remove_file(&chemin);
     }
 }
