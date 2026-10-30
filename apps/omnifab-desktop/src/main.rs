@@ -30,7 +30,9 @@
 //!   enregistré » posé par toute commande effective et levé par la
 //!   sauvegarde — le titre de la fenêtre porte `*`, « Réinitialiser »,
 //!   « Ouvrir » et « Reprendre » demandent confirmation, et
-//!   l'enregistrement ne casse plus la pile redo ;
+//!   l'enregistrement ne casse plus la pile redo ; la croix est
+//!   interceptée : confirmation Enregistrer / Quitter sans
+//!   enregistrer / Annuler avant de fermer (audit n°3 A3-06) ;
 //! - **messages d'état fidèles** (ADR-0016 C4) : une commande refusée
 //!   n'affiche jamais de succès, l'action suivante efface l'erreur —
 //!   plus de rouge persistant après correction ;
@@ -161,6 +163,10 @@ enum ActionDestructrice {
     },
     /// Reprise de la session en cours depuis l'écran d'accueil.
     Reprendre,
+    /// Fermeture de la fenêtre demandée à la croix (audit n°3
+    /// A3-06) : « Enregistrer » sauve puis ferme, « Quitter sans
+    /// enregistrer » ferme, « Annuler » ramène au travail.
+    Quitter,
 }
 
 /// Choix des unités d'un maillage minuscule demandé à l'import
@@ -731,6 +737,10 @@ struct DemoApp {
     /// Action destructive demandée, en attente de confirmation
     /// (ADR-0016 C3).
     demande: Option<ActionDestructrice>,
+    /// Fermeture de la fenêtre confirmée par le dialogue (audit n°3
+    /// A3-06) : la garde ne bloque plus la demande de fermeture
+    /// qu'elle vient d'émettre.
+    fermeture_confirmee: bool,
     /// Choix des unités d'un maillage minuscule, en attente de la
     /// réponse de l'utilisateur (ADR-0017).
     demande_echelle: Option<DemandeEchelle>,
@@ -897,6 +907,7 @@ impl DemoApp {
             dirty: false,
             titre_sale: false,
             demande: None,
+            fermeture_confirmee: false,
             demande_echelle: None,
             croquis_resolu: None,
             derniere_resolution_bonne: None,
@@ -1199,27 +1210,93 @@ impl DemoApp {
         fichiers::choisir_projet(&libelle)
     }
 
+    /// Décision de la garde de fermeture de la fenêtre (audit n°3
+    /// A3-06) : la croix ne doit pas perdre un travail non
+    /// enregistré.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum DecisionFermeture {
+        /// Laisser la fenêtre se fermer : rien n'est à perdre.
+        LaisserFermer,
+        /// Bloquer la fermeture : la confirmation est déjà ouverte.
+        Bloquer,
+        /// Bloquer la fermeture et ouvrir la confirmation.
+        BloquerEtConfirmer,
+    }
+
+    /// Garde de fermeture de la fenêtre (audit n°3 A3-06) : du
+    /// travail non enregistré ne se perd pas au clic sur la croix —
+    /// la fermeture est annulée (ViewportCommand::CancelClose,
+    /// exemple egui « confirm_exit ») et la confirmation demandée,
+    /// sauf si elle est déjà ouverte.
+    fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> DecisionFermeture {
+        if !dirty {
+            return DecisionFermeture::LaisserFermer;
+        }
+        if confirmation_en_cours {
+            DecisionFermeture::Bloquer
+        } else {
+            DecisionFermeture::BloquerEtConfirmer
+        }
+    }
+
     /// Fenêtre de confirmation d'une action destructive (ADR-0016 C3) :
     /// « Continuer » exécute l'action, « Annuler » la rejette — du
-    /// travail non enregistré serait perdu.
+    /// travail non enregistré serait perdu. Fermeture demandée à la
+    /// croix (audit n°3 A3-06) : « Enregistrer » sauve puis ferme,
+    /// « Quitter sans enregistrer » ferme, « Annuler » ramène au
+    /// travail.
     fn fenetre_confirmation(&mut self, ctx: &egui::Context) {
+        /// Choix du dialogue de fermeture (audit n°3 A3-06).
+        #[derive(Debug, Clone, Copy)]
+        enum ChoixFermeture {
+            /// Enregistrer puis fermer.
+            Enregistrer,
+            /// Fermer sans enregistrer.
+            Quitter,
+            /// Rester dans le travail courant.
+            Annuler,
+        }
         let Some(action) = self.demande.clone() else {
             return;
         };
+        let fermeture = matches!(action, ActionDestructrice::Quitter);
         let mut decision: Option<bool> = None;
+        let mut choix: Option<ChoixFermeture> = None;
+        let cle_texte = if fermeture {
+            "confirmation-fermeture-texte"
+        } else {
+            "confirmation-texte"
+        };
         egui::Window::new(self.texte("confirmation-titre"))
             .collapsible(false)
             .show(ctx, |ui| {
-                ui.label(self.texte("confirmation-texte"));
+                ui.label(self.texte(cle_texte));
                 ui.horizontal(|ui| {
-                    let reponse = ui.button(self.texte("confirmation-confirmer"));
-                    avec_aide(&reponse, "aide-confirmation-perte", &mut self.aide);
-                    if reponse.clicked() {
-                        decision = Some(true);
-                    }
-                    let reponse = ui.button(self.texte("confirmation-annuler"));
-                    if reponse.clicked() {
-                        decision = Some(false);
+                    if fermeture {
+                        let reponse = ui.button(self.texte("confirmation-enregistrer"));
+                        avec_aide(&reponse, "aide-confirmation-enregistrer", &mut self.aide);
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Enregistrer);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-quitter"));
+                        avec_aide(&reponse, "aide-confirmation-quitter", &mut self.aide);
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Quitter);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-annuler"));
+                        if reponse.clicked() {
+                            choix = Some(ChoixFermeture::Annuler);
+                        }
+                    } else {
+                        let reponse = ui.button(self.texte("confirmation-confirmer"));
+                        avec_aide(&reponse, "aide-confirmation-perte", &mut self.aide);
+                        if reponse.clicked() {
+                            decision = Some(true);
+                        }
+                        let reponse = ui.button(self.texte("confirmation-annuler"));
+                        if reponse.clicked() {
+                            decision = Some(false);
+                        }
                     }
                 });
             });
@@ -1229,6 +1306,26 @@ impl DemoApp {
                 self.executer_action(action);
             }
             Some(false) => self.demande = None,
+            None => {}
+        }
+        match choix {
+            Some(ChoixFermeture::Enregistrer) => {
+                // Enregistrer d'abord : sans fichier courant,
+                // « Enregistrer sous… » s'ouvre — la fenêtre ne
+                // ferme que si la sauvegarde a eu lieu.
+                self.enregistrer();
+                if !self.dirty {
+                    self.demande = None;
+                    self.fermeture_confirmee = true;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                }
+            }
+            Some(ChoixFermeture::Quitter) => {
+                self.demande = None;
+                self.fermeture_confirmee = true;
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            }
+            Some(ChoixFermeture::Annuler) => self.demande = None,
             None => {}
         }
     }
@@ -3033,11 +3130,30 @@ impl eframe::App for DemoApp {
                 self.viewport(ui);
             }
         });
+        // Garde de fermeture (audit n°3 A3-06) : la fenêtre ne se
+        // ferme pas tant que du travail non enregistré existe — la
+        // demande de fermeture est annulée (CancelClose) et la
+        // confirmation demandée (exemple egui « confirm_exit ») ;
+        // l'annonce d'avant le correctif, « fermeture non
+        // interceptable », était fausse (audit n°3, D6). Une
+        // fermeture confirmée par le dialogue passe : la garde ne
+        // bloque plus la demande qu'elle vient d'émettre.
+        if !self.fermeture_confirmee
+            && ctx.input(|i| i.viewport().close_requested())
+        {
+            match garde_fermeture(self.dirty, self.demande.is_some()) {
+                DecisionFermeture::LaisserFermer => {}
+                DecisionFermeture::Bloquer => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                }
+                DecisionFermeture::BloquerEtConfirmer => {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                    self.demande = Some(ActionDestructrice::Quitter);
+                }
+            }
+        }
         // Titre de la fenêtre : « * » signale le travail non
-        // enregistré, levé par la sauvegarde (ADR-0016 C3). La
-        // fermeture de la fenêtre n'est pas interceptable dans
-        // eframe 0.29 (pas de `on_request_exit`) : limite documentée
-        // du démonstrateur.
+        // enregistré, levé par la sauvegarde (ADR-0016 C3).
         if self.titre_sale != self.dirty {
             let cle = if self.dirty {
                 "titre-fenetre-modifie"
@@ -3143,28 +3259,6 @@ mod tests {
             sommets,
         })
         .expect("import de test");
-    }
-
-    // --- Garde de fermeture de la fenêtre (audit n°3 A3-06) ---
-
-    /// Décision de la garde de fermeture de la fenêtre (audit n°3
-    /// A3-06) : la croix ne doit pas perdre un travail non
-    /// enregistré.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum DecisionFermeture {
-        /// Laisser la fenêtre se fermer.
-        LaisserFermer,
-        /// Bloquer la fermeture : la confirmation est déjà ouverte.
-        Bloquer,
-        /// Bloquer la fermeture et ouvrir la confirmation.
-        BloquerEtConfirmer,
-    }
-
-    /// Bouchon du comportement actuel (audit n°3 A3-06) : la fenêtre
-    /// se ferme toujours, travail non enregistré compris — la garde
-    /// doit bloquer et demander confirmation.
-    fn garde_fermeture(_dirty: bool, _confirmation_en_cours: bool) -> DecisionFermeture {
-        DecisionFermeture::LaisserFermer
     }
 
     /// La croix ne doit pas perdre le travail non enregistré (audit

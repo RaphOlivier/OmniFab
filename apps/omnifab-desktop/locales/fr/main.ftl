@@ -150,6 +150,9 @@ confirmation-titre = Travail non enregistré
 confirmation-texte = Le projet comporte des modifications non enregistrées : continuer les perdra définitivement.
 confirmation-confirmer = Continuer
 confirmation-annuler = Annuler
+confirmation-fermeture-texte = Le projet comporte des modifications non enregistrées : fermer la fenêtre les perdrait définitivement.
+confirmation-enregistrer = Enregistrer
+confirmation-quitter = Quitter sans enregistrer
 
 # --- Unités du maillage importé (ADR-0017) ---
 echelle-titre = Unités du modèle
@@ -386,6 +389,16 @@ aide-confirmation-perte =
     .titre = Travail non enregistré
     .description = Confirmation demandée avant une action destructive (nouveau projet, ouverture, reprise) quand des modifications non enregistrées existent : les continuer abandonne définitivement — « Enregistrer sous… » les met à l'abri d'abord.
     .exemple = Modifiez la largeur puis cliquez « Réinitialiser » : la fenêtre demande confirmation ; « Annuler » ramène au travail en cours, rien n'est perdu.
+
+aide-confirmation-enregistrer =
+    .titre = Enregistrer
+    .description = Enregistre le projet puis ferme la fenêtre (audit n°3 A3-06) : sans fichier courant, « Enregistrer sous… » s'ouvre — la fenêtre ne ferme que si la sauvegarde a eu lieu.
+    .exemple = Modifiez la largeur, cliquez la croix puis « Enregistrer » : le projet est écrit et la fenêtre se ferme.
+
+aide-confirmation-quitter =
+    .titre = Quitter sans enregistrer
+    .description = Ferme la fenêtre en abandonnant les modifications non enregistrées, après la confirmation demandée à la croix (audit n°3 A3-06).
+    .exemple = Cliquez la croix puis « Quitter sans enregistrer » : la fenêtre se ferme, les modifications sont perdues.
 
 aide-echelle-metres =
     .titre = Mètres (× 1000)
