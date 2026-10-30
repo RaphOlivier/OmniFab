@@ -3145,6 +3145,55 @@ mod tests {
         .expect("import de test");
     }
 
+    // --- Garde de fermeture de la fenêtre (audit n°3 A3-06) ---
+
+    /// Décision de la garde de fermeture de la fenêtre (audit n°3
+    /// A3-06) : la croix ne doit pas perdre un travail non
+    /// enregistré.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum DecisionFermeture {
+        /// Laisser la fenêtre se fermer.
+        LaisserFermer,
+        /// Bloquer la fermeture : la confirmation est déjà ouverte.
+        Bloquer,
+        /// Bloquer la fermeture et ouvrir la confirmation.
+        BloquerEtConfirmer,
+    }
+
+    /// Bouchon du comportement actuel (audit n°3 A3-06) : la fenêtre
+    /// se ferme toujours, travail non enregistré compris — la garde
+    /// doit bloquer et demander confirmation.
+    fn garde_fermeture(_dirty: bool, _confirmation_en_cours: bool) -> DecisionFermeture {
+        DecisionFermeture::LaisserFermer
+    }
+
+    /// La croix ne doit pas perdre le travail non enregistré (audit
+    /// n°3 A3-06) : la fermeture est bloquée, la confirmation
+    /// demandée — trois cas.
+    #[test]
+    fn doit_bloquer_la_fermeture() {
+        // Travail non enregistré, confirmation déjà ouverte : la
+        // fermeture reste bloquée, sans rouvrir la confirmation.
+        assert_eq!(
+            garde_fermeture(true, true),
+            DecisionFermeture::Bloquer,
+            "la fermeture reste bloquée tant que la confirmation est ouverte"
+        );
+        // Travail non enregistré, rien d'ouvert : bloquer et
+        // demander.
+        assert_eq!(
+            garde_fermeture(true, false),
+            DecisionFermeture::BloquerEtConfirmer,
+            "la confirmation de perte doit s'ouvrir avant de fermer"
+        );
+        // Rien à perdre : la fenêtre se ferme.
+        assert_eq!(
+            garde_fermeture(false, false),
+            DecisionFermeture::LaisserFermer,
+            "sans travail non enregistré, la fermeture passe"
+        );
+    }
+
     /// L'import est une action annulable : undo vide la géométrie de
     /// l'état (ADR-0011).
     #[test]
