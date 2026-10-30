@@ -1,7 +1,7 @@
 //! Scêne 3D du viewport : segments en millimètres, alimentés par
 //! l'application (ADR-0015, phase C2).
 
-use crate::scene::Couleur;
+use crate::scene::{Couleur, lignes_grille};
 use forge_geom::{Mesh, Path2, Point2};
 use std::collections::HashSet;
 
@@ -170,23 +170,29 @@ impl Scene3D {
     /// Grille au sol : lignes aux multiples du pas sur le plan z = 0,
     /// couvrant les bornes x et y de la boîte donnée.
     pub fn ajouter_grille(&mut self, boite: &Boite3D, pas: f64, couleur: Couleur) {
-        let mut x = (boite.min_x / pas).ceil() * pas;
-        while x <= boite.max_x {
+        let (k0, lignes) = lignes_grille(boite.min_x, boite.max_x, pas);
+        for k in 0..lignes {
+            let x = (k0 + k as f64) * pas;
+            if !x.is_finite() {
+                break;
+            }
             self.ajouter(Segment3D {
                 depart: (x, boite.min_y, 0.0),
                 arrivee: (x, boite.max_y, 0.0),
                 couleur,
             });
-            x += pas;
         }
-        let mut y = (boite.min_y / pas).ceil() * pas;
-        while y <= boite.max_y {
+        let (k0, lignes) = lignes_grille(boite.min_y, boite.max_y, pas);
+        for k in 0..lignes {
+            let y = (k0 + k as f64) * pas;
+            if !y.is_finite() {
+                break;
+            }
             self.ajouter(Segment3D {
                 depart: (boite.min_x, y, 0.0),
                 arrivee: (boite.max_x, y, 0.0),
                 couleur,
             });
-            y += pas;
         }
     }
 }
