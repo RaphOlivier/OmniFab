@@ -77,9 +77,11 @@ yanked = "deny"
 # UI (egui 0.29 / wgpu 22 / accesskit) epinglee par les versions
 # majeures du projet. Chaque ignore est date et motive ; un ignore
 # devenu inutile (dependance montee) ne produit qu'un avertissement
-# « unused » — la derive reste visible. Le champ ignore_yanked est
-# SEPARE en cargo-deny 0.20.2 (la doc en ligne, plus recente, fusionne
-# les deux listes dans ignore — ne pas suivre, cf. cle private).
+# « unused » — la derive reste visible. Les ids d'advisory ET les specs
+# de versions yankees vivent dans le MEME tableau ignore : cargo-deny
+# 0.20.2 trie en interne (table avec « id » = advisory, sinon
+# PackageSpec « crate@version » = yanked, cf. advisories/cfg.rs —
+# IGNORE_YANKED N'EST PAS UNE CLE TOML, erreur unexpected-keys sinon).
 ignore = [
   # --- unmaintained : transitives verrouillees, « no safe upgrade »
   # (a revisiter a la prochaine montee d'egui/eframe) ---
@@ -107,11 +109,9 @@ ignore = [
   { id = "RUSTSEC-2026-0367", reason = "zip 2.4.2 : bits SUID/SGID preserves a l'extraction — extract() jamais appele (lecture bornee en memoire) ; dette : montee zip 9.x (2026-10-29)" },
   { id = "RUSTSEC-2026-0368", reason = "zip 2.4.2 : symlinks hors destination a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
   { id = "RUSTSEC-2026-0369", reason = "zip 2.4.2 : permissions appliquees via symlinks a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
-]
-# Version yankee du registry : arboard 3.6.1 accepte ^5.3.1 — a monter
-# au prochain passage de mise a jour des dependances (l'ignore
-# deviendra « unused » de lui-meme).
-ignore_yanked = [
+  # --- version yankee du registry : arboard 3.6.1 accepte ^5.3.1, a
+  # monter au prochain cargo update des dependances (l'ignore deviendra
+  # « unused » de lui-meme) ---
   { crate = "clipboard-win@5.4.1", reason = "version yankee du registry, transitive egui/arboard ; arboard accepte ^5.3.1, a monter au prochain cargo update (2026-10-29)" },
 ]
 
