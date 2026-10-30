@@ -407,3 +407,33 @@ pub(crate) fn champ_entier(event: &NewEvent, champ: &str) -> Result<usize, Sessi
         reason: format!("champ « {champ} » hors des bornes de la plateforme"),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Plafond de types retenus attendu (audit n°4 A4-03).
+    const MAX_TYPES_INCONNUS: usize = 256;
+
+    /// Un journal hostile fourmille de types inconnus distincts :
+    /// au-delà du plafond, les types supplémentaires ne sont plus
+    /// retenus un à un (audit n°4 A4-03).
+    #[test]
+    fn types_inconnus_plafonnes() {
+        let mut projection = ValuesProjection::new();
+        for i in 0..300 {
+            let event = NewEvent::new(
+                &format!("forge.journal.faux.{i}"),
+                1,
+                "test",
+                serde_json::Value::Object(serde_json::Map::new()),
+            );
+            projection.apply(&event).expect("type inconnu toléré");
+        }
+        assert_eq!(
+            projection.unknown_types().len(),
+            MAX_TYPES_INCONNUS,
+            "seuls {MAX_TYPES_INCONNUS} types retenus"
+        );
+    }
+}
