@@ -347,17 +347,20 @@ fn viewbox_d_un_symbol_ne_s_applique_pas() {
 #[test]
 fn viewbox_avec_virgules_est_compensee() {
     // Une `viewBox` est une liste de nombres au format SVG :
-    // espaces **et** virgules sont des séparateurs valides —
-    // `viewBox="-50,-50,100,100"` doit être compensée exactement
-    // comme `-50 -50 100 100` (audit n°3, A3-04).
+    // espaces **et** virgules sont des séparateurs valides.
+    // La compensation restitue les coordonnées utilisateur à
+    // l'échelle physique (ADR-0016 B3) : le point dessiné en
+    // (0, 0) revient en (0, 0) ; sans compensation (virgules
+    // non lues), il serait importé en (50, -50) (audit n°3,
+    // A3-04).
     let source = br#"<svg viewBox="-50,-50,100,100"><path d="M 0 0 L 10 0"/></svg>"#;
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     let points = traces[0].points();
-    assert_eq!(points[0].x().millimeters(), -50.0);
-    assert_eq!(points[0].y().millimeters(), 50.0);
-    assert_eq!(points[1].x().millimeters(), -40.0);
-    assert_eq!(points[1].y().millimeters(), 50.0);
+    assert_eq!(points[0].x().millimeters(), 0.0);
+    assert_eq!(points[0].y().millimeters(), 0.0);
+    assert_eq!(points[1].x().millimeters(), 10.0);
+    assert_eq!(points[1].y().millimeters(), 0.0);
 }
 
 #[test]

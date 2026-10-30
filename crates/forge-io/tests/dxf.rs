@@ -186,8 +186,7 @@ fn rapport_compte_les_entites_ecartees() {
     // Chaque sorte d'entité écartée est comptée dans le rapport
     // (audit n°3, A3-05) ; seule l'entité dessinée devient un
     // tracé.
-    let resultat = dxf::import_avec_rapport(MIXTE, &DxfBudgets::default())
-        .expect("dxf valide");
+    let resultat = dxf::import_avec_rapport(MIXTE, &DxfBudgets::default()).expect("dxf valide");
     assert_eq!(resultat.traces.len(), 1);
     assert_eq!(resultat.rapport.espace_papier, 1);
     assert_eq!(resultat.rapport.invisibles, 1);
