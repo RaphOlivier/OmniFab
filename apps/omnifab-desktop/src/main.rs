@@ -73,7 +73,7 @@ use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
     Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
-    Segment3D, dessiner_scene, dessiner_wireframe, pas_decimation, pas_de_grille,
+    Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 use forge_session::{
     AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_ALIAS_REMOVED,
@@ -3663,16 +3663,28 @@ mod tests {
         assert!(segments > 0, "le wireframe est construit une première fois");
         // Sabotage du cache : s'il survit à la frame suivante, le
         // wireframe n'est pas reconstruit à chaque frame.
-        app.wireframe_maillage.as_mut().expect("cache posé").1.clear();
+        app.wireframe_maillage
+            .as_mut()
+            .expect("cache posé")
+            .1
+            .clear();
         app.rafraichir_wireframe(&Some("blob-stl".to_string()));
         assert!(
-            app.wireframe_maillage.as_ref().expect("cache posé").1.is_empty(),
+            app.wireframe_maillage
+                .as_ref()
+                .expect("cache posé")
+                .1
+                .is_empty(),
             "même clé : le sabotage survit, pas de reconstruction"
         );
         // Clé d'édition changée : le wireframe est reconstruit.
         app.rafraichir_wireframe(&None);
         assert!(
-            !app.wireframe_maillage.as_ref().expect("cache posé").1.is_empty(),
+            !app.wireframe_maillage
+                .as_ref()
+                .expect("cache posé")
+                .1
+                .is_empty(),
             "une clé d'édition changée reconstruit le wireframe"
         );
     }

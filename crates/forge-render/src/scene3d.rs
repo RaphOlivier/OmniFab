@@ -92,7 +92,7 @@ pub struct Scene3D {
 pub const MAX_ARETES_WIREFRAME: usize = 2_097_152;
 
 /// Pas de décimation d'un maillage de `triangles` triangles : `1`
-/// tant que les arêtes restent sous [`MAX_ARETES_WIREFRAME`], sinon
+/// tant que les arêtes restent sous `MAX_ARETES_WIREFRAME`, sinon
 /// le rapport qui les y ramène (audit n°4 A4-02).
 pub fn pas_decimation(triangles: usize) -> usize {
     let aretes = triangles.saturating_mul(3);
@@ -117,7 +117,7 @@ impl Scene3D {
     /// Wireframe d'un maillage : une arête par paire de sommets
     /// voisine, dédupliquée — chaque arête est dessinée une fois et le
     /// plafond d'affichage de la phase B est supprimé (ADR-0015).
-    /// Au-delà de [`MAX_ARETES_WIREFRAME`] arêtes, les triangles sont
+    /// Au-delà de `MAX_ARETES_WIREFRAME` arêtes, les triangles sont
     /// parcourus un sur deux ou davantage : le wireframe est décimé,
     /// la mémoire et les tampons GPU restent bornés (audit n°4
     /// A4-02).
