@@ -6,6 +6,12 @@ use forge_geom::Path2;
 /// Couleur RGBA, composantes normalisées entre 0 et 1.
 pub type Couleur = [f32; 4];
 
+/// Plafond de lignes de grille par axe : au-delà, une zone visible
+/// démesurée ne remplit plus la mémoire — la boucle historique
+/// `x += pas` ne terminait plus à ces amplitudes (audit n°4
+/// A4-01, constaté le 2026-10-30).
+pub const MAX_LIGNES_GRILLE: usize = 4096;
+
 /// Boîte englobante 2D, en millimètres.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Boite2 {
@@ -123,27 +129,53 @@ impl Scene2D {
         couleur: Couleur,
     ) {
         let pas = pas_de_grille(echelle, cible_px);
-        let mut x = (visible.min_x / pas).ceil() * pas;
-        while x <= visible.max_x {
+        let (k0, lignes) = lignes_grille(visible.min_x, visible.max_x, pas);
+        for k in 0..lignes {
+            let x = (k0 + k as f64) * pas;
+            if !x.is_finite() {
+                break;
+            }
             self.ajouter(Segment2D {
                 depart: (x, visible.min_y),
                 arrivee: (x, visible.max_y),
                 couleur,
                 largeur_px: 1.0,
             });
-            x += pas;
         }
-        let mut y = (visible.min_y / pas).ceil() * pas;
-        while y <= visible.max_y {
+        let (k0, lignes) = lignes_grille(visible.min_y, visible.max_y, pas);
+        for k in 0..lignes {
+            let y = (k0 + k as f64) * pas;
+            if !y.is_finite() {
+                break;
+            }
             self.ajouter(Segment2D {
                 depart: (visible.min_x, y),
                 arrivee: (visible.max_x, y),
                 couleur,
                 largeur_px: 1.0,
             });
-            y += pas;
         }
     }
+}
+
+/// Indices des lignes couvrant [min, max] au pas donné : premier
+/// multiple `k0` et nombre de lignes, plafonné à
+/// [`MAX_LIGNES_GRILLE`] — l'itération `(k0 + k)·pas` reste exacte à
+/// toute amplitude, là où l'accumulateur historique `x += pas`
+/// figeait au-delà de 2^53 fois le pas (audit n°4 A4-01). Bornes
+/// ou pas non finis, pas nul ou négatif, intervalle vide : aucune
+/// ligne.
+pub(crate) fn lignes_grille(min: f64, max: f64, pas: f64) -> (f64, usize) {
+    if !min.is_finite() || !max.is_finite() || !pas.is_finite() || pas <= 0.0 || min > max {
+        return (0.0, 0);
+    }
+    let k0 = (min / pas).ceil();
+    let k1 = (max / pas).floor();
+    if !k0.is_finite() || !k1.is_finite() || k1 < k0 {
+        return (0.0, 0);
+    }
+    let lignes = (k1 - k0 + 1.0).min(MAX_LIGNES_GRILLE as f64);
+    (k0, lignes as usize)
 }
 
 /// Pas de grille lisible : la plus petite puissance de deux dont la
@@ -226,5 +258,34 @@ mod tests {
             .filter(|segment| (segment.depart.0 - segment.arrivee.0).abs() < 1e-9)
             .count();
         assert_eq!(verticales, 4, "x = 0, 64, 128, 192 mm");
+    }
+
+    /// Une zone visible démesurée ne met pas la grille en boucle
+    /// infinie : à |x| >= 2^53 fois le pas, l'addition `x += pas`
+    /// n'avance plus (arrondi f64) et la boucle historique ne
+    /// terminait plus — la grille doit être plafonnée (audit n°4
+    /// A4-01).
+    #[test]
+    fn grille_bornee_zone_demensuree() {
+        let mut scene = Scene2D::vide();
+        // Échelle 1e6 px/mm : pas de grille 2^-13 mm autour de
+        // 2e12 mm — l'addition n'y avance plus.
+        scene.ajouter_grille(
+            Boite2 {
+                min_x: 2.0e12,
+                min_y: 0.0,
+                max_x: 2.0e12 + 1.0e-3,
+                max_y: 1.0e-3,
+            },
+            1.0e6,
+            80.0,
+            [1.0, 1.0, 1.0, 0.1],
+        );
+        assert!(
+            scene.segments.len() <= 2 * MAX_LIGNES_GRILLE,
+            "grille plafonnée à deux axes de {} lignes, ici {}",
+            MAX_LIGNES_GRILLE,
+            scene.segments.len(),
+        );
     }
 }

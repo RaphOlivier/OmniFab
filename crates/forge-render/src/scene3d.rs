@@ -1,7 +1,7 @@
 //! Scêne 3D du viewport : segments en millimètres, alimentés par
 //! l'application (ADR-0015, phase C2).
 
-use crate::scene::Couleur;
+use crate::scene::{Couleur, lignes_grille};
 use forge_geom::{Mesh, Path2, Point2};
 use std::collections::HashSet;
 
@@ -85,6 +85,24 @@ pub struct Scene3D {
     pub segments: Vec<Segment3D>,
 }
 
+/// Plafond d'arêtes du wireframe (2^21 ≈ 100 Mio de tampons GPU) :
+/// au-delà, les triangles sont décimés — jamais plus d'arêtes que ce
+/// plafond ne part au GPU, la limite wgpu de 256 Mio par tampon ne
+/// peut plus être atteinte (audit n°4 A4-02).
+pub const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+/// Pas de décimation d'un maillage de `triangles` triangles : `1`
+/// tant que les arêtes restent sous `MAX_ARETES_WIREFRAME`, sinon
+/// le rapport qui les y ramène (audit n°4 A4-02).
+pub fn pas_decimation(triangles: usize) -> usize {
+    let aretes = triangles.saturating_mul(3);
+    if aretes <= MAX_ARETES_WIREFRAME {
+        1
+    } else {
+        aretes / MAX_ARETES_WIREFRAME + 1
+    }
+}
+
 impl Scene3D {
     /// Scêne vide.
     pub fn vide() -> Self {
@@ -99,11 +117,19 @@ impl Scene3D {
     /// Wireframe d'un maillage : une arête par paire de sommets
     /// voisine, dédupliquée — chaque arête est dessinée une fois et le
     /// plafond d'affichage de la phase B est supprimé (ADR-0015).
+    /// Au-delà de `MAX_ARETES_WIREFRAME` arêtes, les triangles sont
+    /// parcourus un sur deux ou davantage : le wireframe est décimé,
+    /// la mémoire et les tampons GPU restent bornés (audit n°4
+    /// A4-02).
     pub fn depuis_maillage(maillage: &Mesh, couleur: Couleur) -> Self {
         let sommets = maillage.vertices();
+        let triangles = maillage.triangles();
+        // Décimation au-delà du plafond : un maillage démesuré ne
+        // déborde plus des tampons GPU (audit n°4 A4-02).
+        let pas = pas_decimation(triangles.len());
         let mut vues: HashSet<(u32, u32)> = HashSet::new();
         let mut scene = Self::vide();
-        for triangle in maillage.triangles() {
+        for triangle in triangles.iter().step_by(pas) {
             for arete in [
                 (triangle[0], triangle[1]),
                 (triangle[1], triangle[2]),
@@ -170,23 +196,29 @@ impl Scene3D {
     /// Grille au sol : lignes aux multiples du pas sur le plan z = 0,
     /// couvrant les bornes x et y de la boîte donnée.
     pub fn ajouter_grille(&mut self, boite: &Boite3D, pas: f64, couleur: Couleur) {
-        let mut x = (boite.min_x / pas).ceil() * pas;
-        while x <= boite.max_x {
+        let (k0, lignes) = lignes_grille(boite.min_x, boite.max_x, pas);
+        for k in 0..lignes {
+            let x = (k0 + k as f64) * pas;
+            if !x.is_finite() {
+                break;
+            }
             self.ajouter(Segment3D {
                 depart: (x, boite.min_y, 0.0),
                 arrivee: (x, boite.max_y, 0.0),
                 couleur,
             });
-            x += pas;
         }
-        let mut y = (boite.min_y / pas).ceil() * pas;
-        while y <= boite.max_y {
+        let (k0, lignes) = lignes_grille(boite.min_y, boite.max_y, pas);
+        for k in 0..lignes {
+            let y = (k0 + k as f64) * pas;
+            if !y.is_finite() {
+                break;
+            }
             self.ajouter(Segment3D {
                 depart: (boite.min_x, y, 0.0),
                 arrivee: (boite.max_x, y, 0.0),
                 couleur,
             });
-            y += pas;
         }
     }
 }
@@ -286,6 +318,76 @@ mod tests {
             scene.segments.len(),
             8,
             "cinq verticales et trois horizontales"
+        );
+    }
+
+    /// Plafond de lignes de grille attendu par axe (audit n°4
+    /// A4-01).
+    const MAX_LIGNES_GRILLE: usize = 4096;
+
+    /// Un pas négatif, nul ou non fini ne boucle pas : la grille
+    /// reste vide (audit n°4 A4-01 — l'API publique accepte
+    /// n'importe quel flottant).
+    #[test]
+    fn grille_refuse_pas_invalide() {
+        let mut scene = Scene3D::vide();
+        let boite = Boite3D::du_point(0.0, 0.0, 0.0).etendre(200.0, 100.0, 50.0);
+        scene.ajouter_grille(&boite, -1.0, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas négatif : aucune ligne");
+        scene.ajouter_grille(&boite, 0.0, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas nul : aucune ligne");
+        scene.ajouter_grille(&boite, f64::NAN, [1.0, 1.0, 1.0, 1.0]);
+        assert!(scene.segments.is_empty(), "pas non fini : aucune ligne");
+    }
+
+    /// Une boîte démesurée ne met pas la grille en boucle infinie :
+    /// la grille doit être plafonnée par axe (audit n°4 A4-01).
+    #[test]
+    fn grille_bornee_zone_demensuree() {
+        let mut scene = Scene3D::vide();
+        let boite = Boite3D {
+            min_x: 2.0e12,
+            min_y: 0.0,
+            min_z: 0.0,
+            max_x: 2.0e12 + 1.0e-3,
+            max_y: 1.0e-3,
+            max_z: 1.0,
+        };
+        scene.ajouter_grille(&boite, 1.0e-4, [1.0, 1.0, 1.0, 1.0]);
+        assert!(
+            scene.segments.len() <= 2 * MAX_LIGNES_GRILLE,
+            "grille plafonnée à deux axes de {} lignes, ici {}",
+            MAX_LIGNES_GRILLE,
+            scene.segments.len(),
+        );
+    }
+
+    /// Plafond d'arêtes attendu pour le wireframe (audit n°4 A4-02).
+    const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+    /// Un maillage démesuré ne déborde pas : le wireframe reste
+    /// sous un plafond d'arêtes — jusqu'ici, `depuis_maillage`
+    /// envoyait chaque triangle au GPU et les tampons dépassaient la
+    /// limite wgpu de 256 Mio (audit n°4 A4-02).
+    #[test]
+    fn le_wireframe_est_plafonne() {
+        let mut sommets = Vec::with_capacity(2_400_000);
+        let mut triangles = Vec::with_capacity(800_000);
+        for i in 0..800_000u32 {
+            let x = f64::from(i);
+            sommets.push(point3(x, 0.0, 0.0));
+            sommets.push(point3(x, 1.0, 0.0));
+            sommets.push(point3(x, 2.0, 0.0));
+            let base = 3 * i;
+            triangles.push([base, base + 1, base + 2]);
+        }
+        let maillage = Mesh::from_parts(sommets, triangles).expect("maillage valide");
+        let scene = Scene3D::depuis_maillage(&maillage, [0.0, 1.0, 1.0, 1.0]);
+        assert!(
+            scene.segments.len() <= MAX_ARETES_WIREFRAME,
+            "le wireframe est plafonné à {} arêtes, pas {}",
+            MAX_ARETES_WIREFRAME,
+            scene.segments.len()
         );
     }
 }

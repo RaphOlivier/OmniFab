@@ -33,4 +33,4 @@ pub use camera3d::Camera3D;
 pub use egui_adapteur::{dessiner_scene, dessiner_wireframe};
 pub use renderer::Renderer2D;
 pub use scene::{Boite2, Couleur, Scene2D, Segment2D, pas_de_grille};
-pub use scene3d::{Boite3D, Scene3D, Segment3D};
+pub use scene3d::{Boite3D, Scene3D, Segment3D, pas_decimation};
