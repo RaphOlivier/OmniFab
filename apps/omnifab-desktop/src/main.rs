@@ -283,6 +283,14 @@ enum Travail {
         /// posée à la position visée.
         croquis: EsquisseProjection,
     },
+    /// Travail de test qui panique toujours (audit n°3 N8) : vérifie
+    /// que le fil de travail survit à une panique et traite le
+    /// travail suivant.
+    #[cfg(test)]
+    Bogue {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+    },
 }
 
 impl Travail {
@@ -290,6 +298,12 @@ impl Travail {
     /// devient un retour d'erreur à message (ADR-0016 C1).
     fn executer(self) -> Retour {
         match self {
+            // Travail de test qui panique (audit n°3 N8) : le fil
+            // doit survivre et le traiter comme un échec typé.
+            #[cfg(test)]
+            Travail::Bogue { .. } => {
+                panic!("bogue de test : le travail doit paniquer")
+            }
             Travail::ImportTraces {
                 generation,
                 format,
@@ -3359,6 +3373,122 @@ mod tests {
             "le refus cite la taille et le budget : {erreur}"
         );
         let _ = std::fs::remove_file(&chemin);
+    }
+
+    // --- Fil de travail résilient (audit n°3 N8) ---
+
+    /// Pompe les retours du fil de travail jusqu'à en recevoir le
+    /// nombre attendu, 10 secondes au plus (audit n°3 N8).
+    fn pomper_retours(recepteur: &mpsc::Receiver<Retour>, attendus: usize) -> Vec<Retour> {
+        let mut retours: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            retours.extend(recepteur.try_iter());
+            if retours.len() >= attendus {
+                return retours;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        retours
+    }
+
+    /// Le fil survit à une panique du travail (audit n°3 N8) : le
+    /// travail qui panique revient en erreur typée OF-WORK-0001 —
+    /// code à inscrire au registre central — et le travail suivant
+    /// est traité normalement.
+    #[test]
+    fn le_fil_survit_a_une_panique_de_travail() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        emetteur_travaux
+            .send(Travail::Bogue { generation: 1 })
+            .expect("envoi du travail bogué");
+        emetteur_travaux
+            .send(Travail::ResoudreApercu {
+                generation: 2,
+                croquis: EsquisseProjection::default(),
+            })
+            .expect("envoi du travail sain");
+        let retours = pomper_retours(&recepteur_retours, 2);
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil se termine proprement à la déconnexion");
+        assert_eq!(retours.len(), 2, "un retour par travail, même bogué");
+        match &retours[0] {
+            Retour::Erreur { generation, message } => {
+                assert_eq!(
+                    *generation, 1,
+                    "l'erreur porte la génération du travail bogué"
+                );
+                assert!(
+                    message.contains("OF-WORK-0001"),
+                    "l'échec inopiné doit porter le code du registre : {message}"
+                );
+            }
+            _ => panic!("le travail bogué doit revenir en erreur typée"),
+        }
+        assert_eq!(retours[1].generation(), 2, "le travail suivant est traité");
+    }
+
+    /// La déconnexion de l'émetteur éteint le fil comme un état, pas
+    /// un crash (audit n°3 N8) : le fil se termine proprement.
+    #[test]
+    fn la_deconnexion_eteint_le_fil_proprement() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil s'éteint proprement à la déconnexion");
+    }
+
+    /// Le fil mort ne laisse pas un « travail en cours » permanent
+    /// (audit n°3 N8) : l'envoi suivant relance un fil neuf, le
+    /// compteur des travaux repart de zéro et le travail est traité.
+    #[test]
+    fn le_fil_mort_est_relance_au_prochain_envoi() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        // Simule un fil mort : l'émetteur en place n'a plus de fil.
+        let (emetteur_mort, recepteur_mort) = mpsc::channel::<Travail>();
+        drop(recepteur_mort);
+        app.travaux = Some(emetteur_mort);
+        app.travaux_en_attente = 7;
+        app.envoyer_travail(Travail::ResoudreApercu {
+            generation: app.generation,
+            croquis: EsquisseProjection::default(),
+        });
+        assert_eq!(
+            app.travaux_en_attente, 1,
+            "le compteur repart de zéro puis compte le travail relancé"
+        );
+        // Le travail relancé revient : le fil neuf le traite.
+        let mut recus: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            recus.extend(app.retours.try_iter());
+            if !recus.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            matches!(recus.first(), Some(Retour::EsquisseApercue { .. })),
+            "le travail relancé est traité par le fil neuf"
+        );
+    }
+
+    /// Le code du fil de travail vit au registre central des codes
+    /// d'erreur (ADR-0003, audit n°3 N8) : OF-WORK-0001 doit y
+    /// figurer, comme les codes des crates du noyau.
+    #[test]
+    fn of_work_0001_est_au_registre() {
+        const REGISTRE: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/error-codes.md"
+        ));
+        assert!(
+            REGISTRE.contains("OF-WORK-0001"),
+            "OF-WORK-0001 absent du registre docs/error-codes.md"
+        );
     }
 
     /// L'import est une action annulable : undo vide la géométrie de
