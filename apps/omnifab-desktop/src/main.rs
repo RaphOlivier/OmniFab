@@ -533,7 +533,7 @@ fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Ret
     use std::panic::AssertUnwindSafe;
     for travail in recepteur {
         let generation = travail.generation();
-        let execution = std::panic::catch_unwind(AssertUnwindSafe(travail.executer()));
+        let execution = std::panic::catch_unwind(AssertUnwindSafe(|| travail.executer()));
         let retour = match execution {
             Ok(retour) => retour,
             Err(poigne) => {
@@ -1522,7 +1522,9 @@ impl DemoApp {
             Err(erreur) => {
                 let travail = erreur.0;
                 self.relancer_fil_de_travail();
-                if let Some(emetteur) = &self.travaux && emetteur.send(travail).is_ok() {
+                if let Some(emetteur) = &self.travaux
+                    && emetteur.send(travail).is_ok()
+                {
                     self.travaux_en_attente += 1;
                     self.info = Some(self.texte("info-travail-en-cours"));
                 }
