@@ -169,6 +169,36 @@ enum ActionDestructrice {
     Quitter,
 }
 
+/// Décision de la garde de fermeture de la fenêtre (audit n°3
+/// A3-06) : la croix ne doit pas perdre un travail non
+/// enregistré.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DecisionFermeture {
+    /// Laisser la fenêtre se fermer : rien n'est à perdre.
+    LaisserFermer,
+    /// Bloquer la fermeture : la confirmation est déjà ouverte.
+    Bloquer,
+    /// Bloquer la fermeture et ouvrir la confirmation.
+    BloquerEtConfirmer,
+}
+
+/// Garde de fermeture de la fenêtre (audit n°3 A3-06) : du
+/// travail non enregistré ne se perd pas au clic sur la croix —
+/// la fermeture est annulée (ViewportCommand::CancelClose,
+/// exemple egui « confirm_exit ») et la confirmation demandée,
+/// sauf si elle est déjà ouverte.
+fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> DecisionFermeture {
+    if !dirty {
+        return DecisionFermeture::LaisserFermer;
+    }
+    if confirmation_en_cours {
+        DecisionFermeture::Bloquer
+    } else {
+        DecisionFermeture::BloquerEtConfirmer
+    }
+}
+
+
 /// Choix des unités d'un maillage minuscule demandé à l'import
 /// (ADR-0017) : le fil de travail a lu les octets et mesuré la plus
 /// grande dimension ; l'import attend la réponse de l'utilisateur.
@@ -1200,6 +1230,10 @@ impl DemoApp {
                 self.effacer_messages();
                 self.ecran = Ecran::Atelier;
             }
+            // La croix ne passe jamais par ici : la garde de l'update
+            // l'annule et la fenêtre dédiée pilote enregistrer /
+            // quitter / annuler avant la fermeture (audit n°3 A3-06).
+            ActionDestructrice::Quitter => {}
         }
     }
 
@@ -1208,35 +1242,6 @@ impl DemoApp {
     fn demander_chemin(&self) -> Option<PathBuf> {
         let libelle = self.texte("filtre-projet");
         fichiers::choisir_projet(&libelle)
-    }
-
-    /// Décision de la garde de fermeture de la fenêtre (audit n°3
-    /// A3-06) : la croix ne doit pas perdre un travail non
-    /// enregistré.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    enum DecisionFermeture {
-        /// Laisser la fenêtre se fermer : rien n'est à perdre.
-        LaisserFermer,
-        /// Bloquer la fermeture : la confirmation est déjà ouverte.
-        Bloquer,
-        /// Bloquer la fermeture et ouvrir la confirmation.
-        BloquerEtConfirmer,
-    }
-
-    /// Garde de fermeture de la fenêtre (audit n°3 A3-06) : du
-    /// travail non enregistré ne se perd pas au clic sur la croix —
-    /// la fermeture est annulée (ViewportCommand::CancelClose,
-    /// exemple egui « confirm_exit ») et la confirmation demandée,
-    /// sauf si elle est déjà ouverte.
-    fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> DecisionFermeture {
-        if !dirty {
-            return DecisionFermeture::LaisserFermer;
-        }
-        if confirmation_en_cours {
-            DecisionFermeture::Bloquer
-        } else {
-            DecisionFermeture::BloquerEtConfirmer
-        }
     }
 
     /// Fenêtre de confirmation d'une action destructive (ADR-0016 C3) :
