@@ -3577,6 +3577,32 @@ mod tests {
         );
     }
 
+    /// Plafond d'arêtes attendu pour le wireframe 2D (audit n°4
+    /// A4-02).
+    const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+    /// Le wireframe 2D d'un maillage démesuré est plafonné : jamais
+    /// plus de `MAX_ARETES_WIREFRAME` segments par frame, les
+    /// tampons GPU restent sous la limite de 256 Mio (audit n°4
+    /// A4-02).
+    #[test]
+    fn le_wireframe_2d_est_plafonne() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let triangles = vec![[0, 1, 2]; 800_000];
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], triangles).expect("valide");
+        let mut scene = Scene2D::vide();
+        DemoApp::ajouter_maillage_2d(&mut scene, &maillage);
+        assert!(
+            scene.segments.len() <= MAX_ARETES_WIREFRAME,
+            "le wireframe 2D est plafonné à {} arêtes, pas {}",
+            MAX_ARETES_WIREFRAME,
+            scene.segments.len()
+        );
+    }
+
     /// Parse factice : échoue en comptant ses appels.
     fn echec_de_parse(parses: &mut u32) -> impl FnOnce() -> Result<Vec<u8>, String> + '_ {
         move || {

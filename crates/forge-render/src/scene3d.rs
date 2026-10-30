@@ -335,4 +335,33 @@ mod tests {
             scene.segments.len(),
         );
     }
+
+    /// Plafond d'arêtes attendu pour le wireframe (audit n°4 A4-02).
+    const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+    /// Un maillage démesuré ne déborde pas : le wireframe reste
+    /// sous un plafond d'arêtes — jusqu'ici, `depuis_maillage`
+    /// envoyait chaque triangle au GPU et les tampons dépassaient la
+    /// limite wgpu de 256 Mio (audit n°4 A4-02).
+    #[test]
+    fn le_wireframe_est_plafonne() {
+        let mut sommets = Vec::with_capacity(2_400_000);
+        let mut triangles = Vec::with_capacity(800_000);
+        for i in 0..800_000u32 {
+            let x = f64::from(i);
+            sommets.push(point3(x, 0.0, 0.0));
+            sommets.push(point3(x, 1.0, 0.0));
+            sommets.push(point3(x, 2.0, 0.0));
+            let base = 3 * i;
+            triangles.push([base, base + 1, base + 2]);
+        }
+        let maillage = Mesh::from_parts(sommets, triangles).expect("maillage valide");
+        let scene = Scene3D::depuis_maillage(&maillage, [0.0, 1.0, 1.0, 1.0]);
+        assert!(
+            scene.segments.len() <= MAX_ARETES_WIREFRAME,
+            "le wireframe est plafonné à {} arêtes, pas {}",
+            MAX_ARETES_WIREFRAME,
+            scene.segments.len()
+        );
+    }
 }
