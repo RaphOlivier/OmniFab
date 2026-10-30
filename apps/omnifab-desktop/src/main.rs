@@ -198,7 +198,6 @@ fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> DecisionFermetur
     }
 }
 
-
 /// Choix des unités d'un maillage minuscule demandé à l'import
 /// (ADR-0017) : le fil de travail a lu les octets et mesuré la plus
 /// grande dimension ; l'import attend la réponse de l'utilisateur.
@@ -3143,9 +3142,7 @@ impl eframe::App for DemoApp {
         // interceptable », était fausse (audit n°3, D6). Une
         // fermeture confirmée par le dialogue passe : la garde ne
         // bloque plus la demande qu'elle vient d'émettre.
-        if !self.fermeture_confirmee
-            && ctx.input(|i| i.viewport().close_requested())
-        {
+        if !self.fermeture_confirmee && ctx.input(|i| i.viewport().close_requested()) {
             match garde_fermeture(self.dirty, self.demande.is_some()) {
                 DecisionFermeture::LaisserFermer => {}
                 DecisionFermeture::Bloquer => {
