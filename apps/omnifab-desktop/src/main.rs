@@ -301,8 +301,8 @@ impl Travail {
             // Travail de test qui panique (audit n°3 N8) : le fil
             // doit survivre et le traiter comme un échec typé.
             #[cfg(test)]
-            Travail::Bogue { .. } => {
-                panic!("bogue de test : le travail doit paniquer")
+            Travail::Bogue { generation } => {
+                panic!("bogue de test : le travail {generation} doit paniquer")
             }
             Travail::ImportTraces {
                 generation,
@@ -3415,7 +3415,10 @@ mod tests {
             .expect("le fil se termine proprement à la déconnexion");
         assert_eq!(retours.len(), 2, "un retour par travail, même bogué");
         match &retours[0] {
-            Retour::Erreur { generation, message } => {
+            Retour::Erreur {
+                generation,
+                message,
+            } => {
                 assert_eq!(
                     *generation, 1,
                     "l'erreur porte la génération du travail bogué"
@@ -3435,7 +3438,7 @@ mod tests {
     #[test]
     fn la_deconnexion_eteint_le_fil_proprement() {
         let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
-        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let (emetteur_retours, _recepteur_retours) = mpsc::channel::<Retour>();
         let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
         drop(emetteur_travaux);
         fil.join()
