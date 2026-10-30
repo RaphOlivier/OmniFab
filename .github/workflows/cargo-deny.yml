@@ -13,23 +13,23 @@ on:
 
 jobs:
   deny:
-    name: cargo-deny (licences + advisories + sources)
+    name: cargo-deny (licences + advisories + sources + bans)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
       - name: Licences
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: check licenses
+          command-arguments: licenses
       - name: Advisories (CVE)
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: check advisories
+          command-arguments: advisories
       - name: Sources
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: check sources
+          command-arguments: sources
       - name: Bans
         uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          arguments: check bans
+          command-arguments: bans
