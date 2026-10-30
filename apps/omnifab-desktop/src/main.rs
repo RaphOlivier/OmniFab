@@ -530,9 +530,10 @@ impl Retour {
 /// OF-WORK-0001 — code du registre central docs/error-codes.md — et
 /// le travail suivant est traité normalement.
 fn fil_de_travail(recepteur: mpsc::Receiver<Travail>, emetteur: mpsc::Sender<Retour>) {
+    use std::panic::AssertUnwindSafe;
     for travail in recepteur {
         let generation = travail.generation();
-        let execution = std::panic::catch_unwind(std::panic::AssertUnwindSafe(travail.executer));
+        let execution = std::panic::catch_unwind(AssertUnwindSafe(travail.executer()));
         let retour = match execution {
             Ok(retour) => retour,
             Err(poigne) => {
