@@ -219,7 +219,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
             sortie,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">"
         )
-        .expect("écriture en mémoire infaillible");
+        .expect("invariant : write! dans String infaillible hors OOM");
     } else {
         sortie.push_str("<svg xmlns=\"http://www.w3.org/2000/svg\">\n");
     }
@@ -240,7 +240,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
                 point.x().millimeters(),
                 -point.y().millimeters()
             )
-            .expect("écriture en mémoire infaillible");
+            .expect("invariant : write! dans String infaillible hors OOM");
         }
         if trace.is_closed() {
             sortie.push_str(" Z");

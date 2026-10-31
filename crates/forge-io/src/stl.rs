@@ -94,15 +94,15 @@ pub fn export(mesh: &Mesh) -> Result<Vec<u8>, IoError> {
         let a = mesh
             .vertices()
             .get(ia as usize)
-            .expect("indice validé à la construction");
+            .expect("invariant : indices validés par Mesh::from_parts");
         let b = mesh
             .vertices()
             .get(ib as usize)
-            .expect("indice validé à la construction");
+            .expect("invariant : indices validés par Mesh::from_parts");
         let c = mesh
             .vertices()
             .get(ic as usize)
-            .expect("indice validé à la construction");
+            .expect("invariant : indices validés par Mesh::from_parts");
         for composante in normale_facette(a, b, c) {
             sortie.extend_from_slice(&composante.to_le_bytes());
         }
@@ -123,7 +123,11 @@ fn est_binaire(bytes: &[u8]) -> bool {
     if bytes.len() < 84 {
         return false;
     }
-    let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
+    let compteur = u32::from_le_bytes(
+        bytes[80..84]
+            .try_into()
+            .expect("invariant : tranche [80..84] garantie par la garde len ≥ 84"),
+    );
     bytes.len() as u64 == 84 + 50 * u64::from(compteur)
 }
 
@@ -135,7 +139,11 @@ fn est_binaire_tolerant(bytes: &[u8]) -> bool {
     if bytes.len() < 84 {
         return false;
     }
-    let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
+    let compteur = u32::from_le_bytes(
+        bytes[80..84]
+            .try_into()
+            .expect("invariant : tranche [80..84] garantie par la garde len ≥ 84"),
+    );
     bytes.len() as u64 >= 84 + 50 * u64::from(compteur)
 }
 
@@ -154,7 +162,11 @@ fn est_ascii(bytes: &[u8]) -> bool {
 /// Importe un STL binaire (appelée après détection binaire, exacte
 /// ou tolérante — les octets excédentaires sont ignorés).
 fn import_binaire(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
-    let compteur = u32::from_le_bytes(bytes[80..84].try_into().expect("quatre octets"));
+    let compteur = u32::from_le_bytes(
+        bytes[80..84]
+            .try_into()
+            .expect("invariant : tranche [80..84] garantie par la garde len ≥ 84"),
+    );
     if u64::from(compteur) > u64::from(budgets.max_triangles) {
         return Err(IoError::TooManyTriangles {
             found: u64::from(compteur),
@@ -297,7 +309,11 @@ fn import_ascii(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
 
 /// Lit un `f32` petit-boutiste à l'offset donné.
 fn lire_f32(bytes: &[u8], offset: usize) -> f32 {
-    f32::from_le_bytes(bytes[offset..offset + 4].try_into().expect("quatre octets"))
+    f32::from_le_bytes(
+        bytes[offset..offset + 4]
+            .try_into()
+            .expect("invariant : offset borné par est_binaire_tolerant (len ≥ 84 + 50n)"),
+    )
 }
 
 /// Convertit un compte `usize` en `u32` (garde OF-IO-0003 au-delà de
