@@ -107,7 +107,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | Code | Signification | Cause probable | Action corrective |
 |---|---|---|---|
 | OF-CAD-0001 | Échec d'une opération OCCT | Construction, booléen, tessellation ou écriture refusés par le noyau CAO | Simplifier la géométrie ou vérifier l'installation OCCT (liaison dynamique, version >= 7.8) |
-| OF-CAD-0002 | Forme nulle ou invalide | Une opération a produit une forme vide (contour dégénéré, booléen sans résultat) | Corriger la géométrie source |
+| OF-CAD-0002 | Forme nulle, invalide ou entrée invalide | Dimensions non finies ou <= 0, contour dégénéré, booléen sans résultat, ou import non solide | Corriger la géométrie ou les entrées source |
 | OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
 | OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets ou de formes du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
 
