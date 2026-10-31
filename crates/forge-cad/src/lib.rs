@@ -267,7 +267,7 @@ impl Solide {
                 operation: format!("tessellation : {e}"),
             })?;
         let sommets: Vec<[f64; 3]> = maille.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
-        let normales: Vec<[f64; 3]> = maille.normales.iter().map(|n| [n.x, n.y, n.z]).collect();
+        let normales: Vec<[f64; 3]> = maille.normals.iter().map(|n| [n.x, n.y, n.z]).collect();
         let triangles: Vec<[u32; 3]> = maille
             .indices
             .chunks(3)
