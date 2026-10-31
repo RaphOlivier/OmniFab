@@ -11,7 +11,7 @@ const FR: &str = include_str!("../locales/fr/main.ftl");
 
 /// Catalogue français du démonstrateur.
 pub fn catalogue() -> Catalogue {
-    Catalogue::depuis_ftl("fr", FR).expect("FTL embarqué valide (test de la CI)")
+    Catalogue::depuis_ftl("fr", FR).expect("invariant : FTL embarqué, pincé par les tests i18n")
 }
 
 #[cfg(test)]

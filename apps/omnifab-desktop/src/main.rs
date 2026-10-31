@@ -1214,14 +1214,14 @@ impl DemoApp {
     fn texte(&self, cle: &str) -> String {
         self.i18n
             .traduction(cle)
-            .expect("clé présente dans le FTL (test de la CI)")
+            .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)")
     }
 
     /// Traduit une clé du catalogue embarqué, avec arguments.
     fn texte_avec(&self, cle: &str, arguments: &[(&str, Argument)]) -> String {
         self.i18n
             .traduction_avec(cle, arguments)
-            .expect("clé présente dans le FTL (test de la CI)")
+            .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)")
     }
 
     /// Ouvre un projet depuis un chemin choisi (sélecteur natif ou
@@ -3359,7 +3359,7 @@ fn main() -> eframe::Result<()> {
     let catalogue = i18n::catalogue();
     let titre = catalogue
         .traduction("titre-fenetre")
-        .expect("clé présente dans le FTL (test de la CI)");
+        .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)");
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1100.0, 720.0]),
         renderer: eframe::Renderer::Wgpu,
