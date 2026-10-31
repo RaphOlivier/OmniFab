@@ -1537,10 +1537,20 @@ impl EsquisseProjection {
                         (Some((dx, dy)), Some(e)) if *id != e => (dx, dy),
                         _ => (Length::from_millimeters(0.0), Length::from_millimeters(0.0)),
                     };
-                    let (graine_x, graine_y) = graines_passe
-                        .get(id)
-                        .copied()
-                        .expect("graine de passe de tout point");
+                    // Invariant : la boucle des graines ci-dessus en
+                    // pose une pour tout point du croquis (repli sur
+                    // l'origine en l'absence de déplacement) et les
+                    // identifiants séquentiels sont vérifiés au
+                    // rejeu — un journal hostile ne peut pas l'atteindre.
+                    // Défense en profondeur : le refus typé remplace
+                    // l'expect, la résolution ne panique jamais.
+                    let Some((graine_x, graine_y)) = graines_passe.get(id).copied() else {
+                        return Err(GcsError::IdInconnu {
+                            contexte: format!(
+                                "graine de passe du point {id} absente — journal hostile au rejeu"
+                            ),
+                        });
+                    };
                     let identifiant = solveur.ajouter_point(
                         Length::from_millimeters(graine_x.millimeters() + dx.millimeters()),
                         Length::from_millimeters(graine_y.millimeters() + dy.millimeters()),
