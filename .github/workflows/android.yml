@@ -128,7 +128,7 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-                    MOTIF="CI : echec build-apk"
+          MOTIF="CI : echec build-apk"
           EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
           if [ -n "$EXISTANTE" ]; then
             gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"

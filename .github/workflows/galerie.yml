@@ -168,7 +168,7 @@ jobs:
           } > rapport.md
           head -c 55000 rapport.md > rapport2.md
           cat rapport2.md
-                    MOTIF="CI : echec galerie de captures"
+          MOTIF="CI : echec galerie de captures"
           EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
           if [ -n "$EXISTANTE" ]; then
             gh issue comment "$EXISTANTE" --body-file rapport2.md || echo "Impossible de commenter l'issue existante"

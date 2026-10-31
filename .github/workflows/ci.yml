@@ -91,7 +91,7 @@ jobs:
           } > rapport-complet.md
           head -c 55000 rapport-complet.md > rapport.md
           cat rapport.md
-                    MOTIF="CI : echec lint-test"
+          MOTIF="CI : echec lint-test"
           EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
           if [ -n "$EXISTANTE" ]; then
             gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
@@ -183,7 +183,7 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-                    MOTIF="CI : echec build (${{ matrix.os }})"
+          MOTIF="CI : echec build (${{ matrix.os }})"
           EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
           if [ -n "$EXISTANTE" ]; then
             gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
@@ -242,7 +242,7 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-                    MOTIF="CI : echec check aarch64"
+          MOTIF="CI : echec check aarch64"
           EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
           if [ -n "$EXISTANTE" ]; then
             gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
