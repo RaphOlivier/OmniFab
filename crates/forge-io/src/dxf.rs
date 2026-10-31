@@ -219,8 +219,12 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
             ajoute_ligne(&mut dessin, &fenetre[0], &fenetre[1]);
         }
         if trace.is_closed() && points.len() >= 3 {
-            let premier = points.first().expect("au moins deux sommets");
-            let dernier = points.last().expect("au moins deux sommets");
+            let premier = points
+                .first()
+                .expect("invariant : garde len < 2 → continue ci-dessus");
+            let dernier = points
+                .last()
+                .expect("invariant : garde len < 2 → continue ci-dessus");
             ajoute_ligne(&mut dessin, premier, dernier);
         }
     }
