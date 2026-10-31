@@ -13,6 +13,8 @@
 //! B-rep (forge-cad, jalon 3). Les invariants sont garantis à la
 //! construction : une coordonnée non finie est refusée
 //! (OF-GEO-0002), un maillage ne référence que des sommets présents
+//! Une coordonnée finie au-delà de la borne de magnitude (1e9 mm)
+//! est refusée à la construction des points (OF-GEO-0003).
 //! (OF-GEO-0001).
 
 mod error;
@@ -20,6 +22,11 @@ mod error;
 pub use error::GeomError;
 
 use forge_units::Length;
+
+/// Borne commune des magnitudes du projet, en millimètres : 1e9 mm
+/// (1 000 km). Une coordonnée finie au-delà est refusée à la
+/// construction des points (OF-GEO-0003, audit n°4 A4-13b).
+pub const MAGNITUDE_MAX_MM: f64 = 1e9;
 
 /// Point 2D à coordonnées finies.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -39,6 +46,12 @@ impl Point2 {
         }
         if !y.millimeters().is_finite() {
             return Err(GeomError::NonFinite { axis: "y" });
+        }
+        if x.millimeters().abs() > MAGNITUDE_MAX_MM {
+            return Err(GeomError::CoordonneeHorsBornes { axis: "x" });
+        }
+        if y.millimeters().abs() > MAGNITUDE_MAX_MM {
+            return Err(GeomError::CoordonneeHorsBornes { axis: "y" });
         }
         Ok(Self { x, y })
     }
@@ -77,6 +90,15 @@ impl Point3 {
         }
         if !z.millimeters().is_finite() {
             return Err(GeomError::NonFinite { axis: "z" });
+        }
+        if x.millimeters().abs() > MAGNITUDE_MAX_MM {
+            return Err(GeomError::CoordonneeHorsBornes { axis: "x" });
+        }
+        if y.millimeters().abs() > MAGNITUDE_MAX_MM {
+            return Err(GeomError::CoordonneeHorsBornes { axis: "y" });
+        }
+        if z.millimeters().abs() > MAGNITUDE_MAX_MM {
+            return Err(GeomError::CoordonneeHorsBornes { axis: "z" });
         }
         Ok(Self { x, y, z })
     }

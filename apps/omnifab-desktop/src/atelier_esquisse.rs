@@ -1486,3 +1486,47 @@ fn point_ecran(camera: &Camera2D, rect: egui::Rect, x: f64, y: f64) -> egui::Pos
     let (px, py) = camera.vers_ecran((x, y));
     egui::pos2(rect.center().x + px as f32, rect.center().y + py as f32)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Garde A4-07 (audit n°4) : le balayage signé suit le geste
+    /// (ADR-0020) — une fin « avant » le début balaie dans le sens
+    /// horaire, jamais dans le sens trigonométrique. Verdict de
+    /// l'audit : non divergent — ce test verrouille la sémantique :
+    /// l'arc 270° → 90° passe par 180°.
+    #[test]
+    fn balayage_signe_suit_le_geste() {
+        let angles = angles_arc(
+            Angle::from_radians(3.0 * std::f64::consts::FRAC_PI_2),
+            Angle::from_radians(std::f64::consts::FRAC_PI_2),
+            4,
+        );
+        assert_eq!(angles.len(), 5, "segments + 1 points");
+        assert!(
+            (angles[0] - 3.0 * std::f64::consts::FRAC_PI_2).abs() < 1e-12,
+            "début exact"
+        );
+        assert!(
+            (angles[4] - std::f64::consts::FRAC_PI_2).abs() < 1e-12,
+            "fin exacte"
+        );
+        assert!(
+            (angles[2] - std::f64::consts::PI).abs() < 1e-12,
+            "le sens horaire passe par 180°"
+        );
+    }
+
+    /// Une fin confondue avec le début dessine le cercle entier
+    /// (ADR-0020).
+    #[test]
+    fn balayage_nul_dessine_le_cercle_entier() {
+        let angles = angles_arc(Angle::from_radians(1.0), Angle::from_radians(1.0), 2);
+        assert_eq!(angles.len(), 3, "segments + 1 points");
+        assert!(
+            (angles[2] - (1.0 + std::f64::consts::TAU)).abs() < 1e-12,
+            "tour complet"
+        );
+    }
+}

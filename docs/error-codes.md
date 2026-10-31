@@ -70,6 +70,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 |---|---|---|---|
 | OF-GEO-0001 | Indice de sommet hors du maillage | Triangle référençant un sommet absent | Corriger le maillage source |
 | OF-GEO-0002 | Coordonnée non finie | NaN ou infini dans une coordonnée | Corriger les données d'entrée |
+| OF-GEO-0003 | Coordonnée hors de la borne de magnitude | Valeur finie au-delà de 1e9 mm | Corriger les données d'entrée |
 
 ## forge-io (IO) — import/export
 

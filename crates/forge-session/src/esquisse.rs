@@ -69,6 +69,11 @@ const SEUIL_GRAINES_CONFONDUES_MM: f64 = 1e-6;
 /// écart invisible à l'écran — les graines ne sont que des points
 /// de départ.
 const ECART_GRAINES_CONFONDUES_MM: f64 = 1e-3;
+/// Borne de magnitude des coordonnées d'esquisse, en millimètres :
+/// miroir de la constante équivalente de forge-geom (forge-session
+/// ne dépend pas de forge-geom, la valeur est dupliquée à dessein) —
+/// au-delà, la coordonnée est refusée (A4-13b, audit n°4).
+const BORNE_COORDONNEE_MM: f64 = 1e9;
 
 /// Version de schéma de `sketch.constraint.updated` : type nouveau de
 /// la phase E, né en v1 — son champ `valeur` suit le schéma des
@@ -1689,12 +1694,14 @@ impl EsquisseProjection {
 
     /// Raison pour laquelle une coordonnée n'est pas un nombre fini.
     fn raison_finie(valeur: f64, nom: &str) -> Option<String> {
-        if valeur.is_finite() {
-            None
-        } else {
+        if !valeur.is_finite() {
             Some(format!("{nom} doit être un nombre fini"))
+        } else if valeur.abs() > BORNE_COORDONNEE_MM {
+            Some(format!("{nom} dépasse la borne de magnitude"))
+        } else {
+            None
         }
-    }
+}
 
     /// Raison pour laquelle une cote n'est pas finie et strictement
     /// positive.
@@ -1997,7 +2004,6 @@ impl Projection for EsquisseProjection {
         ]
     }
 }
-
 
 #[cfg(test)]
 mod tests {
