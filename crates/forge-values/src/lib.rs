@@ -258,7 +258,7 @@ impl ValueGraph {
     /// Définit l'expression de la valeur nommée, avec son unité déclarée
     /// et son origine. La cohérence des unités est vérifiée à la
     /// définition (OF-VAL-0007) : une unité déclarée ne peut lire que
-    /// des nœuds de la même unité ou sans unité.
+    /// des nœuds de la même unité ou sans unité. Un refus sur un nœud
     /// tout neuf ne laisse pas de nœud fantôme : le nœud est retiré
     /// (audit n°3, A3-09), l'état antérieur tient.
     pub fn set_expression_unite(
