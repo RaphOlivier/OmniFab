@@ -53,6 +53,9 @@ impl Default for StlBudgets {
 
 /// Importe un STL (binaire ou ASCII, détection par cohérence des
 /// tailles) en maillage. Les coordonnées sont lues en millimètres.
+/// La détection tolérante précède le test ASCII : un binaire
+/// « solid » portant du bourrage reste lu en binaire (audit n°3,
+/// A3-14).
 ///
 /// Les budgets protègent contre les fichiers démesurés (ADR-0009) ;
 /// [`StlBudgets::default`] couvre les fichiers réels des logiciels
@@ -67,11 +70,11 @@ pub fn import(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
     if est_binaire(bytes) {
         return import_binaire(bytes, budgets);
     }
-    if est_ascii(bytes) {
-        return import_ascii(bytes, budgets);
-    }
     if est_binaire_tolerant(bytes) {
         return import_binaire(bytes, budgets);
+    }
+    if est_ascii(bytes) {
+        return import_ascii(bytes, budgets);
     }
     Err(IoError::UnknownFormat)
 }
@@ -177,7 +180,9 @@ fn import_binaire(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
 }
 
 /// Importe un STL ASCII (sous-ensemble strict, cf. documentation du
-/// module).
+/// module). Tous les mots d'une ligne sont lus : des fins de ligne
+/// CR seules ou des facettes entassées ne produisent plus un import
+/// silencieusement vide (audit n°3, A3-15).
 fn import_ascii(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
     let text = std::str::from_utf8(bytes).map_err(|_| ascii(1, "octets non UTF-8"))?;
@@ -189,81 +194,99 @@ fn import_ascii(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
     for (index, ligne) in text.split('\n').enumerate() {
         let numero = index + 1;
         let mut tokens = ligne.split_whitespace();
-        let Some(mot) = tokens.next() else {
-            continue;
-        };
-        let mot = mot.to_ascii_lowercase();
-        match mot.as_str() {
-            "solid" | "endsolid" => {}
-            "facet" => {
-                if en_facet {
-                    return Err(ascii(numero, "facet imbriqué"));
+        // Tous les mots de la ligne sont lus (audit n°3, A3-15) :
+        // des fins de ligne CR seules (tout le fichier sur une
+        // « ligne ») ou des facettes entassées ne produisent plus
+        // un import silencieusement vide.
+        let mut nom_de_solide = false;
+        while let Some(mot) = tokens.next() {
+            let mot = mot.to_ascii_lowercase();
+            match mot.as_str() {
+                "solid" | "endsolid" => {
+                    // Le nom du solide peut suivre sur la même
+                    // ligne : les jetons non reconnus sont ignorés
+                    // jusqu'au prochain mot-clé.
+                    nom_de_solide = true;
                 }
-                let Some(nom) = tokens.next() else {
-                    return Err(ascii(numero, "attendu : facet normal"));
-                };
-                if !nom.eq_ignore_ascii_case("normal") {
-                    return Err(ascii(numero, "attendu : facet normal"));
+                "facet" => {
+                    nom_de_solide = false;
+                    if en_facet {
+                        return Err(ascii(numero, "facet imbriqué"));
+                    }
+                    let Some(nom) = tokens.next() else {
+                        return Err(ascii(numero, "attendu : facet normal"));
+                    };
+                    if !nom.eq_ignore_ascii_case("normal") {
+                        return Err(ascii(numero, "attendu : facet normal"));
+                    }
+                    for _ in 0..3 {
+                        nombre(tokens.next(), numero)?;
+                    }
+                    en_facet = true;
+                    en_boucle = false;
+                    facet_vertices = [None, None, None];
                 }
-                for _ in 0..3 {
-                    nombre(tokens.next(), numero)?;
+                "outer" => {
+                    nom_de_solide = false;
+                    if !en_facet {
+                        return Err(ascii(numero, "outer loop hors facet"));
+                    }
+                    let Some(nom) = tokens.next() else {
+                        return Err(ascii(numero, "attendu : outer loop"));
+                    };
+                    if !nom.eq_ignore_ascii_case("loop") {
+                        return Err(ascii(numero, "attendu : outer loop"));
+                    }
+                    en_boucle = true;
                 }
-                en_facet = true;
-                en_boucle = false;
-                facet_vertices = [None, None, None];
+                "vertex" => {
+                    nom_de_solide = false;
+                    if !en_boucle {
+                        return Err(ascii(numero, "sommet hors boucle"));
+                    }
+                    let x = nombre(tokens.next(), numero)?;
+                    let y = nombre(tokens.next(), numero)?;
+                    let z = nombre(tokens.next(), numero)?;
+                    let a = Length::from_millimeters(x);
+                    let b = Length::from_millimeters(y);
+                    let c = Length::from_millimeters(z);
+                    let point = Point3::new(a, b, c).map_err(IoError::InvalidGeometry)?;
+                    let Some(slot) = facet_vertices.iter_mut().find(|slot| slot.is_none()) else {
+                        return Err(ascii(numero, "plus de trois sommets dans la boucle"));
+                    };
+                    *slot = Some(point);
+                }
+                "endloop" => {
+                    nom_de_solide = false;
+                    en_boucle = false;
+                }
+                "endfacet" => {
+                    nom_de_solide = false;
+                    if !en_facet {
+                        return Err(ascii(numero, "endfacet sans facet"));
+                    }
+                    let points = match facet_vertices {
+                        [Some(a), Some(b), Some(c)] => [a, b, c],
+                        _ => return Err(ascii(numero, "trois sommets attendus par facet")),
+                    };
+                    if triangles.len() >= budgets.max_triangles as usize {
+                        return Err(IoError::TooManyTriangles {
+                            found: triangles.len() as u64 + 1,
+                            max: budgets.max_triangles as u64,
+                        });
+                    }
+                    let base = compte_u32(vertices.len())?;
+                    vertices.extend(points);
+                    triangles.push([base, base + 1, base + 2]);
+                    en_facet = false;
+                    en_boucle = false;
+                }
+                _ => {
+                    if !nom_de_solide {
+                        return Err(ascii(numero, &format!("mot-clé inattendu « {mot} »")));
+                    }
+                }
             }
-            "outer" => {
-                if !en_facet {
-                    return Err(ascii(numero, "outer loop hors facet"));
-                }
-                let Some(nom) = tokens.next() else {
-                    return Err(ascii(numero, "attendu : outer loop"));
-                };
-                if !nom.eq_ignore_ascii_case("loop") {
-                    return Err(ascii(numero, "attendu : outer loop"));
-                }
-                en_boucle = true;
-            }
-            "vertex" => {
-                if !en_boucle {
-                    return Err(ascii(numero, "sommet hors boucle"));
-                }
-                let x = nombre(tokens.next(), numero)?;
-                let y = nombre(tokens.next(), numero)?;
-                let z = nombre(tokens.next(), numero)?;
-                let a = Length::from_millimeters(x);
-                let b = Length::from_millimeters(y);
-                let c = Length::from_millimeters(z);
-                let point = Point3::new(a, b, c).map_err(IoError::InvalidGeometry)?;
-                let Some(slot) = facet_vertices.iter_mut().find(|slot| slot.is_none()) else {
-                    return Err(ascii(numero, "plus de trois sommets dans la boucle"));
-                };
-                *slot = Some(point);
-            }
-            "endloop" => {
-                en_boucle = false;
-            }
-            "endfacet" => {
-                if !en_facet {
-                    return Err(ascii(numero, "endfacet sans facet"));
-                }
-                let points = match facet_vertices {
-                    [Some(a), Some(b), Some(c)] => [a, b, c],
-                    _ => return Err(ascii(numero, "trois sommets attendus par facet")),
-                };
-                if triangles.len() >= budgets.max_triangles as usize {
-                    return Err(IoError::TooManyTriangles {
-                        found: triangles.len() as u64 + 1,
-                        max: budgets.max_triangles as u64,
-                    });
-                }
-                let base = compte_u32(vertices.len())?;
-                vertices.extend(points);
-                triangles.push([base, base + 1, base + 2]);
-                en_facet = false;
-                en_boucle = false;
-            }
-            _ => return Err(ascii(numero, &format!("mot-clé inattendu « {mot} »"))),
         }
     }
     if en_facet {
