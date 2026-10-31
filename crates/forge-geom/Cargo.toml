@@ -2,10 +2,12 @@
 name = "forge-geom"
 description = "Géométrie minimale du noyau : tracés 2D et maillage indexé, unités strictes à la frontière — ADR-0009."
 license = "MPL-2.0"
-repository = "https://github.com/RaphOlivier/OmniFab"
 version.workspace = true
 edition.workspace = true
 
 [dependencies]
 forge-units = { path = "../forge-units" }
 thiserror.workspace = true
+
+[lints]
+workspace = true

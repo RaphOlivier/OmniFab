@@ -10,3 +10,6 @@ edition.workspace = true
 fluent = "0.17.0"
 thiserror = { workspace = true }
 unic-langid = "0.9.6"
+
+[lints]
+workspace = true

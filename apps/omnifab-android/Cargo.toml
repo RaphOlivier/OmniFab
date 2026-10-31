@@ -33,3 +33,6 @@ build_targets = ["aarch64-linux-android"]
 
 [package.metadata.android.application]
 label = "OmniFab PoC"
+
+[lints]
+workspace = true

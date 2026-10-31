@@ -106,9 +106,11 @@ impl Scene2D {
             }
             if trace.is_closed() {
                 // fermeture : dernier sommet vers premier
+                #[expect(clippy::expect_used)]
                 let premier = points
                     .first()
                     .expect("invariant : garde len < 2 → continue ci-dessus");
+                #[expect(clippy::expect_used)]
                 let dernier = points
                     .last()
                     .expect("invariant : garde len < 2 → continue ci-dessus");

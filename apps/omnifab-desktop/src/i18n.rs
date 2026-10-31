@@ -10,6 +10,7 @@ pub use forge_i18n::Catalogue;
 const FR: &str = include_str!("../locales/fr/main.ftl");
 
 /// Catalogue français du démonstrateur.
+#[expect(clippy::expect_used)]
 pub fn catalogue() -> Catalogue {
     Catalogue::depuis_ftl("fr", FR).expect("invariant : FTL embarqué, pincé par les tests i18n")
 }

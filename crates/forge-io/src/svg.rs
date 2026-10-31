@@ -215,6 +215,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
         // dimension est plancher à la marge du trait (audit n°2, N9).
         let largeur = (max_x - min_x).max(MARGE_BOITE_PLATE);
         let hauteur = (max_y - min_y).max(MARGE_BOITE_PLATE);
+        #[expect(clippy::expect_used)]
         writeln!(
             sortie,
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{largeur}mm\" height=\"{hauteur}mm\" viewBox=\"{min_x} {min_y} {largeur} {hauteur}\">"
@@ -234,6 +235,7 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
                 sortie.push(' ');
             }
             let marque = if index == 0 { 'M' } else { 'L' };
+            #[expect(clippy::expect_used)]
             write!(
                 sortie,
                 "{marque} {} {}",

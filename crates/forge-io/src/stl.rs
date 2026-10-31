@@ -91,14 +91,17 @@ pub fn export(mesh: &Mesh) -> Result<Vec<u8>, IoError> {
     sortie.extend_from_slice(&[0u8; 80 - EN_TETE.len()]);
     sortie.extend_from_slice(&total.to_le_bytes());
     for &[ia, ib, ic] in mesh.triangles() {
+        #[expect(clippy::expect_used)]
         let a = mesh
             .vertices()
             .get(ia as usize)
             .expect("invariant : indices validés par Mesh::from_parts");
+        #[expect(clippy::expect_used)]
         let b = mesh
             .vertices()
             .get(ib as usize)
             .expect("invariant : indices validés par Mesh::from_parts");
+        #[expect(clippy::expect_used)]
         let c = mesh
             .vertices()
             .get(ic as usize)
@@ -123,6 +126,7 @@ fn est_binaire(bytes: &[u8]) -> bool {
     if bytes.len() < 84 {
         return false;
     }
+    #[expect(clippy::expect_used)]
     let compteur = u32::from_le_bytes(
         bytes[80..84]
             .try_into()
@@ -139,6 +143,7 @@ fn est_binaire_tolerant(bytes: &[u8]) -> bool {
     if bytes.len() < 84 {
         return false;
     }
+    #[expect(clippy::expect_used)]
     let compteur = u32::from_le_bytes(
         bytes[80..84]
             .try_into()
@@ -162,6 +167,7 @@ fn est_ascii(bytes: &[u8]) -> bool {
 /// Importe un STL binaire (appelée après détection binaire, exacte
 /// ou tolérante — les octets excédentaires sont ignorés).
 fn import_binaire(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
+    #[expect(clippy::expect_used)]
     let compteur = u32::from_le_bytes(
         bytes[80..84]
             .try_into()
@@ -308,6 +314,7 @@ fn import_ascii(bytes: &[u8], budgets: &StlBudgets) -> Result<Mesh, IoError> {
 }
 
 /// Lit un `f32` petit-boutiste à l'offset donné.
+#[expect(clippy::expect_used)]
 fn lire_f32(bytes: &[u8], offset: usize) -> f32 {
     f32::from_le_bytes(
         bytes[offset..offset + 4]

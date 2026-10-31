@@ -30,3 +30,6 @@ uuid.workspace = true
 # Solveur natif pour les tests de résolution du croquis (ADR-0018) ;
 # l'app Android ne construit pas forge-gcs-sys.
 forge-gcs = { path = "../forge-gcs" }
+
+[lints]
+workspace = true

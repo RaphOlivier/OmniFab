@@ -17,6 +17,11 @@
 //! (triplet `VCPKG_TARGET_TRIPLET` ou `x64-windows` par défaut) —
 //! ignorée sur les autres cibles (A4-06).
 
+// Convention expect v2 (2026-10-31, lot E) : expect admis dans
+// build.rs — cargo garantit l'environnement de build, un build qui
+// échoue doit échouer bruyamment.
+#![allow(clippy::expect_used)]
+
 use std::env;
 use std::path::PathBuf;
 

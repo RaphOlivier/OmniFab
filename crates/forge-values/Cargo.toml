@@ -9,3 +9,6 @@ edition.workspace = true
 [dependencies]
 libm.workspace = true
 thiserror.workspace = true
+
+[lints]
+workspace = true

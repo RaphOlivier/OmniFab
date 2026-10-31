@@ -181,9 +181,11 @@ impl Scene3D {
                 });
             }
             if trace.is_closed() {
+                #[expect(clippy::expect_used)]
                 let premier = points
                     .first()
                     .expect("invariant : garde len < 2 → continue ci-dessus");
+                #[expect(clippy::expect_used)]
                 let dernier = points
                     .last()
                     .expect("invariant : garde len < 2 → continue ci-dessus");

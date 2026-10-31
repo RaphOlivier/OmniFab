@@ -219,9 +219,11 @@ pub fn export(traces: &[Path2]) -> Result<Vec<u8>, IoError> {
             ajoute_ligne(&mut dessin, &fenetre[0], &fenetre[1]);
         }
         if trace.is_closed() && points.len() >= 3 {
+            #[expect(clippy::expect_used)]
             let premier = points
                 .first()
                 .expect("invariant : garde len < 2 → continue ci-dessus");
+            #[expect(clippy::expect_used)]
             let dernier = points
                 .last()
                 .expect("invariant : garde len < 2 → continue ci-dessus");

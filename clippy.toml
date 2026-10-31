@@ -1,0 +1,4 @@
+# Convention expect v2 (2026-10-31, lot E) : les tests utilisent
+# massivement expect — le lint workspace expect_used ne doit pas
+# les signaler (la CI tourne clippy --all-targets).
+allow-expect-in-tests = true

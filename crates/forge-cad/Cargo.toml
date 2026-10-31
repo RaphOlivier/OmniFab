@@ -15,3 +15,6 @@ opencascade = "0.3"
 glam = "0.24"
 thiserror.workspace = true
 uuid.workspace = true
+
+[lints]
+workspace = true
