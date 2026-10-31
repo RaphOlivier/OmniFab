@@ -2,7 +2,7 @@
 name: archives
 description: "Archives des discussions OmniFab : résumés datés et argumentaires des conversations significatives (raisonnement, débats, décisions), complément des fiches de décisions."
 ---
-**Version :** v14 (2026-10-29) — ajout de l'entrée audit externe n°4 (rapport + verdicts validés en bloc : 0 réfuté, A4-11/12/15 corrigés le jour même, A4-14 confirmé par l'exécution du spike) ; v13 (2026-10-26) — ajout de l'entrée session sans PC n°2 (convergence documentation + patchs expect)
+**Version :** v15 (2026-10-31) — ajout de l'entrée [J3] A3-08 (validation des entrées forge-cad avant le pont OCCT, PR #519, squash `7a8c53a`) ; v14 (2026-10-29) — ajout de l'entrée audit externe n°4 (rapport + verdicts validés en bloc : 0 réfuté, A4-11/12/15 corrigés le jour même, A4-14 confirmé par l'exécution du spike) ; v13 (2026-10-26) — ajout de l'entrée session sans PC n°2 (convergence documentation + patchs expect)
 
 # Archives des discussions
 
@@ -13,6 +13,7 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 
 ## Index
 
+- [2026-10-29 — [J0] Audit externe n°4- [2026-10-31 — [J3] A3-08 : validation des entrées forge-cad avant le pont OCCT (PR #519, squash `7a8c53a`)](2026-10-31-j3-a3-08-validation-entrees-cad.md) — rouge `5c05606` constaté par #518 avant correctif ; reprises #522/#523/#524 (E0433 puis E0609 : le Mesh opencascade expose `normals`, la francisation est réservée à l'API publique) ; valider_contour + dimensions finies > 0 strict AVANT le pont cxx, garde est_vide (soustraction vide refusée, volume absolu), fichiers temporaires 0o600 à garde RAII ; dette A3-08.e (formes_max réel au lot 2) et contours auto-sécants (lot 1).
 - [2026-10-29 — [J0] Audit externe n°4 (Claude) : 15 signalements A4 + vérification des correctifs du n°3 — verdicts validés en bloc (0 réfuté ; A4-11/12/15 corrigés le jour même, A4-14 confirmé par l'exécution du spike v41)](2026-10-29-j0-audit4-claude.md) — A4-01/02/03 (gels à l'ouverture : boucle de grille non bornée → OOM, wireframe STL par frame, `unknown` O(n²)) insérés après A3-02/03 (décision Raphaël) ; workflow cargo-deny activé ; conformité licence réécrite (sources recompilables + GPL-3.0+) ; corps de la fiche état-actuel rafraîchi (v42) ; backlog `preparation/backlog-audit4.md` ; **SHA rattachés le jour même** : zip n°2 = `21dc112` (vérifié au contenu), zip n°1 = `21d1cf9`/`fca2a84` (code identique).
 
 - [2026-10-26 — [J0] Session sans PC n°2 : convergence documentation + patchs `expect` pré-spécifiés (spécifs phase D, lot EN matrice, sommaire général, ADR-0016/0019 comblés)](2026-10-26-j0-sans-pc-convergence-docs.md) — 21 spécifs test-first phase D (OF-VAL-0010 seul nouveau code) ; matrice EN en-têtes (conventions v6) ; sommaire général cliquable FR+EN demandé par Raphaël (conventions v7 : règle de maintenance) ; ADR-0016/0019 poussés (0019 fusionné) — numérotation 0000→0028 complète ; patchs expect pré-spécifiés lots A-E (un seul vrai chemin de panique, refus typé OF-SES) + reliquat « PRÉPARATION » de aide.rs repéré.
@@ -60,3 +61,5 @@ Complément des fiches : les fiches portent les **décisions** ; ces archives pr
 - v12 (2026-10-26) : ajout de l'entrée [J4] ouverture du jalon 4 — lot ADR-0029..0034 validé en une session sans PC + conventions `expect` tranchées.
 - v13 (2026-10-26, soir) : ajout de l'entrée [J0] session sans PC n°2 (spécifs phase D, lot EN matrice, sommaire général, ADR-0016/0019, patchs expect) ; constat : l'index miroir dépôt était en retard (v10) — resynchronisation dans la foulée (3 fichiers + index).
 - v14 (2026-10-29) : ajout de l'entrée [J0] audit externe n°4 (rapport + verdicts du mainteneur validés en bloc — 0 réfuté ; A4-11/12/15 corrigés le jour même en doc/outillage, A4-14 confirmé par l'exécution du spike, A4-01/02/03 insérés après A3-02/03) ; SHA rattachés le jour même : zip n°2 = `21dc112` (vérifié au contenu), zip n°1 = `21d1cf9`/`fca2a84` (aucun code ne les sépare).
+
+- v15 (2026-10-31) : ajout de l'entrée [J3] A3-08 (validation des entrées forge-cad : contour >= 3 points distincts, aire > 0, hauteur > 0 strict, garde booléen vide, fichiers temporaires privés ; PR #519 → squash `7a8c53a` ; reprises E0433/E0609 documentées par #522/#523/#524 ; dette A3-08.e reportée au lot 2).
