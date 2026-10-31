@@ -341,4 +341,16 @@ mod tests {
         );
         assert_eq!(sol.min_x, -32.0 * 100.0, "borné autour de la cible");
     }
+    /// A4-13a (audit n°4) : un facteur de zoom non fini ou négatif
+    /// est ignoré — la distance à la cible reste intacte, NaN ne
+    /// l'empoisonne pas.
+    #[test]
+    fn zoomer_ignore_facteur_non_fini_ou_negatif() {
+        let mut camera = Camera3D::nouvelle();
+        let distance_avant = camera.distance;
+        for facteur in [f64::NAN, 0.0, -2.0] {
+            camera.zoomer(facteur);
+            assert_eq!(camera.distance, distance_avant, "distance intacte");
+        }
+    }
 }

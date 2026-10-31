@@ -246,4 +246,14 @@ mod tests {
         assert!(!ouvert.is_closed());
         assert!(ferme.is_closed());
     }
+    #[test]
+    fn point_hors_borne_refuse() {
+        // A4-13b (audit n°4) : une coordonnée finie mais au-delà de
+        // la borne commune est refusée (OF-GEO-0003) — 10^300 mm
+        // empoisonneraient caméras et solveur.
+        let erreur = Point2::new(Length::from_millimeters(1e300), Length::ZERO);
+        assert_eq!(erreur.unwrap_err().code(), "OF-GEO-0003");
+        let erreur = Point3::new(Length::from_millimeters(-1e300), Length::ZERO, Length::ZERO);
+        assert_eq!(erreur.unwrap_err().code(), "OF-GEO-0003");
+    }
 }

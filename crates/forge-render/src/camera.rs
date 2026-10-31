@@ -180,4 +180,19 @@ mod tests {
         };
         assert_eq!(camera.vers_ecran((12.0, -7.0)), (0.0, 0.0));
     }
+    /// A4-13a (audit n°4) : un facteur de zoom non fini ou négatif
+    /// est ignoré — la caméra reste intacte, NaN ne l'empoisonne
+    /// pas.
+    #[test]
+    fn zoom_ignore_facteur_non_fini_ou_negatif() {
+        let mut camera = Camera2D {
+            centre_mm: (12.0, -7.0),
+            echelle: 3.0,
+        };
+        for facteur in [f64::NAN, 0.0, -2.0] {
+            camera.zoom_au_curseur((40.0, 20.0), facteur);
+            assert_eq!(camera.centre_mm, (12.0, -7.0), "centre intact");
+            assert_eq!(camera.echelle, 3.0, "échelle intacte");
+        }
+    }
 }
