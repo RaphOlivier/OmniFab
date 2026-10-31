@@ -40,7 +40,10 @@ fn boite_invalide_rejetee() {
         let erreur = Solide::boite(mm(largeur), mm(profondeur), mm(hauteur))
             .unwrap_err()
             .code();
-        assert_eq!(erreur, "OF-CAD-0002", "cas {largeur}×{profondeur}×{hauteur}");
+        assert_eq!(
+            erreur, "OF-CAD-0002",
+            "cas {largeur}×{profondeur}×{hauteur}"
+        );
     }
 }
 
@@ -79,11 +82,7 @@ fn prisme_moins_de_trois_points_rejete() {
 #[test]
 fn prisme_points_confondus_rejete() {
     // spike phase A, cas 1 : points confondus → abort C++ StdFail_NotDone.
-    let confondus = [
-        (mm(5.0), mm(5.0)),
-        (mm(5.0), mm(5.0)),
-        (mm(5.0), mm(5.0)),
-    ];
+    let confondus = [(mm(5.0), mm(5.0)), (mm(5.0), mm(5.0)), (mm(5.0), mm(5.0))];
     let erreur = Solide::prisme(&confondus, mm(5.0)).unwrap_err().code();
     assert_eq!(erreur, "OF-CAD-0002");
 
@@ -112,11 +111,7 @@ fn prisme_points_confondus_rejete() {
 #[test]
 fn prisme_points_alignes_rejete() {
     // trois points alignés : aire nulle (formule du lacet).
-    let alignes = [
-        (mm(0.0), mm(0.0)),
-        (mm(10.0), mm(0.0)),
-        (mm(20.0), mm(0.0)),
-    ];
+    let alignes = [(mm(0.0), mm(0.0)), (mm(10.0), mm(0.0)), (mm(20.0), mm(0.0))];
     let erreur = Solide::prisme(&alignes, mm(5.0)).unwrap_err().code();
     assert_eq!(erreur, "OF-CAD-0002");
 }
@@ -147,9 +142,7 @@ fn prisme_hauteur_invalide_rejetee() {
 fn prisme_contour_trop_long_rejete() {
     // convention « entrées bornées » (v12) : le contour est plafonné
     // avant le contrôle de distinctness O(n²).
-    let contour: Vec<(Length, Length)> = (0..5001)
-        .map(|i| (mm(i as f64), mm(0.0)))
-        .collect();
+    let contour: Vec<(Length, Length)> = (0..5001).map(|i| (mm(i as f64), mm(0.0))).collect();
     let erreur = Solide::prisme(&contour, mm(5.0)).unwrap_err().code();
     assert_eq!(erreur, "OF-CAD-0002");
 }
