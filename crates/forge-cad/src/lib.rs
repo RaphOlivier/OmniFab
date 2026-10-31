@@ -10,6 +10,7 @@
 //! [`Length`], jamais de `f64` nu dans l'API publique.
 
 #![deny(missing_docs)]
+#![forbid(unsafe_code)]
 
 pub mod erreur;
 mod occt;

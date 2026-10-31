@@ -12,6 +12,11 @@
 //! shim) sont documentées dans le header du shim et dans le MANIFEST
 //! de `third_party/planegcs`.
 //!
+//! Exemption `unsafe` (audit n°4, A4-08) : cette crate EST la
+//! frontière FFI de l'ADR-0013 — ses déclarations bindgen ne sont
+//! consommées que par forge-gcs ; toutes les autres crates du
+//! workspace portent `#![forbid(unsafe_code)]`.
+//!
 //! Le code ci-dessous est **généré** : ne jamais l'éditer à la main ; le
 //! header source fait foi.
 //!

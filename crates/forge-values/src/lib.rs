@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! # forge-values — moteur unique de liaisons paramétriques
 //!
 //! (ADR-0000 verrou nº6, ADR-0002.) Un seul graphe de dépendances réactif

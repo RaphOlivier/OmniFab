@@ -18,6 +18,7 @@
 //! d'affichage.
 
 #![deny(missing_docs)]
+#![forbid(unsafe_code)]
 
 mod camera;
 mod camera3d;

@@ -5,6 +5,12 @@
 //! traduit uniquement les codes d'erreur ABI en [`GcsError`] typée.
 //! Les valeurs de cote deviennent des paramètres **fixes** du solveur
 //! (cf. `Contrainte`) : c'est ce que pilotera forge-values en phase E.
+//!
+//! Exemption `unsafe` (audit n°4, A4-08) : tout le `unsafe` de la
+//! crate vit dans ce module — c'est la frontière FFI de l'ADR-0013,
+//! chaque appel un pont ABI audité vers le shim C. forge-gcs et
+//! forge-gcs-sys sont les deux seules crates du workspace qui
+//! l'autorisent ; toutes les autres portent `#![forbid(unsafe_code)]`.
 
 use crate::{
     Algorithme, Contrainte, Diagnostic, GcsError, IdArc, IdCercle, IdLigne, IdPoint, Solveur2D,

@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! # forge-session — session, commandes et undo/redo
 //!
 //! (ADR-0008, ouverture du jalon 1 ; ADR-0011, intégration au
