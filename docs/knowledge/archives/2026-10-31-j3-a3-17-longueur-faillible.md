@@ -29,7 +29,7 @@ L'audit n°3 (signalement A3-17) relevait que `Length::from_millimeters` accepte
 
 - Vert de branche : check runs de la PR #540 (tête `02f9139`) — lint-test fmt+clippy+tests+rustdoc ✅, build ubuntu ✅, build macos ✅, check aarch64 ✅, APK ✅ (windows en cours à la fusion, non arbitre).
 - Fusion squash → main `bfa1045` ; issue #539 fermée completed (motif : rouge test-first attendu), 0 issue ouverte.
-- Run main ci.yml #453 sur `bfa1045` : verdict à relever (arbitre final) — sera consigné par la relève suivante.
+- Run main ci.yml #453 sur `bfa1045` : **SUCCESS en 5 m 52 s** (arbitre final, relève v55.1) — main vert au moment du relevé.
 
 ---
 
