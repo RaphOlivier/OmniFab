@@ -7,29 +7,38 @@
 use forge_gcs::{Algorithme, Contrainte, GcsError, Solveur2D, Systeme2D};
 use forge_units::Length;
 
-/// 40 contraintes de distance identiques entre deux points libres :
-/// une seule équation indépendante, les autres sont redondantes — la
-/// liste dépasse le plafond GCS_MAX_TAGS (32) du shim et le diagnostic
-/// doit le signaler (A4-04).
+/// 40 paires de points indépendantes, chacune portant deux contraintes
+/// de distance identiques : le diagnostic de planegcs retire une
+/// contrainte par groupe de conflit indépendant (concours de
+/// popularité), donc une redondance par paire — 40 tags redondants.
+/// La liste dépasse le plafond GCS_MAX_TAGS (32) du shim et le
+/// diagnostic doit le signaler (A4-04). NB : 40 doublons sur une seule
+/// paire ne produisent qu'un seul tag redondant (constaté par le run
+/// 41219054942, issue #544).
 #[test]
 fn diagnostic_signale_la_troncature_des_listes() -> Result<(), GcsError> {
     let mut solveur = Systeme2D::new()?;
-    let a = solveur.ajouter_point(Length::from_millimeters(0.0), Length::from_millimeters(0.0))?;
-    let b = solveur.ajouter_point(
-        Length::from_millimeters(10.0),
-        Length::from_millimeters(0.0),
-    )?;
     for _ in 0..40 {
-        solveur.ajouter_contrainte(Contrainte::Distance {
-            p1: a,
-            p2: b,
-            valeur: Length::from_millimeters(10.0),
-        })?;
+        let a = solveur.ajouter_point(
+            Length::from_millimeters(0.0),
+            Length::from_millimeters(0.0),
+        )?;
+        let b = solveur.ajouter_point(
+            Length::from_millimeters(10.0),
+            Length::from_millimeters(0.0),
+        )?;
+        for _ in 0..2 {
+            solveur.ajouter_contrainte(Contrainte::Distance {
+                p1: a,
+                p2: b,
+                valeur: Length::from_millimeters(10.0),
+            })?;
+        }
     }
     let diagnostic = solveur.diagnostic(Algorithme::DogLeg)?;
     assert!(
         diagnostic.tronque(),
-        "40 contraintes redondantes : la troncature à 32 doit être signalée"
+        "40 redondances indépendantes : la troncature à 32 doit être signalée"
     );
     assert!(
         diagnostic.redondantes().len() <= 32,
