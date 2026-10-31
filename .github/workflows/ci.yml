@@ -91,7 +91,13 @@ jobs:
           } > rapport-complet.md
           head -c 55000 rapport-complet.md > rapport.md
           cat rapport.md
-          gh issue create --title "CI : echec lint-test @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+                    MOTIF="CI : echec lint-test"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec lint-test @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.verifs.outputs.fail == '1'
         run: |
@@ -177,7 +183,13 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-          gh issue create --title "CI : echec build (${{ matrix.os }}) @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+                    MOTIF="CI : echec build (${{ matrix.os }})"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec build (${{ matrix.os }}) @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.compil.outputs.fail == '1'
         shell: bash
@@ -230,7 +242,13 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-          gh issue create --title "CI : echec check aarch64 @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+                    MOTIF="CI : echec check aarch64"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec check aarch64 @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.cross.outputs.fail == '1'
         run: |

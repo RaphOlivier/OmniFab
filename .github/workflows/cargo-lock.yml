@@ -77,7 +77,13 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-          gh issue create --title "CI : echec regen Cargo.lock @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+                    MOTIF="CI : echec regen Cargo.lock"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec regen Cargo.lock @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.resolv.outputs.fail == '1'
         run: |
