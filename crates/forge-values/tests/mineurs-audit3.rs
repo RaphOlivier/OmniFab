@@ -14,7 +14,7 @@ fn expression_refusee_ne_laisse_pas_de_noeud_fantome() {
     assert!(graphe.set_expression("a", "1/").is_err());
     let lecture = graphe.value("a");
     assert!(
-        matches!(lecture, Err(ValuesError::UnknownValue { name }) if name == "a"),
+        matches!(&lecture, Err(ValuesError::UnknownValue { name }) if name == "a"),
         "nœud fantôme après un refus : {lecture:?}"
     );
     assert!(

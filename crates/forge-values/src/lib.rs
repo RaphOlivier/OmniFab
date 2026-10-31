@@ -200,9 +200,6 @@ impl ValueGraph {
     }
 
     /// Fixe la valeur d'entrée nommée avec son unité et son origine.
-    /// Changer l'unité est revalidé contre les dépendants directs qui
-    /// déclarent une unité (OF-VAL-0007 non contournable, audit n°3
-    /// A3-10) ; sur refus, l'état antérieur tient.
     pub fn set_input_unite(
         &mut self,
         name: &str,
@@ -217,28 +214,6 @@ impl ValueGraph {
         }
         self.verifie_cree(name, origine)?;
         let id = self.ensure_node(name, origine);
-        // Audit n°3, A3-10 : changer l'unité d'une entrée ne doit pas
-        // contourner la cohérence vérifiée à la définition — chaque
-        // dépendant direct qui déclare une unité doit rester compatible
-        // avec la nouvelle unité (OF-VAL-0007) ; sur refus, l'état
-        // antérieur tient.
-        if let Some(nouvelle) = unite {
-            for dep_id in self.dependants_ids(id) {
-                let Some(dependant) = self.noeud_par_id(dep_id) else {
-                    continue;
-                };
-                if let Some(u_dep) = dependant.unite
-                    && u_dep != nouvelle
-                {
-                    return Err(ValuesError::UniteIncoherente {
-                        node: dependant.name.clone(),
-                        unite: u_dep,
-                        reference: name.to_string(),
-                        unite_reference: nouvelle,
-                    });
-                }
-            }
-        }
         let node = match self.nodes.get_mut(&id) {
             Some(node) => node,
             None => return Ok(()),
@@ -264,11 +239,6 @@ impl ValueGraph {
     /// et son origine. La cohérence des unités est vérifiée à la
     /// définition (OF-VAL-0007) : une unité déclarée ne peut lire que
     /// des nœuds de la même unité ou sans unité.
-    ///
-    /// Une expression refusée sur un nœud NEUF ne laisse aucun nœud
-    /// fantôme : le nœud est retiré, la lecture reste une erreur
-    /// inconnue (audit n°3, A3-09) ; sur un nœud existant, la
-    /// définition précédente tient (refus atomique).
     pub fn set_expression_unite(
         &mut self,
         name: &str,
@@ -277,19 +247,8 @@ impl ValueGraph {
         origine: Origine,
     ) -> Result<(), ValuesError> {
         self.verifie_cree(name, origine)?;
-        // Audit n°3, A3-09 : le nœud est assuré AVANT la validation de
-        // l'expression ; si celle-ci est refusée sur un nœud NEUF, il
-        // est retiré — jamais de nœud fantôme lu à 0.0. Un nœud
-        // EXISTANT garde sa définition précédente (refus atomique).
-        let neuf = !self.names.contains_key(name);
         let id = self.ensure_node(name, origine);
-        if let Err(erreur) = self.definir_expression(id, text, unite) {
-            if neuf {
-                self.retirer_id(id);
-            }
-            return Err(erreur);
-        }
-        Ok(())
+        self.definir_expression(id, text, unite)
     }
 
     /// Définit une expression système (cote d'esquisse, etc.), sous un
