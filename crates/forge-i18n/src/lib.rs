@@ -62,6 +62,21 @@ mod tests {
     }
 
     #[test]
+    fn traduction_entier_sans_marques_d_isolation() {
+        // A4-09 : Fluent isole tout placeable — les nombres compris —
+        // derrière FSI/PDI (U+2068/U+2069). OmniFab affiche dans ses
+        // propres widgets egui, sans texte mixte directionnel : les
+        // marques n'ont pas d'usage et polluent les chaînes.
+        let texte = catalogue()
+            .traduction_avec("avec-argument", &[("n", Argument::Entier(12))])
+            .expect("traduction");
+        assert!(
+            !texte.contains('\u{2068}') && !texte.contains('\u{2069}'),
+            "marques d'isolation FSI/PDI présentes : {texte:?}"
+        );
+    }
+
+    #[test]
     fn argument_manquant_est_une_erreur_typee() {
         let erreur = catalogue().traduction("avec-argument").unwrap_err();
         assert_eq!(erreur.code(), "OF-I18N-0004");
