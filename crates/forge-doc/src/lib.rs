@@ -618,8 +618,7 @@ mod tests {
         relu.append(NewEvent::new("t", 1, "tests", serde_json::json!({})));
         let nouveau = relu.events()[1].id.clone().expect("id attribué");
         assert_ne!(
-            nouveau,
-            ancien,
+            nouveau, ancien,
             "un événement ajouté après rechargement sous la même horloge ne doit pas recycler un identifiant"
         );
     }
@@ -646,6 +645,7 @@ mod tests {
     /// main n'est plus refusé par OF-DOC-0013.
     #[test]
     fn entree_repertoire_objects_ignoree() {
+        use std::io::Write;
         let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
         let options = zip::write::SimpleFileOptions::default();
         writer
