@@ -22,11 +22,15 @@ impl std::fmt::Debug for Catalogue {
 /// Valeur d'argument passée à une clé (`{ $nom }` dans le FTL).
 #[derive(Debug, Clone)]
 pub enum Argument {
-    /// Nombre entier — mis en forme par Fluent sans marques
-    /// d'isolation.
+    /// Nombre entier — mis en forme par Fluent.
     Entier(i64),
-    /// Texte — Fluent l'encadre de marques d'isolation Unicode
-    /// (FSI/PDI), invisibles à l'affichage.
+    /// Texte — mis en forme par Fluent.
+    ///
+    /// Par défaut Fluent encadre tout placeable (nombres et textes
+    /// compris) de marques d'isolation Unicode FSI/PDI invisibles ;
+    /// le catalogue coupe cette isolation au bundle (A4-09) :
+    /// OmniFab affiche dans ses propres widgets, sans texte mixte
+    /// directionnel.
     Texte(String),
 }
 
@@ -92,6 +96,12 @@ impl Catalogue {
             }
         })?;
         let mut bundle = FluentBundle::new(vec![langue]);
+        // A4-09 : Fluent isole par défaut tout placeable (nombres et
+        // textes compris) derrière des marques FSI/PDI invisibles —
+        // utiles au rendu de texte mixte directionnel, sans usage
+        // dans les widgets egui d'OmniFab : isolation coupée ici,
+        // une seule fois pour tout le catalogue.
+        bundle.set_use_isolating(false);
         bundle
             .add_resource(ressource)
             .map_err(|erreurs| I18nError::RessourceInvalide {
