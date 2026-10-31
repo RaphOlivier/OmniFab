@@ -122,8 +122,9 @@ public:
     }
 
 private:
-    // Budget du spike : ~1 Mo de plage réservée (131 072 paramètres),
-    // extension de repli bornée. Un croquis réel en est loin.
+    // Budget du spike : 8 Mio de plage réservée (1 048 576
+    // paramètres = 2^20 doubles), extension de repli bornée. Un
+    // croquis réel en est loin.
     static constexpr std::size_t GCS_ARENE_TAILLE = 1u << 20;
     static constexpr std::size_t GCS_ARENE_EXTENSION = 1u << 16;
 
@@ -203,8 +204,10 @@ private:
 /* est complété — pattern classique de frontière C.                   */
 /* ------------------------------------------------------------------ */
 struct GcsSysteme {
-    GCS::System systeme;
+    // Ordre des membres = ordre inverse de destruction (A4-05) :
+    // le système doit mourir avant l'arène — ses double* y pointent.
     Arena params;
+    GCS::System systeme;
     std::map<int, std::size_t> index_param;
     std::map<int, bool> fixe_param;
     std::map<int, GCS::Point> points;
@@ -434,19 +437,26 @@ struct GcsSysteme {
         systeme.getRedundant(redondants);
         systeme.getPartiallyRedundant(partiels);
 
+        // Le 4e paramètre signale la troncature au plafond
+        // GCS_MAX_TAGS (A4-04) : couper en silence rend le diagnostic
+        // trompeur sur les croquis très redondants.
         auto copier = [](const GCS::VEC_I& source, int* dest,
-                         int* nombre) {
+                         int* nombre, int* tronque) {
             std::size_t n = std::min(
                 source.size(), static_cast<std::size_t>(GCS_MAX_TAGS));
             for (std::size_t i = 0; i < n; ++i) {
                 dest[i] = static_cast<int>(source[i]);
             }
             *nombre = static_cast<int>(n);
+            *tronque = source.size() > n ? 1 : 0;
         };
-        copier(conflits, out->conflictuelles, &out->conflictuelles_nombre);
-        copier(redondants, out->redondantes, &out->redondantes_nombre);
+        copier(conflits, out->conflictuelles, &out->conflictuelles_nombre,
+               &out->conflictuelles_tronque);
+        copier(redondants, out->redondantes, &out->redondantes_nombre,
+               &out->redondantes_tronque);
         copier(partiels, out->partiellement_redondantes,
-               &out->partiellement_redondantes_nombre);
+               &out->partiellement_redondantes_nombre,
+               &out->partiellement_redondantes_tronque);
         return GCS_OK;
     }
 };

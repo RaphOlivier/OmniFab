@@ -195,6 +195,9 @@ pub struct Diagnostic {
     redondantes: Vec<TagContrainte>,
     /// Tags des contraintes partiellement redondantes.
     partiellement_redondantes: Vec<TagContrainte>,
+    /// Vrai si au moins une liste de tags a été tronquée au plafond
+    /// ABI (32) par le shim : le diagnostic est alors incomplet.
+    tronque: bool,
 }
 
 impl Diagnostic {
@@ -221,6 +224,12 @@ impl Diagnostic {
     /// Tags des contraintes partiellement redondantes.
     pub fn partiellement_redondantes(&self) -> &[TagContrainte] {
         &self.partiellement_redondantes
+    }
+
+    /// Vrai si au moins une liste de tags a été tronquée au plafond
+    /// ABI : le diagnostic est alors incomplet (A4-04).
+    pub fn tronque(&self) -> bool {
+        self.tronque
     }
 }
 

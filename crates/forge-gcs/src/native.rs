@@ -203,6 +203,9 @@ impl Solveur2D for Systeme2D {
             x if x == sys::GCS_STATUT_ECHEC => {
                 return Err(GcsError::ResolutionEchouee { algorithme });
             }
+            x if x == sys::GCS_STATUT_SOLUTION_INVALIDE => {
+                return Err(GcsError::SolutionInvalide { algorithme });
+            }
             x => return Err(Self::traduire(x, "gcs_resoudre")),
         };
         // Garde ADR-0013 : reproductibilité obligatoire (FreeCAD
@@ -241,6 +244,9 @@ impl Solveur2D for Systeme2D {
             redondantes_nombre: 0,
             partiellement_redondantes: [0; sys::GCS_MAX_TAGS as usize],
             partiellement_redondantes_nombre: 0,
+            conflictuelles_tronque: 0,
+            redondantes_tronque: 0,
+            partiellement_redondantes_tronque: 0,
         };
         let code =
             unsafe { sys::gcs_diagnostiquer(self.systeme, algorithme.code_abi(), &mut brut) };
@@ -263,6 +269,9 @@ impl Solveur2D for Systeme2D {
                 &brut.partiellement_redondantes,
                 brut.partiellement_redondantes_nombre,
             ),
+            tronque: brut.conflictuelles_tronque != 0
+                || brut.redondantes_tronque != 0
+                || brut.partiellement_redondantes_tronque != 0,
         })
     }
 
