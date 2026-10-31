@@ -43,7 +43,9 @@ pub(crate) const MAX_TOTAL_BLOB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 pub(crate) fn validate_blob_name(name: &str) -> Result<(), DocError> {
     if name.is_empty()
         || name.starts_with('/')
-        || name.split('/').any(|segment| segment.is_empty() || segment == "." || segment == "..")
+        || name
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
         || name.contains('\\')
         || name.contains('\u{0}')
     {
