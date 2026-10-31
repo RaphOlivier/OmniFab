@@ -233,12 +233,11 @@ impl Solide {
     /// vide — opérandes identiques ou disjoints : jamais un `Ok`
     /// silencieux au volume nul (audit n°3 A3-08.b).
     pub fn soustraire(&self, autre: &Solide) -> Result<Self, CadError> {
-        let forme =
-            occt::Forme::soustraire(&self.forme, &autre.forme).map_err(|raison| {
-                CadError::FormeInvalide {
-                    operation: format!("soustraction booléenne : {raison}"),
-                }
-            })?;
+        let forme = occt::Forme::soustraire(&self.forme, &autre.forme).map_err(|raison| {
+            CadError::FormeInvalide {
+                operation: format!("soustraction booléenne : {raison}"),
+            }
+        })?;
         Ok(Self { forme })
     }
 
@@ -268,7 +267,7 @@ impl Solide {
                 operation: format!("tessellation : {e}"),
             })?;
         let sommets: Vec<[f64; 3]> = maille.vertices.iter().map(|v| [v.x, v.y, v.z]).collect();
-        let normales: Vec<[f64; 3]> = maille.normals.iter().map(|n| [n.x, n.y, n.z]).collect();
+        let normales: Vec<[f64; 3]> = maille.normales.iter().map(|n| [n.x, n.y, n.z]).collect();
         let triangles: Vec<[u32; 3]> = maille
             .indices
             .chunks(3)
@@ -375,7 +374,7 @@ fn octets_via_fichier_temporaire(
 /// Import/export STEP (ADR-0023 D4 : forge-cad, jamais forge-io — la
 /// frontière ADR-0009 interdit à forge-io de dépendre d'OCCT).
 pub mod step {
-    use super::{CadBudgets, CadError, Solide};
+    use super::{CadBudgets, CadError, FichierTemporaire, Solide};
 
     /// Exporte les solides en octets STEP.
     ///
@@ -431,7 +430,7 @@ pub mod step {
 
 /// Import/export BREP textuel (format natif OCCT — ADR-0023 D4).
 pub mod brep {
-    use super::{CadBudgets, CadError, Solide};
+    use super::{CadBudgets, CadError, FichierTemporaire, Solide};
 
     /// Exporte UN solide en octets BREP textuels.
     ///

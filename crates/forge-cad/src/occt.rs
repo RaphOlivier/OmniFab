@@ -55,9 +55,7 @@ impl Forme {
             forme: self.forme.subtract(&autre.forme).into_shape(),
         };
         if resultat.est_vide() {
-            return Err(
-                "résultat vide (opérandes identiques ou disjoints ?)".to_string(),
-            );
+            return Err("résultat vide (opérandes identiques ou disjoints ?)".to_string());
         }
         Ok(resultat)
     }
