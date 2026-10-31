@@ -34,9 +34,27 @@ impl Length {
     /// Longueur nulle.
     pub const ZERO: Self = Self { mm: 0.0 };
 
-    /// Construit une longueur à partir de millimètres.
+    /// Construit une longueur à partir de millimètres, sans garde : NaN et ±∞
+    /// transitent tels quels (contrat A3-17). La garde de finitude vit aux
+    /// frontières — saisies, fichiers importés — via [`Length::try_millimeters`].
     pub fn from_millimeters(mm: f64) -> Self {
         Self { mm }
+    }
+
+    /// Construit une longueur à partir de millimètres uniquement si la valeur
+    /// est finie ; retourne `None` sur NaN, +∞ ou -∞.
+    ///
+    /// Garde de frontière (A3-17, dans la continuité des gardes A3-08 de
+    /// forge-cad) : toute longueur issue d'une donnée externe — saisie
+    /// utilisateur, fichier importé — doit passer par ce constructeur pour
+    /// rejeter tôt les valeurs non finies au lieu de laisser NaN ou ±∞ se
+    /// propager silencieusement dans la géométrie.
+    pub fn try_millimeters(mm: f64) -> Option<Self> {
+        if mm.is_finite() {
+            Some(Self { mm })
+        } else {
+            None
+        }
     }
 
     /// Construit une longueur à partir de centimètres.
@@ -283,5 +301,19 @@ mod tests {
         let somme = Angle::from_degrees(90.0) + Angle::from_degrees(45.0);
         assert!((somme.degrees() - 135.0).abs() < 1e-9);
         assert!(Angle::from_degrees(180.0).approx_eq(Angle::from_radians(std::f64::consts::PI)));
+    }
+
+    #[test]
+    fn constructeur_faillible_refuse_valeurs_non_fines() {
+        let nan = f64::NAN;
+        let infini = f64::INFINITY;
+        assert!(Length::try_millimeters(nan).is_none());
+        assert!(Length::try_millimeters(infini).is_none());
+        assert!(Length::try_millimeters(-infini).is_none());
+        assert!(Length::try_millimeters(0.0).is_some());
+        assert_eq!(
+            Length::try_millimeters(12.5).map(Length::millimeters),
+            Some(12.5)
+        );
     }
 }
