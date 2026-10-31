@@ -19,10 +19,8 @@ use forge_units::Length;
 fn diagnostic_signale_la_troncature_des_listes() -> Result<(), GcsError> {
     let mut solveur = Systeme2D::new()?;
     for _ in 0..40 {
-        let a = solveur.ajouter_point(
-            Length::from_millimeters(0.0),
-            Length::from_millimeters(0.0),
-        )?;
+        let a =
+            solveur.ajouter_point(Length::from_millimeters(0.0), Length::from_millimeters(0.0))?;
         let b = solveur.ajouter_point(
             Length::from_millimeters(10.0),
             Length::from_millimeters(0.0),
