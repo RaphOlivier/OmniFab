@@ -200,6 +200,9 @@ impl ValueGraph {
     }
 
     /// Fixe la valeur d'entrée nommée avec son unité et son origine.
+    /// Le changement d'unité est revalidé contre les dépendants directs
+    /// qui déclarent une unité : OF-VAL-0007 ne se contourne pas en
+    /// réécrivant l'unité de la source (audit n°3, A3-10).
     pub fn set_input_unite(
         &mut self,
         name: &str,
@@ -214,6 +217,21 @@ impl ValueGraph {
         }
         self.verifie_cree(name, origine)?;
         let id = self.ensure_node(name, origine);
+        if let Some(nouvelle) = unite {
+            for dep_id in self.dependants_ids(id) {
+                let Some(dependant) = self.noeud_par_id(dep_id) else { continue; };
+                if let Some(u_dep) = dependant.unite
+                    && u_dep != nouvelle
+                {
+                    return Err(ValuesError::UniteIncoherente {
+                        node: dependant.name.clone(),
+                        unite: u_dep,
+                        reference: name.to_string(),
+                        unite_reference: nouvelle,
+                    });
+                }
+            }
+        }
         let node = match self.nodes.get_mut(&id) {
             Some(node) => node,
             None => return Ok(()),
@@ -239,6 +257,8 @@ impl ValueGraph {
     /// et son origine. La cohérence des unités est vérifiée à la
     /// définition (OF-VAL-0007) : une unité déclarée ne peut lire que
     /// des nœuds de la même unité ou sans unité.
+    /// tout neuf ne laisse pas de nœud fantôme : le nœud est retiré
+    /// (audit n°3, A3-09), l'état antérieur tient.
     pub fn set_expression_unite(
         &mut self,
         name: &str,
@@ -247,8 +267,15 @@ impl ValueGraph {
         origine: Origine,
     ) -> Result<(), ValuesError> {
         self.verifie_cree(name, origine)?;
+        let neuf = !self.names.contains_key(name);
         let id = self.ensure_node(name, origine);
-        self.definir_expression(id, text, unite)
+        if let Err(erreur) = self.definir_expression(id, text, unite) {
+            if neuf {
+                self.retirer_id(id);
+            }
+            return Err(erreur);
+        }
+        Ok(())
     }
 
     /// Définit une expression système (cote d'esquisse, etc.), sous un
