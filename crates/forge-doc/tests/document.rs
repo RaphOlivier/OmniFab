@@ -519,17 +519,22 @@ fn migration_echouee_preserve_le_journal() {
 }
 
 #[test]
-fn derniere_ligne_tronquee_toleree() {
-    // Une coupure pendant l'écriture peut tronquer la dernière ligne : elle
-    // est tolérée (et signalée) ; les événements précédents sont conservés.
+fn derniere_ligne_tronquee_refusee() {
+    // Audit n°3 A3-12 : une dernière ligne tronquée n'est plus tolérée
+    // en silence — le journal fait foi : l'écriture atomique
+    // (ADR-0016 A2) et le CRC32 rendent une vraie troncature détectable
+    // avant ce point ; toute ligne non analysable est refusée
+    // (OF-DOC-0003), même en fin de journal.
     let ligne = evenement(1, 1);
     let tronquee = &ligne[..ligne.len() - 10];
     let bytes = archive(&[
         ("manifest.json", MANIFEST_V1.to_string()),
         ("events.jl", format!("{ligne}\n{tronquee}")),
     ]);
-    let doc = Document::from_bytes(&bytes).unwrap();
-    assert_eq!(doc.events().len(), 1);
+    match Document::from_bytes(&bytes) {
+        Err(DocError::CorruptJournal { line: 2, .. }) => {}
+        other => panic!("journal corrompu attendu, obtenu {other:?}"),
+    }
 
     // Une ligne corrompue qui n'est PAS la dernière reste une erreur.
     let bytes = archive(&[
@@ -546,8 +551,10 @@ fn derniere_ligne_tronquee_toleree() {
 fn blob_invalide_au_chargement_rejete() {
     // ADR-0016 A4 : une archive forgée ne contourne pas la validation
     // des noms de blobs (OF-DOC-0013) — le nom relu passe par la même
-    // validation que `set_blob` (vide, traversée, séparateur Windows).
-    for nom in ["objects/", "objects/../x", "objects/a\\b"] {
+    // validation que `set_blob` (traversée par segment, séparateur
+    // Windows) ; les entrées répertoire sont ignorées (audit n°3
+    // A3-13, plus haut `entree_repertoire_ignoree_au_chargement`).
+    for nom in ["objects/../x", "objects/a\\b", "objects/a/./b"] {
         let bytes = archive(&[
             ("manifest.json", MANIFEST_V1.to_string()),
             ("events.jl", String::new()),
@@ -559,6 +566,21 @@ fn blob_invalide_au_chargement_rejete() {
             other => panic!("blob « {nom} » devait être rejeté, obtenu {other:?}"),
         }
     }
+}
+
+#[test]
+fn entree_repertoire_ignoree_au_chargement() {
+    // Audit n°3 A3-13 : une entrée répertoire (ajoutée par zip -r ou
+    // 7-Zip en recompressant un projet à la main) n'est pas un blob —
+    // elle est ignorée au chargement au lieu d'être refusée par
+    // OF-DOC-0013.
+    let bytes = archive(&[
+        ("manifest.json", MANIFEST_V1.to_string()),
+        ("events.jl", String::new()),
+        ("objects/", "x".to_string()),
+    ]);
+    let doc = Document::from_bytes(&bytes).unwrap();
+    assert!(doc.blob_names().is_empty());
 }
 
 #[test]
