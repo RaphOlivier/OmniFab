@@ -284,4 +284,18 @@ mod tests {
         assert!((somme.degrees() - 135.0).abs() < 1e-9);
         assert!(Angle::from_degrees(180.0).approx_eq(Angle::from_radians(std::f64::consts::PI)));
     }
+
+    #[test]
+    fn constructeur_faillible_refuse_valeurs_non_fines() {
+        let nan = f64::NAN;
+        let infini = f64::INFINITY;
+        assert!(Length::try_millimeters(nan).is_none());
+        assert!(Length::try_millimeters(infini).is_none());
+        assert!(Length::try_millimeters(-infini).is_none());
+        assert!(Length::try_millimeters(0.0).is_some());
+        assert_eq!(
+            Length::try_millimeters(12.5).map(Length::millimeters),
+            Some(12.5)
+        );
+    }
 }
