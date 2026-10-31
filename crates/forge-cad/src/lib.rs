@@ -20,8 +20,8 @@ use forge_units::TOLERANCE_MM;
 pub use erreur::CadError;
 
 /// Nombre maximal de points d'un contour de prisme (convention « entrées
-/// bornées », v12) : le contrôle de distinctness est en O(n²) — le
-/// plafond borne le coût avant tout travail géométrique.
+/// bornées », v12) : les contrôles de distinctness et d'auto-intersection
+/// sont en O(n²) — le plafond borne le coût avant tout travail géométrique.
 pub const MAX_POINTS_CONTOUR: usize = 4096;
 
 /// Valide qu'une dimension est finie et strictement positive — le noyau
@@ -51,8 +51,10 @@ fn valider_coordonnee(nom: &str, valeur: Length) -> Result<(), CadError> {
 /// 3 points distincts minimum à [`TOLERANCE_MM`], coordonnées finies,
 /// arêtes cycliques non nulles (fermeture comprise — le contour est
 /// fermé implicitement, ne pas répéter le premier point), aire de lacet
-/// non nulle (orientation libre). Les contours auto-sécants ne sont
-/// pas détectés au lot 1 — dette documentée au registre des tests.
+/// non nulle (orientation libre). Les contours auto-sécants — deux
+/// arêtes non adjacentes qui se croisent ou se touchent — sont
+/// refusés (dette lot 1) : l'extrusion d'une face repliée donne un
+/// solide invalide sans erreur OCCT.
 fn valider_contour(contour: &[(Length, Length)]) -> Result<(), CadError> {
     let n = contour.len();
     if n < 3 {
@@ -115,7 +117,71 @@ fn valider_contour(contour: &[(Length, Length)]) -> Result<(), CadError> {
             operation: "aire du contour nulle : points alignés".to_string(),
         });
     }
+    // contours auto-sécants (dette lot 1) : deux arêtes NON ADJACENTES
+    // qui se croisent ou se touchent — les paires adjacentes partagent
+    // un sommet sain par construction et sont exclues. O(n²) borné par
+    // le plafond, comme le contrôle de distinctness.
+    for i in 0..n {
+        for j in (i + 2)..n {
+            if i == 0 && j == n - 1 {
+                continue;
+            }
+            let debut_a = points[i];
+            let fin_a = points[(i + 1) % n];
+            let debut_b = points[j];
+            let fin_b = points[(j + 1) % n];
+            if segments_se_touchent(debut_a, fin_a, debut_b, fin_b) {
+                return Err(CadError::FormeInvalide {
+                    operation: format!("contour auto-sécant : arêtes {i} et {j} se croisent"),
+                });
+            }
+        }
+    }
     Ok(())
+}
+
+/// Aire signée du triangle (a, b, c) — nulle à l'epsilon près si
+/// les trois points sont alignés.
+fn orientation(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
+    (b.0 - a.0) * (c.1 - a.1) - (b.1 - a.1) * (c.0 - a.0)
+}
+
+/// Vrai si le point `p` — supposé aligné avec le segment — est
+/// entre ses extrémités (boîte englobante).
+fn entre(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> bool {
+    p.0 >= a.0.min(b.0) && p.0 <= a.0.max(b.0) && p.1 >= a.1.min(b.1) && p.1 <= a.1.max(b.1)
+}
+
+/// Vrai si les segments [a, b] et [c, d] se croisent ou se touchent
+/// (test d'orientation classique ; l'epsilon d'alignement est en
+/// mm², cohérent avec des aires de lacet). Réservé aux paires
+/// d'arêtes NON ADJACENTES du contour fermé.
+fn segments_se_touchent(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f64)) -> bool {
+    const EPS_AIRE: f64 = 1e-12;
+    let o1 = orientation(a, b, c);
+    let o2 = orientation(a, b, d);
+    let o3 = orientation(c, d, a);
+    let o4 = orientation(c, d, b);
+    let opposes_1 = (o1 > EPS_AIRE && o2 < -EPS_AIRE) || (o1 < -EPS_AIRE && o2 > EPS_AIRE);
+    let opposes_2 = (o3 > EPS_AIRE && o4 < -EPS_AIRE) || (o3 < -EPS_AIRE && o4 > EPS_AIRE);
+    if opposes_1 && opposes_2 {
+        return true;
+    }
+    // contacts : un sommet de l'autre segment est aligné ET entre
+    // les extrémités du premier.
+    if o1.abs() <= EPS_AIRE && entre(c, a, b) {
+        return true;
+    }
+    if o2.abs() <= EPS_AIRE && entre(d, a, b) {
+        return true;
+    }
+    if o3.abs() <= EPS_AIRE && entre(a, c, d) {
+        return true;
+    }
+    if o4.abs() <= EPS_AIRE && entre(b, c, d) {
+        return true;
+    }
+    false
 }
 
 /// Budgets de ressources des parseurs CAO (patron ADR-0009 : un fichier
@@ -209,8 +275,8 @@ impl Solide {
     /// # Erreurs
     /// [`CadError::FormeInvalide`] (OF-CAD-0002) si le contour est
     /// dégénéré (moins de 3 points distincts, arête nulle, coordonnée
-    /// non finie, aire nulle, hors plafond) ou si la hauteur n'est pas
-    /// finie strictement positive ; [`CadError::Occt`] (OF-CAD-0001)
+    /// non finie, aire nulle, auto-sécant, hors plafond) ou si la hauteur
+    /// n'est pas finie strictement positive ; [`CadError::Occt`] (OF-CAD-0001)
     /// si l'extrusion OCCT échoue.
     pub fn prisme(contour: &[(Length, Length)], hauteur: Length) -> Result<Self, CadError> {
         valider_contour(contour)?;
