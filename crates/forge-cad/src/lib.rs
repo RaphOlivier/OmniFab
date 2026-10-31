@@ -302,3 +302,79 @@ pub mod brep {
         Ok(vec![Solide { forme }])
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A3-08.f : le fichier temporaire est privé (0o600 sur Unix) — le
+    /// 0o644 par défaut de `fs::write` laisse fuir la géométrie vers
+    /// tout utilisateur local de la machine.
+    #[cfg(unix)]
+    #[test]
+    fn fichier_temporaire_est_prive() {
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::{Arc, Mutex};
+
+        let mode = Arc::new(Mutex::new(None));
+        let vu = Arc::clone(&mode);
+        octets_via_fichier_temporaire(".step", |chemin| {
+            std::fs::write(chemin, b"").map_err(|e| CadError::Occt {
+                operation: format!("écriture de test : {e}"),
+            })?;
+            let meta = std::fs::metadata(chemin).map_err(|e| CadError::Occt {
+                operation: format!("lecture des permissions : {e}"),
+            })?;
+            *vu.lock().unwrap() = Some(meta.permissions().mode() & 0o777);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(*mode.lock().unwrap(), Some(0o600));
+    }
+
+    /// A3-08.f : le fichier temporaire est supprimé quand l'écriture
+    /// échoue — propriété à conserver pendant la migration vers la
+    /// garde RAII.
+    #[test]
+    fn fichier_temporaire_supprime_quand_l_ecriture_echoue() {
+        use std::sync::{Arc, Mutex};
+
+        let fuite = Arc::new(Mutex::new(None));
+        let vu = Arc::clone(&fuite);
+        let resultat = octets_via_fichier_temporaire(".step", |chemin| {
+            std::fs::write(chemin, b"").map_err(|e| CadError::Occt {
+                operation: format!("écriture de test : {e}"),
+            })?;
+            *vu.lock().unwrap() = Some(chemin.to_path_buf());
+            Err(CadError::FormeInvalide {
+                operation: "échec simulé".to_string(),
+            })
+        });
+        assert!(resultat.is_err());
+        let chemin = fuite.lock().unwrap().take().expect("chemin capturé");
+        assert!(!chemin.exists(), "le fichier temporaire doit être supprimé");
+    }
+
+    /// A3-08.f : le fichier temporaire est supprimé même sur une panique
+    /// pendant l'écriture — un `remove_file` manuel fuit sur ce chemin.
+    #[test]
+    fn fichier_temporaire_supprime_apres_panique() {
+        use std::panic::{AssertUnwindSafe, catch_unwind};
+        use std::sync::{Arc, Mutex};
+
+        let fuite = Arc::new(Mutex::new(None));
+        let vu = Arc::clone(&fuite);
+        let panique = catch_unwind(AssertUnwindSafe(|| {
+            let _ = octets_via_fichier_temporaire(".brep", |chemin| {
+                std::fs::write(chemin, b"").map_err(|e| CadError::Occt {
+                    operation: format!("écriture de test : {e}"),
+                })?;
+                *vu.lock().unwrap() = Some(chemin.to_path_buf());
+                panic!("panique simulée pendant l'écriture");
+            });
+        }));
+        assert!(panique.is_err(), "la panique simulée doit être propagée");
+        let chemin = fuite.lock().unwrap().take().expect("chemin capturé");
+        assert!(!chemin.exists(), "le fichier temporaire doit être supprimé");
+    }
+}
