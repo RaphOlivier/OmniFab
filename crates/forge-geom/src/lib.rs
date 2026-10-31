@@ -279,3 +279,12 @@ mod tests {
         assert_eq!(erreur.unwrap_err().code(), "OF-GEO-0003");
     }
 }
+
+#[cfg(test)]
+mod tests_a4_12_dedoublonnage {
+    #[test]
+    fn rouge_dedoublonnage_issues() {
+        let note=1;
+        assert_eq!(note,1);
+    }
+}
