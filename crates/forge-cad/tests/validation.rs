@@ -202,3 +202,51 @@ fn volume_toujours_positif() {
     let volume = prisme_inverse.volume_mm3(mm(0.01)).unwrap();
     assert!(volume > 0.0, "volume horaire = {volume}");
 }
+
+/// Dette A3-08 lot 1 : un contour dont deux arêtes NON ADJACENTES se
+/// croisent (boucle repliée, aire de lacet non nulle) donne un solide
+/// invalide sans erreur OCCT — refus typé avant le pont.
+#[test]
+fn prisme_refuse_contour_auto_secant_croisement() {
+    let boucle = [
+        (mm(0.0), mm(0.0)),
+        (mm(20.0), mm(0.0)),
+        (mm(20.0), mm(10.0)),
+        (mm(10.0), mm(10.0)),
+        (mm(10.0), mm(-10.0)),
+    ];
+    let erreur = Solide::prisme(&boucle, mm(5.0)).unwrap_err().code();
+    assert_eq!(erreur, "OF-CAD-0002");
+}
+
+/// Dette A3-08 lot 1 : un sommet posé sur une arête NON ADJACENTE
+/// (contact) est tout aussi dégénéré pour l'extrusion.
+#[test]
+fn prisme_refuse_contour_auto_secant_contact() {
+    let contact = [
+        (mm(0.0), mm(0.0)),
+        (mm(20.0), mm(0.0)),
+        (mm(20.0), mm(20.0)),
+        (mm(10.0), mm(0.0)),
+        (mm(0.0), mm(20.0)),
+    ];
+    let erreur = Solide::prisme(&contact, mm(5.0)).unwrap_err().code();
+    assert_eq!(erreur, "OF-CAD-0002");
+}
+
+/// Garde-fou : un contour concave sain (en L) reste accepté — les
+/// sommets partagés par des arêtes ADJACENTES ne sont jamais des
+/// auto-sécants.
+#[test]
+fn prisme_accepte_contour_concave() {
+    let en_l = [
+        (mm(0.0), mm(0.0)),
+        (mm(10.0), mm(0.0)),
+        (mm(10.0), mm(5.0)),
+        (mm(5.0), mm(5.0)),
+        (mm(5.0), mm(10.0)),
+        (mm(0.0), mm(10.0)),
+    ];
+    let prisme = Solide::prisme(&en_l, mm(5.0));
+    assert!(prisme.is_ok(), "concave sain : {prisme:?}");
+}
