@@ -47,11 +47,17 @@ impl Forme {
         })
     }
 
-    /// Soustraction booléenne `self - autre`.
-    pub(crate) fn soustraire(&self, autre: &Self) -> Self {
-        Self {
+    /// Soustraction booléenne `self - autre`. Le résultat vide —
+    /// opérandes identiques ou disjoints — est refusé : jamais un `Ok`
+    /// silencieux au volume nul (audit n°3 A3-08.b).
+    pub(crate) fn soustraire(&self, autre: &Self) -> Result<Self, String> {
+        let resultat = Self {
             forme: self.forme.subtract(&autre.forme).into_shape(),
+        };
+        if resultat.est_vide() {
+            return Err("résultat vide (opérandes identiques ou disjoints ?)".to_string());
         }
+        Ok(resultat)
     }
 
     /// Union booléenne `self + autre`.
@@ -64,6 +70,21 @@ impl Forme {
     /// Tessellation (coordonnées en millimètres).
     pub(crate) fn tesseller(&self, tolerance: f64) -> Result<Mesh, opencascade::Error> {
         self.forme.mesh_with_tolerance(tolerance)
+    }
+
+    /// Vrai si la forme ne contient ni solide ni géométrie tessellable :
+    /// le spike phase A a montré qu'un booléen vide (self - self) rend
+    /// une forme sans solide et sans triangle. La sonde tessellation
+    /// (0,01 mm — coût borné) départe un composé multi-lumps légitime :
+    /// solide absent, triangles présents.
+    pub(crate) fn est_vide(&self) -> bool {
+        if self.forme.as_solid().is_some() {
+            return false;
+        }
+        match self.forme.mesh_with_tolerance(0.01) {
+            Ok(maille) => maille.indices.is_empty(),
+            Err(_) => false,
+        }
     }
 
     /// Écrit toutes les formes dans un fichier STEP.
