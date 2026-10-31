@@ -101,6 +101,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-GCS-0002 | Échec de résolution du croquis | Croquis conflictuel ou sans solution pour l'algorithme choisi | Corriger les contraintes ou changer d'algorithme |
 | OF-GCS-0003 | Reproductibilité non garantie | L'arène de paramètres n'a pas maintenu des adresses croissantes (FreeCAD #33399) | Réduire le croquis ou signaler le bug |
 | OF-GCS-0004 | Appel invalide à l'ABI C | Handle nul, valeur non finie, ou exception C++ rattrapée dans le shim | Corriger les paramètres d'appel (bug logiciel sinon) |
+| OF-GCS-0005 | Solution invalide | Résolution réussie mais géométrie résultante invalide (statut SuccessfulSolutionInvalid de planegcs) | Corriger les contraintes ou les valeurs de départ |
 
 ## forge-cad (CAD) — CAO paramétrique (noyau OCCT, ADR-0023)
 

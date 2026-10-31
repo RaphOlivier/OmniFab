@@ -39,6 +39,16 @@ pub enum GcsError {
         /// Explication.
         contexte: String,
     },
+    /// Solution trouvée mais géométrie résultante invalide (statut
+    /// SuccessfulSolutionInvalid de planegcs, OF-GCS-0005).
+    #[error(
+        "OF-GCS-0005 : solution invalide avec {algorithme:?} : résolution \
+         réussie mais géométrie invalide (SuccessfulSolutionInvalid)"
+    )]
+    SolutionInvalide {
+        /// Algorithme employé.
+        algorithme: Algorithme,
+    },
 }
 
 impl GcsError {
@@ -51,6 +61,7 @@ impl GcsError {
             Self::ResolutionEchouee { .. } => "OF-GCS-0002",
             Self::NonReproductible { .. } => "OF-GCS-0003",
             Self::AbiInvalide { .. } => "OF-GCS-0004",
+            Self::SolutionInvalide { .. } => "OF-GCS-0005",
         }
     }
 }

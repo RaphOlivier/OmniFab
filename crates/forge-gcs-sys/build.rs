@@ -11,10 +11,11 @@
 //! Dépendances natives requises à la construction : Eigen3 et fmt
 //! (découvrables par `find_package`, publiées par la cible
 //! `PlaneGCS::planegcs`) ; Boost n'est requis que par planegcs lui-même
-//! (headers) ; libclang est requis par bindgen. Sur Windows avec vcpkg,
-//! la variable d'environnement `VCPKG_INSTALLATION_ROOT` active
-//! automatiquement le toolchain vcpkg (triplet `VCPKG_TARGET_TRIPLET`
-//! ou `x64-windows` par défaut).
+//! (headers) ; libclang est requis par bindgen. Sur les cibles Windows
+//! uniquement avec vcpkg, la variable d'environnement
+//! `VCPKG_INSTALLATION_ROOT` active automatiquement le toolchain vcpkg
+//! (triplet `VCPKG_TARGET_TRIPLET` ou `x64-windows` par défaut) —
+//! ignorée sur les autres cibles (A4-06).
 
 use std::env;
 use std::path::PathBuf;
@@ -29,6 +30,7 @@ fn main() {
         .to_path_buf();
     let shim = racine.join("third_party").join("planegcs-shim");
     let entete = shim.join("gcs_c_api.h");
+    let cible = env::var("TARGET").unwrap_or_default();
 
     // 1) Bindings : bindgen sur le header du shim.
     // Les constantes #define (GCS_OK, GCS_STATUT_*, GCS_ERR_*) sont
@@ -62,7 +64,11 @@ fn main() {
         config.cxxflag("/EHsc");
     }
     // Windows + vcpkg : toolchain et triplet depuis l'environnement CI.
-    if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
+    // Garde cible Windows (A4-06) : vcpkg n'a de sens que pour une
+    // compilation MSVC, jamais pour un hôte Linux/macOS en CI.
+    if cible.contains("windows")
+        && let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT")
+    {
         let triplet =
             env::var("VCPKG_TARGET_TRIPLET").unwrap_or_else(|_| "x64-windows".to_string());
         config.define("VCPKG_TARGET_TRIPLET", &triplet);
@@ -86,7 +92,9 @@ fn main() {
     // fmt est une dépendance publique de planegcs : la bibliothèque
     // finale doit la relier explicitement (Eigen est header-only).
     let mut fmt_lie = false;
-    if let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT") {
+    if cible.contains("windows")
+        && let Ok(racine_vcpkg) = env::var("VCPKG_INSTALLATION_ROOT")
+    {
         let triplet =
             env::var("VCPKG_TARGET_TRIPLET").unwrap_or_else(|_| "x64-windows".to_string());
         let dir = PathBuf::from(&racine_vcpkg)
@@ -116,7 +124,6 @@ fn main() {
     // linker Rust ne fournit pas libstdc++/libc++ de lui-même.
     // MSVC : rien à émettre, les objets portent leurs directives
     // /DEFAULTLIB (msvcprt) que link.exe suit automatiquement.
-    let cible = env::var("TARGET").unwrap_or_default();
     if cible.contains("darwin") {
         // libc++.dylib ré-exporte libc++abi (__cxa_*) sur macOS.
         println!("cargo:rustc-link-lib=dylib=c++");
@@ -129,4 +136,10 @@ fn main() {
         "cargo:rerun-if-changed={}",
         shim.join("gcs_c_api.cpp").display()
     );
+    println!(
+        "cargo:rerun-if-changed={}",
+        shim.join("CMakeLists.txt").display()
+    );
+    println!("cargo:rerun-if-env-changed=VCPKG_INSTALLATION_ROOT");
+    println!("cargo:rerun-if-env-changed=VCPKG_TARGET_TRIPLET");
 }

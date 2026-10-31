@@ -45,6 +45,9 @@ extern "C" {
 #define GCS_STATUT_CONVERGE 1
 /** Résolution échouée (croquis conflictuel, pas de solution). */
 #define GCS_STATUT_ECHEC 2
+/** Solution trouvée mais géométrie résultante invalide (OCE) :
+ *  traitée comme un échec typé par forge-gcs, jamais un succès. */
+#define GCS_STATUT_SOLUTION_INVALIDE 3
 
 /* --- Algorithmes (miroir de GCS::Algorithm) --- */
 
@@ -65,12 +68,18 @@ typedef struct GcsDiagnostic {
     /** Contraintes conflictuelles (surentraînement). */
     int conflictuelles[GCS_MAX_TAGS];
     int conflictuelles_nombre;
+    /** 1 si la liste a été tronquée au plafond GCS_MAX_TAGS. */
+    int conflictuelles_tronque;
     /** Contraintes redondantes. */
     int redondantes[GCS_MAX_TAGS];
     int redondantes_nombre;
+    /** 1 si la liste a été tronquée au plafond GCS_MAX_TAGS. */
+    int redondantes_tronque;
     /** Contraintes partiellement redondantes. */
     int partiellement_redondantes[GCS_MAX_TAGS];
     int partiellement_redondantes_nombre;
+    /** 1 si la liste a été tronquée au plafond GCS_MAX_TAGS. */
+    int partiellement_redondantes_tronque;
 } GcsDiagnostic;
 
 /** Handle opaque sur un système de contraintes planegcs. */

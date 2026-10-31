@@ -20,6 +20,9 @@ fn toutes_les_variantes() -> Vec<GcsError> {
         GcsError::AbiInvalide {
             contexte: "test".to_string(),
         },
+        GcsError::SolutionInvalide {
+            algorithme: Algorithme::DogLeg,
+        },
     ]
 }
 
