@@ -377,3 +377,18 @@ fn viewbox_dans_un_commentaire_est_ignoree() {
     assert_eq!(points[1].x().millimeters(), 3.0);
     assert_eq!(points[1].y().millimeters(), -4.0);
 }
+
+#[test]
+fn svg_avec_dtd_interne_est_refuse() {
+    // Audit n°3, A3-16 : la doc du module promettait « ni DTD ni
+    // XXE » mais roxmltree accepte les entités DTD INTERNES (bombe
+    // d'entités, attributs par défaut injectés) et usvg ne permet
+    // pas de le configurer — une DTD interne est refusée à notre
+    // niveau ; un DOCTYPE PUBLIC seul (fichiers Inkscape) reste
+    // accepté.
+    let source = br#"<?xml version="1.0"?>
+<!DOCTYPE svg [<!ENTITY un "10">]>
+<svg xmlns="http://www.w3.org/2000/svg" width="&un;mm" height="10mm"><path d="M 1 2 L 3 4"/></svg>"#;
+    let erreur = svg::import(source, &SvgBudgets::default()).expect_err("DTD interne refusée");
+    assert_eq!(erreur.code(), "OF-IO-0007");
+}
