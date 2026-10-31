@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 //! # omnifab-desktop — démonstrateur des jalons 1 et 2
 //!
 //! Conforme à `docs/architecture.md` et aux ADR-0011/0014 : la
