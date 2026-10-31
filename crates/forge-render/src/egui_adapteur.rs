@@ -45,9 +45,13 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         _encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        let renderer = resources
-            .get::<Renderer2D>()
-            .expect("Renderer2D initialisé");
+        let Some(renderer) = resources.get::<Renderer2D>() else {
+            // Le renderer est inséré dans `CallbackResources` à
+            // l'initialisation de l'app ; s'il manque (bug d'app,
+            // pas du noyau), la frame est sautée — jamais de
+            // panique au rendu.
+            return Vec::new();
+        };
         // egui-wgpu borne la passe au rect du callback (« courtesy
         // viewport ») : l'uniform reçoit la taille du rect, pas celle
         // de la fenêtre (bug de la validation C1, 2026-10-16).
@@ -62,7 +66,13 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         );
         let nombre = sommets.len() as u32;
         let tampon = preparer_sommets(device, &sommets);
-        *self.preparee.lock().expect("verrou de frame") = Some(Frame2D {
+        // Poison = panique déjà survenue ailleurs : on continue
+        // (décision inventaire-expect §3.3).
+        let verrou = self
+            .preparee
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        *verrou = Some(Frame2D {
             sommets: tampon,
             nombre,
         });
@@ -75,15 +85,26 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         render_pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
-        let Some(frame) = self.preparee.lock().expect("verrou de frame").take() else {
+        // Poison = panique déjà survenue ailleurs : on continue
+        // (décision inventaire-expect §3.3).
+        let Some(frame) = self
+            .preparee
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+        else {
             return;
         };
         if frame.nombre == 0 {
             return;
         }
-        let renderer = resources
-            .get::<Renderer2D>()
-            .expect("Renderer2D initialisé");
+        let Some(renderer) = resources.get::<Renderer2D>() else {
+            // Le renderer est inséré dans `CallbackResources` à
+            // l'initialisation de l'app ; s'il manque (bug d'app,
+            // pas du noyau), la frame est sautée — jamais de
+            // panique au rendu.
+            return;
+        };
         render_pass.set_pipeline(renderer.pipeline());
         render_pass.set_bind_group(0, renderer.bind_group(), &[]);
         render_pass.set_vertex_buffer(0, frame.sommets.slice(..));
@@ -114,9 +135,13 @@ impl egui_wgpu::CallbackTrait for Callback3D {
         _encoder: &mut wgpu::CommandEncoder,
         resources: &mut egui_wgpu::CallbackResources,
     ) -> Vec<wgpu::CommandBuffer> {
-        let renderer = resources
-            .get::<Renderer2D>()
-            .expect("Renderer2D initialisé");
+        let Some(renderer) = resources.get::<Renderer2D>() else {
+            // Le renderer est inséré dans `CallbackResources` à
+            // l'initialisation de l'app ; s'il manque (bug d'app,
+            // pas du noyau), la frame est sautée — jamais de
+            // panique au rendu.
+            return Vec::new();
+        };
         // egui-wgpu borne la passe au rect du callback : l'uniform
         // reçoit la taille du rect, en pixels physiques (leçon de la
         // validation C1).
@@ -126,7 +151,13 @@ impl egui_wgpu::CallbackTrait for Callback3D {
         let sommets = lignes(&self.scene, &self.camera, taille_px[0], taille_px[1], ppp);
         let nombre = sommets.len() as u32;
         let tampon = preparer_sommets(device, &sommets);
-        *self.preparee.lock().expect("verrou de frame") = Some(Frame2D {
+        // Poison = panique déjà survenue ailleurs : on continue
+        // (décision inventaire-expect §3.3).
+        let verrou = self
+            .preparee
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        *verrou = Some(Frame2D {
             sommets: tampon,
             nombre,
         });
@@ -139,15 +170,26 @@ impl egui_wgpu::CallbackTrait for Callback3D {
         render_pass: &mut wgpu::RenderPass<'static>,
         resources: &egui_wgpu::CallbackResources,
     ) {
-        let Some(frame) = self.preparee.lock().expect("verrou de frame").take() else {
+        // Poison = panique déjà survenue ailleurs : on continue
+        // (décision inventaire-expect §3.3).
+        let Some(frame) = self
+            .preparee
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+        else {
             return;
         };
         if frame.nombre == 0 {
             return;
         }
-        let renderer = resources
-            .get::<Renderer2D>()
-            .expect("Renderer2D initialisé");
+        let Some(renderer) = resources.get::<Renderer2D>() else {
+            // Le renderer est inséré dans `CallbackResources` à
+            // l'initialisation de l'app ; s'il manque (bug d'app,
+            // pas du noyau), la frame est sautée — jamais de
+            // panique au rendu.
+            return;
+        };
         render_pass.set_pipeline(renderer.pipeline_lignes());
         render_pass.set_bind_group(0, renderer.bind_group(), &[]);
         render_pass.set_vertex_buffer(0, frame.sommets.slice(..));
