@@ -34,9 +34,27 @@ impl Length {
     /// Longueur nulle.
     pub const ZERO: Self = Self { mm: 0.0 };
 
-    /// Construit une longueur à partir de millimètres.
+    /// Construit une longueur à partir de millimètres, sans garde : NaN et ±∞
+    /// transitent tels quels (contrat A3-17). La garde de finitude vit aux
+    /// frontières — saisies, fichiers importés — via [`Length::try_millimeters`].
     pub fn from_millimeters(mm: f64) -> Self {
         Self { mm }
+    }
+
+    /// Construit une longueur à partir de millimètres uniquement si la valeur
+    /// est finie ; retourne `None` sur NaN, +∞ ou -∞.
+    ///
+    /// Garde de frontière (A3-17, dans la continuité des gardes A3-08 de
+    /// forge-cad) : toute longueur issue d'une donnée externe — saisie
+    /// utilisateur, fichier importé — doit passer par ce constructeur pour
+    /// rejeter tôt les valeurs non finies au lieu de laisser NaN ou ±∞ se
+    /// propager silencieusement dans la géométrie.
+    pub fn try_millimeters(mm: f64) -> Option<Self> {
+        if mm.is_finite() {
+            Some(Self { mm })
+        } else {
+            None
+        }
     }
 
     /// Construit une longueur à partir de centimètres.
