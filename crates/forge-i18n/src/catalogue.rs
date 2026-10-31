@@ -37,8 +37,11 @@ impl From<i64> for Argument {
 }
 
 impl From<usize> for Argument {
+    /// Conversion depuis `usize` : sature à `i64::MAX` — un `as
+    /// i64` silencieux wrapperait en négatif les compteurs
+    /// démesurés (audit n°4 A4-13c).
     fn from(valeur: usize) -> Self {
-        Self::Entier(valeur as i64)
+        Self::Entier(valeur.min(i64::MAX as usize) as i64)
     }
 }
 

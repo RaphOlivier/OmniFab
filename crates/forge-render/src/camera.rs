@@ -49,8 +49,14 @@ impl Camera2D {
 
     /// Zoome d'un facteur donné : le point du monde sous le curseur
     /// reste sous le curseur. Le décalage du curseur est donné par
-    /// rapport au centre du viewport.
+    /// rapport au centre du viewport. Le facteur doit être fini et
+    /// strictement positif : toute autre valeur est ignorée — la
+    /// caméra reste intacte, NaN ne l'empoisonne pas (A4-13a,
+    /// audit n°4).
     pub fn zoom_au_curseur(&mut self, curseur_px: (f64, f64), facteur: f64) {
+        if !facteur.is_finite() || facteur <= 0.0 {
+            return;
+        }
         let avant = self.depuis_ecran(curseur_px);
         self.echelle = (self.echelle * facteur).clamp(ECHELLE_MIN, ECHELLE_MAX);
         let apres = self.depuis_ecran(curseur_px);

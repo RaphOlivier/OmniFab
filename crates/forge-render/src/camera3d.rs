@@ -125,8 +125,14 @@ impl Camera3D {
         self.elevation = cible.clamp(-ELEVATION_MAX, ELEVATION_MAX);
     }
 
-    /// Zoome : la distance à la cible change du facteur inverse.
+    /// Zoome : la distance à la cible change du facteur inverse. Le
+    /// facteur doit être fini et strictement positif : toute autre
+    /// valeur est ignorée — la distance reste intacte, NaN ne
+    /// l'empoisonne pas (A4-13a, audit n°4).
     pub fn zoomer(&mut self, facteur: f64) {
+        if !facteur.is_finite() || facteur <= 0.0 {
+            return;
+        }
         self.distance = (self.distance / facteur).clamp(DISTANCE_MIN, DISTANCE_MAX);
     }
 
