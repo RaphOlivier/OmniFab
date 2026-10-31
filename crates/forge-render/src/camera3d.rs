@@ -125,8 +125,14 @@ impl Camera3D {
         self.elevation = cible.clamp(-ELEVATION_MAX, ELEVATION_MAX);
     }
 
-    /// Zoome : la distance à la cible change du facteur inverse.
+    /// Zoome : la distance à la cible change du facteur inverse. Le
+    /// facteur doit être fini et strictement positif : toute autre
+    /// valeur est ignorée — la distance reste intacte, NaN ne
+    /// l'empoisonne pas (A4-13a, audit n°4).
     pub fn zoomer(&mut self, facteur: f64) {
+        if !facteur.is_finite() || facteur <= 0.0 {
+            return;
+        }
         self.distance = (self.distance / facteur).clamp(DISTANCE_MIN, DISTANCE_MAX);
     }
 
@@ -340,5 +346,17 @@ mod tests {
             "plafond de distance"
         );
         assert_eq!(sol.min_x, -32.0 * 100.0, "borné autour de la cible");
+    }
+    /// A4-13a (audit n°4) : un facteur de zoom non fini ou négatif
+    /// est ignoré — la distance à la cible reste intacte, NaN ne
+    /// l'empoisonne pas.
+    #[test]
+    fn zoomer_ignore_facteur_non_fini_ou_negatif() {
+        let mut camera = Camera3D::nouvelle();
+        let distance_avant = camera.distance;
+        for facteur in [f64::NAN, 0.0, -2.0] {
+            camera.zoomer(facteur);
+            assert_eq!(camera.distance, distance_avant, "distance intacte");
+        }
     }
 }

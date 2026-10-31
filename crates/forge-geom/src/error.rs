@@ -21,6 +21,13 @@ pub enum GeomError {
         /// Axe fautif (« x », « y » ou « z »).
         axis: &'static str,
     },
+    /// Coordonnée finie au-delà de la borne de magnitude, refusée à
+    /// la construction (OF-GEO-0003, audit n°4 A4-13b).
+    #[error("OF-GEO-0003 : coordonnée {axis} au-delà de la borne de magnitude")]
+    CoordonneeHorsBornes {
+        /// Axe fautif (« x », « y » ou « z »).
+        axis: &'static str,
+    },
 }
 
 impl GeomError {
@@ -31,6 +38,7 @@ impl GeomError {
         match self {
             Self::VertexOutOfBounds { .. } => "OF-GEO-0001",
             Self::NonFinite { .. } => "OF-GEO-0002",
+            Self::CoordonneeHorsBornes { .. } => "OF-GEO-0003",
         }
     }
 }

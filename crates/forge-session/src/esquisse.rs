@@ -69,6 +69,11 @@ const SEUIL_GRAINES_CONFONDUES_MM: f64 = 1e-6;
 /// écart invisible à l'écran — les graines ne sont que des points
 /// de départ.
 const ECART_GRAINES_CONFONDUES_MM: f64 = 1e-3;
+/// Borne de magnitude des coordonnées d'esquisse, en millimètres :
+/// miroir de la constante équivalente de forge-geom (forge-session
+/// ne dépend pas de forge-geom, la valeur est dupliquée à dessein) —
+/// au-delà, la coordonnée est refusée (A4-13b, audit n°4).
+const BORNE_COORDONNEE_MM: f64 = 1e9;
 
 /// Version de schéma de `sketch.constraint.updated` : type nouveau de
 /// la phase E, né en v1 — son champ `valeur` suit le schéma des
@@ -1689,10 +1694,12 @@ impl EsquisseProjection {
 
     /// Raison pour laquelle une coordonnée n'est pas un nombre fini.
     fn raison_finie(valeur: f64, nom: &str) -> Option<String> {
-        if valeur.is_finite() {
-            None
-        } else {
+        if !valeur.is_finite() {
             Some(format!("{nom} doit être un nombre fini"))
+        } else if valeur.abs() > BORNE_COORDONNEE_MM {
+            Some(format!("{nom} dépasse la borne de magnitude"))
+        } else {
+            None
         }
     }
 
@@ -1995,5 +2002,26 @@ impl Projection for EsquisseProjection {
             EVENT_SKETCH_CONSTRAINT_UPDATED,
             EVENT_SKETCH_POINT_MOVED,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A4-13b (audit n°4) : une coordonnée finie mais au-delà de la
+    /// borne commune est refusée au plan, comme une coordonnée non
+    /// finie — un point à 10^300 mm empoisonnerait la caméra.
+    #[test]
+    fn point_au_dela_de_la_borne_refuse() {
+        let projection = EsquisseProjection::new();
+        let point = EntiteEsquisse::Point {
+            x: Length::from_millimeters(1e300),
+            y: Length::ZERO,
+        };
+        assert!(
+            projection.raison_refus_entite(&point).is_some(),
+            "une coordonnée hors borne doit être refusée"
+        );
     }
 }
