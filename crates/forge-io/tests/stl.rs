@@ -150,3 +150,31 @@ fn export_vide_donne_un_stl_valide() {
     let maillage = import(&octets, &budgets).expect("import");
     assert_eq!(maillage.triangle_count(), 0, "aucun triangle");
 }
+
+#[test]
+fn binaire_en_tete_solid_avec_bourrage_est_lu_comme_binaire() {
+    // Audit n°3, A3-14 : un STL binaire dont l'en-tête commence par
+    // « solid » ET portant du bourrage final (cas que la doc du
+    // module dit toléré) partait vers le parseur ASCII (« octets non
+    // UTF-8 ») — le test tolérant doit passer AVANT la détection
+    // ASCII ; sans risque pour un vrai ASCII : ses octets 80..84
+    // forment un compteur démenti par la taille du fichier.
+    let budgets = StlBudgets::default();
+    let mut octets = export(&triangle()).expect("export");
+    octets[..6].copy_from_slice(b"solid ");
+    octets.extend_from_slice(&[0xFF; 10]);
+    let maillage = import(&octets, &budgets).expect("binaire tolérant lu d'abord");
+    assert_eq!(maillage.triangle_count(), 1, "un triangle");
+}
+
+#[test]
+fn ascii_fins_de_ligne_cr_seules_lit_les_facettes() {
+    // Audit n°3, A3-15 : seuls les premiers mots de chaque ligne
+    // étaient lus — des fins de ligne CR seules (tout le fichier sur
+    // une « ligne ») ou des facettes entassées sur une ligne
+    // produisaient un import « réussi » à 0 triangle, sans erreur.
+    let budgets = StlBudgets::default();
+    let contenu = "solid demo\rfacet normal 0 0 1\router loop\rvertex 0 0 0\rvertex 1 0 0\rvertex 0 1 0\rendloop\rendfacet\rendsolid demo\r";
+    let maillage = import(contenu.as_bytes(), &budgets).expect("jetons lus en flux");
+    assert_eq!(maillage.triangle_count(), 1, "un triangle");
+}

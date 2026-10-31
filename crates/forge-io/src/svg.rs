@@ -5,8 +5,10 @@
 //! l'export. Convention d'unités : une unité SVG = 1 mm ; les
 //! tailles physiques (`width`/`height` en mm, in…) sont
 //! résolues à 25,4 dpi — un « pixel » usvg vaut exactement 1 mm.
-//! Le parseur `usvg` n'exécute aucun script, ne charge aucune ressource externe et
-//! n'accepte ni DTD ni XXE ; les formes de base (`rect`,
+//! Le parseur `usvg` n'exécute aucun script ; le résolveur
+//! d'images est neutralisé (aucun `href` n'est résolu) et une
+//! DTD interne est refusée avant l'analyse (audit n°3,
+//! A3-16) ; les formes de base (`rect`,
 //! `circle`, …) sont normalisées en tracés par `usvg`. Les courbes
 //! de Bézier (quadratiques et cubiques) sont aplaties en polylignes
 //! à [`SEGMENTS_COURBE`] segments par courbe.
@@ -53,6 +55,47 @@ impl Default for SvgBudgets {
     }
 }
 
+/// Options `usvg` de l'import : résolution des unités physiques à
+/// 25,4 dpi — un « pixel » usvg vaut exactement 1 mm (au défaut
+/// 96 dpi, `width="50mm"` devenait 189 px et l'import grossissait
+/// de ×3,78) — et résolveur d'images neutralisé (audit n°3,
+/// A3-16) : le résolveur par défaut lit les fichiers locaux
+/// pointés par un `href`, le nôtre ne résout rien.
+fn options_import() -> usvg::Options<'static> {
+    usvg::Options {
+        dpi: 25.4,
+        image_href_resolver: usvg::ImageHrefResolver {
+            resolve_string: Box::new(|_, _| None),
+            ..usvg::ImageHrefResolver::default()
+        },
+        ..usvg::Options::default()
+    }
+}
+
+/// Refuse les DTD internes (audit n°3, A3-16) : `roxmltree`
+/// accepte les entités et attributs par défaut du sous-ensemble
+/// DTD interne (bombe d'entités, injection d'attributs) et `usvg`
+/// n'expose aucune option pour le restreindre — un `<!DOCTYPE`
+/// portant un crochet ouvrant avant son `>` de fermeture est
+/// refusé ; un DOCTYPE PUBLIC seul (fichiers Inkscape) reste
+/// accepté.
+fn refuse_dtd_interne(bytes: &[u8]) -> Result<(), IoError> {
+    let Some(debut) = bytes.windows(9).position(|fenetre| fenetre == b"<!DOCTYPE") else {
+        return Ok(());
+    };
+    // Un DOCTYPE sans `>` de fermeture est malformé : l'analyse
+    // `usvg` qui suit le refusera.
+    let Some(fin) = bytes[debut..].iter().position(|&octet| octet == b'>') else {
+        return Ok(());
+    };
+    if bytes[debut..debut + fin].contains(&b'[') {
+        return Err(IoError::InvalidSvg {
+            raison: "DTD interne refusée".to_string(),
+        });
+    }
+    Ok(())
+}
+
 /// Importe un SVG en tracés 2D. Convention : une unité SVG = 1 mm ;
 /// les tailles physiques (`width`/`height` en mm, in…) sont
 /// résolues à 25,4 dpi — un « pixel » usvg vaut exactement 1 mm ;
@@ -72,13 +115,8 @@ pub fn import(bytes: &[u8], budgets: &SvgBudgets) -> Result<Vec<Path2>, IoError>
             max: budgets.max_bytes,
         });
     }
-    // Résolution des unités physiques à 25,4 dpi : un « pixel »
-    // usvg vaut exactement 1 mm (au défaut 96 dpi, `width="50mm"`
-    // devenait 189 px et l'import grossissait de ×3,78).
-    let options = usvg::Options {
-        dpi: 25.4,
-        ..usvg::Options::default()
-    };
+    refuse_dtd_interne(bytes)?;
+    let options = options_import();
     let arbre = usvg::Tree::from_data(bytes, &options).map_err(|erreur| IoError::InvalidSvg {
         raison: erreur.to_string(),
     })?;
@@ -421,4 +459,28 @@ fn applique(t: &usvg::Transform, x: f32, y: f32) -> (f64, f64) {
         (t.sx * x + t.kx * y + t.tx) as f64,
         (t.ky * x + t.sy * y + t.ty) as f64,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn le_resolveur_d_images_ne_charge_rien() {
+        // Le résolveur par défaut de `usvg` lit les fichiers locaux
+        // pointés par un `href` (audit n°3, A3-16) : le nôtre ne
+        // résout rien — même un PNG valide existant sur disque.
+        const PNG_1X1: &[u8] =
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\rIDATx\x9cb\x00\x01\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82";
+        let fichier = std::env::temp_dir().join("omnifab-resolveur-ne-charge-rien.png");
+        std::fs::write(&fichier, PNG_1X1).expect("écriture du png de test");
+        let options = options_import();
+        let resolution = &options.image_href_resolver.resolve_string;
+        let chemin = fichier.to_string_lossy();
+        assert!(
+            resolution(&chemin, &options).is_none(),
+            "même un png valide sur disque ne doit pas être résolu"
+        );
+        let _ = std::fs::remove_file(&fichier);
+    }
 }
