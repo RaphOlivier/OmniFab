@@ -36,7 +36,10 @@ fn point_jamais_deplace_rejoue_a_son_origine() {
     ));
     let session = Session::from_document("tests", document).expect("rejeu");
     let mut solveur = Systeme2D::new().expect("solveur");
-    let resolu = session.esquisse().resoudre(&mut solveur).expect("résolu sans panique");
+    let resolu = session
+        .esquisse()
+        .resoudre(&mut solveur)
+        .expect("résolu sans panique");
     assert_eq!(resolu.dof(), 2, "un point libre : deux degrés de liberté");
     let (x, y) = mm(resolu.position(0));
     assert!(
