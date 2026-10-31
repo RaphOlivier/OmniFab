@@ -68,7 +68,7 @@ impl egui_wgpu::CallbackTrait for Callback2D {
         let tampon = preparer_sommets(device, &sommets);
         // Poison = panique déjà survenue ailleurs : on continue
         // (décision inventaire-expect §3.3).
-        let verrou = self
+        let mut verrou = self
             .preparee
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
@@ -153,7 +153,7 @@ impl egui_wgpu::CallbackTrait for Callback3D {
         let tampon = preparer_sommets(device, &sommets);
         // Poison = panique déjà survenue ailleurs : on continue
         // (décision inventaire-expect §3.3).
-        let verrou = self
+        let mut verrou = self
             .preparee
             .lock()
             .unwrap_or_else(|poison| poison.into_inner());
