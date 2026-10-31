@@ -1,6 +1,3 @@
-// PRÉPARATION — à pousser dans apps/omnifab-desktop/src/aide.rs
-// (base : dépôt 008f27e + correctifs ADR-0020).
-
 //! Aide intégrée : chaque widget interactif porte un `help_id` et un
 //! clic droit ouvre sa page d'aide (ADR-0010).
 //!
@@ -87,7 +84,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
         Ok(page) => {
             let titre = catalogue
                 .traduction_avec(CLE_TITRE, &[("titre", page.titre.as_str().into())])
-                .expect("clé présente dans le FTL (test de la CI)");
+                .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)");
             let mut fenetre = egui::Window::new(titre)
                 .open(&mut visible)
                 .default_width(360.0);
@@ -100,7 +97,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
                 ui.separator();
                 let exemple = catalogue
                     .traduction(CLE_EXEMPLE)
-                    .expect("clé présente dans le FTL (test de la CI)");
+                    .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)");
                 ui.label(exemple);
                 ui.label(&page.exemple);
             });
@@ -109,7 +106,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
             let texte = match erreur {
                 I18nError::CleAbsente { .. } => catalogue
                     .traduction_avec(CLE_INTROUVABLE, &[("identifiant", help_id.as_str().into())])
-                    .expect("clé présente dans le FTL (test de la CI)"),
+                    .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)"),
                 autre => autre.to_string(),
             };
             let mut fenetre = egui::Window::new(&help_id)
