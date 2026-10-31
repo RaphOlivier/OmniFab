@@ -106,8 +106,12 @@ impl Scene2D {
             }
             if trace.is_closed() {
                 // fermeture : dernier sommet vers premier
-                let premier = points.first().expect("longueur vérifiée");
-                let dernier = points.last().expect("longueur vérifiée");
+                let premier = points
+                    .first()
+                    .expect("invariant : garde len < 2 → continue ci-dessus");
+                let dernier = points
+                    .last()
+                    .expect("invariant : garde len < 2 → continue ci-dessus");
                 scene.ajouter(Segment2D {
                     depart: (dernier.x().millimeters(), dernier.y().millimeters()),
                     arrivee: (premier.x().millimeters(), premier.y().millimeters()),

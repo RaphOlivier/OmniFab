@@ -181,8 +181,12 @@ impl Scene3D {
                 });
             }
             if trace.is_closed() {
-                let premier = points.first().expect("longueur vérifiée");
-                let dernier = points.last().expect("longueur vérifiée");
+                let premier = points
+                    .first()
+                    .expect("invariant : garde len < 2 → continue ci-dessus");
+                let dernier = points
+                    .last()
+                    .expect("invariant : garde len < 2 → continue ci-dessus");
                 scene.ajouter(Segment3D {
                     depart: plat(dernier),
                     arrivee: plat(premier),
