@@ -36,12 +36,14 @@ pub(crate) const MAX_BLOB_BYTES: u64 = 1024 * 1024 * 1024;
 /// ADR-0016 A4 — garde-fou « bombe ZIP » cumulative).
 pub(crate) const MAX_TOTAL_BLOB_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
-/// Valide un nom de blob : ni vide, ni traversée de répertoire (`..`),
-/// ni chemin absolu, ni séparateur Windows, ni octet nul (OF-DOC-0013).
+/// Valide un nom de blob : ni vide, ni chemin absolu, ni séparateur
+/// Windows, ni octet nul — la traversée de répertoire se teste segment
+/// par segment après découpe sur `/` : `a..b` est un nom légitime,
+/// `a/../b` une traversée refusée (OF-DOC-0013, audit n°3 A3-18).
 pub(crate) fn validate_blob_name(name: &str) -> Result<(), DocError> {
     if name.is_empty()
-        || name.contains("..")
         || name.starts_with('/')
+        || name.split('/').any(|segment| segment.is_empty() || segment == "." || segment == "..")
         || name.contains('\\')
         || name.contains('\u{0}')
     {
@@ -190,11 +192,6 @@ pub(crate) fn read(
         bounded_string(&mut file, JOURNAL_PATH, MAX_JOURNAL_BYTES)?
     };
     let mut events: Vec<Event> = Vec::new();
-    // `split('\n')` garde une dernière entrée vide après le saut de
-    // ligne final : une ligne corrompue qui n'est pas la toute dernière
-    // entrée reste une erreur, seule une fin de fichier tronquée est
-    // tolérée.
-    let total_lines = journal.split('\n').count();
     for (index, line) in journal.split('\n').enumerate() {
         let line = line.trim();
         if line.is_empty() {
@@ -203,13 +200,11 @@ pub(crate) fn read(
         let mut event: Event = match serde_json::from_str(line) {
             Ok(event) => event,
             Err(error) => {
-                // Une coupure pendant l'écriture peut tronquer la toute
-                // dernière ligne du journal : elle est tolérée (et
-                // signalée) car le fichier `.bak` garde l'archive intacte.
-                if index + 1 == total_lines {
-                    log::warn!("derniere ligne du journal tronquee, ignoree : {error}");
-                    break;
-                }
+                // Le journal fait foi : toute ligne non analysable est
+                // refusée par OF-DOC-0003, sans tolérance de troncature
+                // — l'écriture atomique (ADR-0016 A2) et le CRC32 rendent
+                // une vraie troncature détectable avant ce point (audit
+                // n°3 A3-12).
                 return Err(DocError::CorruptJournal {
                     line: index + 1,
                     reason: error.to_string(),
@@ -240,6 +235,12 @@ pub(crate) fn read(
     let mut blobs = BTreeMap::new();
     let mut total_blob_bytes: u64 = 0;
     for name in &names {
+        // Une entrée répertoire (`objects/` ajoutée par zip -r ou
+        // 7-Zip, audit n°3 A3-13) n'est pas un blob : elle est ignorée
+        // au lieu d'être refusée par la validation des noms.
+        if name.ends_with('/') {
+            continue;
+        }
         if let Some(blob_name) = name.strip_prefix(BLOBS_PREFIX) {
             validate_blob_name(blob_name)?;
             let mut file = archive.by_name(name)?;
@@ -282,7 +283,7 @@ pub(crate) fn read(
         None
     };
 
-    Ok(Document {
+    let mut document = Document {
         events,
         blobs,
         snapshot,
@@ -290,7 +291,11 @@ pub(crate) fn read(
         clock: Box::new(crate::SystemClock),
         uuid_derniere_ms: 0,
         uuid_counter: 0,
-    })
+    };
+    // Reprise du compteur d'UUIDv7 au-delà du plus grand identifiant
+    // du journal chargé (audit n°3 A3-11).
+    document.reprendre_compteur_uuid();
+    Ok(document)
 }
 /// Cherche la fin du répertoire central (`PK\x05\x06`) en partant de la
 /// fin de l'archive : la longueur de commentaire annoncée doit joindre

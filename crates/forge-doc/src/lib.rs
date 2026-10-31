@@ -152,13 +152,28 @@ impl Document {
     /// monotonie sur 12 bits distingue les identifiants attribués dans
     /// la même milliseconde — le journal reste déterministe sous
     /// [`FixedClock`] et ne dépend plus de l'horloge système, dont le
-    /// comportement est incertain en wasm32 (ADR-0016 A7).
+    /// comportement est incertain en wasm32 (ADR-0016 A7). Le compteur
+    /// n'est remis à zéro que si l'horloge avance ; à saturation des
+    /// 12 bits, la milliseconde de référence avance d'un cran, et au
+    /// chargement d'un conteneur `reprendre_compteur_uuid` repart
+    /// au-delà du plus grand identifiant du journal (audit n°3 A3-11).
     pub fn nouvel_uuid_v7(&mut self) -> String {
         let millis = u64::try_from(self.clock.now_unix()).unwrap_or(0) * 1000;
-        if millis != self.uuid_derniere_ms {
+        // Remise à zéro seulement si l'horloge AVANCE : sous horloge
+        // figée (tests, reprise après rechargement), le compteur
+        // continue de croître (audit n°3 A3-11).
+        if millis > self.uuid_derniere_ms {
             self.uuid_derniere_ms = millis;
             self.uuid_counter = 0;
         }
+        // Saturation des 12 bits du compteur : la milliseconde de
+        // référence avance d'un cran pour rester monotone (l'horloge
+        // peut être figée — le déterminisme est préservé).
+        if self.uuid_counter > 0x0FFF {
+            self.uuid_derniere_ms = self.uuid_derniere_ms.saturating_add(1);
+            self.uuid_counter = 0;
+        }
+        let millis = self.uuid_derniere_ms;
         let compteur = self.uuid_counter.min(0x0FFF);
         self.uuid_counter = self.uuid_counter.saturating_add(1);
         let mut counter_random_bytes = [0u8; 10];
@@ -167,6 +182,36 @@ impl Document {
         uuid::Builder::from_unix_timestamp_millis(millis, &counter_random_bytes)
             .into_uuid()
             .to_string()
+    }
+
+    /// Reprise du compteur de monotonie au chargement : parcourt le
+    /// journal rechargé à la recherche du plus grand UUIDv7 (date,
+    /// compteur) et repart au-delà — un événement ajouté après
+    /// rechargement ne peut plus recycler l'identifiant d'un événement
+    /// chargé, même sous une horloge figée, et les sessions successives
+    /// ne partagent plus de transaction (audit n°3 A3-11).
+    pub(crate) fn reprendre_compteur_uuid(&mut self) {
+        let mut max_ms = 0u64;
+        let mut max_compteur = 0u16;
+        for id in self.events.iter().filter_map(|event| event.id.as_deref()) {
+            let Ok(uuid) = uuid::Uuid::parse_str(id) else {
+                continue;
+            };
+            if uuid.get_version_num() != 7 {
+                continue;
+            }
+            let octets = uuid.as_bytes();
+            let mut date = [0u8; 8];
+            date[2..].copy_from_slice(&octets[0..6]);
+            let ms = u64::from_be_bytes(date);
+            let compteur = u16::from_be_bytes([octets[6] & 0x0F, octets[7]]);
+            if (ms, compteur) > (max_ms, max_compteur) {
+                max_ms = ms;
+                max_compteur = compteur;
+            }
+        }
+        self.uuid_derniere_ms = max_ms;
+        self.uuid_counter = max_compteur.saturating_add(1);
     }
 
     /// Journal complet, dans l'ordre.
