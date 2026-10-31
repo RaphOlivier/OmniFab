@@ -219,7 +219,9 @@ impl ValueGraph {
         let id = self.ensure_node(name, origine);
         if let Some(nouvelle) = unite {
             for dep_id in self.dependants_ids(id) {
-                let Some(dependant) = self.noeud_par_id(dep_id) else { continue; };
+                let Some(dependant) = self.noeud_par_id(dep_id) else {
+                    continue;
+                };
                 if let Some(u_dep) = dependant.unite
                     && u_dep != nouvelle
                 {
