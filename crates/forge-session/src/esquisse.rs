@@ -1701,7 +1701,7 @@ impl EsquisseProjection {
         } else {
             None
         }
-}
+    }
 
     /// Raison pour laquelle une cote n'est pas finie et strictement
     /// positive.

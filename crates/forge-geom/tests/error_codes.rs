@@ -14,6 +14,7 @@ fn toutes_les_variantes() -> Vec<GeomError> {
     vec![
         GeomError::VertexOutOfBounds { index: 5, count: 3 },
         GeomError::NonFinite { axis: "x" },
+        GeomError::CoordonneeHorsBornes { axis: "x" },
     ]
 }
 
