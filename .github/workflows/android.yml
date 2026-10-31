@@ -34,11 +34,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: aarch64-linux-android
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Cible Android sur le toolchain epingle (rust-toolchain.toml)
         # rustup resout le toolchain depuis rust-toolchain.toml (cwd = depot) :
         # dtolnay@stable installe la cible sur stable, pas sur le 1.99.1 epingle — fixe #450.
@@ -50,12 +50,12 @@ jobs:
           echo "sdkmanager : $SDKMANAGER"
           yes | "$SDKMANAGER" --install "platforms;android-30" > /dev/null 2>&1 || "$SDKMANAGER" --install "platforms;android-30"
       - name: Cache du binaire cargo-apk
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ~/.cargo/bin/cargo-apk
-          key: cargo-apk-${{ runner.os }}-v1
+          key: cargo-apk-${{ runner.os }}-0.10.0
       - name: Installation de cargo-apk
-        run: test -x "$HOME/.cargo/bin/cargo-apk" || cargo install cargo-apk
+        run: test -x "$HOME/.cargo/bin/cargo-apk" || cargo install cargo-apk --locked --version 0.10.0
       - name: Compilation de l'APK
         id: apk
         run: |
@@ -99,12 +99,19 @@ jobs:
           fi
           echo "=== Metadonnees APK (aapt badging) ==="
           "$BT/aapt" dump badging "$APK" | head -n 25 || true
-      - name: Publication de l'artefact (APK)
+      - name: Renommage de l'APK (nature debug)
         if: steps.apk.outputs.fail == '0'
-        uses: actions/upload-artifact@v4
+        run: |
+          APK=$(find target -name '*.apk' -print -quit)
+          [ -n "$APK" ] || { echo "APK introuvable"; exit 1; }
+          cp "$APK" omnifab-android-debug.apk
+          echo "APK debug : omnifab-android-debug.apk"
+      - name: Publication de l'artefact (APK debug)
+        if: steps.apk.outputs.fail == '0'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: omnifab-android-apk
-          path: ${{ steps.apk.outputs.apk }}
+          name: omnifab-android-apk-debug
+          path: omnifab-android-debug.apk
           retention-days: 30
       - name: Rapport d'erreurs (issue)
         if: steps.apk.outputs.fail == '1'
@@ -121,7 +128,13 @@ jobs:
             echo '```'
           } > rapport.md
           cat rapport.md
-          gh issue create --title "CI : echec build-apk @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          MOTIF="CI : echec build-apk"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec build-apk @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.apk.outputs.fail == '1'
         run: |

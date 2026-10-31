@@ -25,11 +25,11 @@ jobs:
     name: captures Xvfb (Linux)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           submodules: recursive
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Dependances natives (planegcs + bindgen + Xvfb + captures)
         run: |
           sudo apt-get update
@@ -94,7 +94,7 @@ jobs:
           echo "fail=$FAIL" >> "$GITHUB_OUTPUT"
           exit 0
       - name: Artefact galerie-captures
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: galerie-captures
@@ -168,7 +168,13 @@ jobs:
           } > rapport.md
           head -c 55000 rapport.md > rapport2.md
           cat rapport2.md
-          gh issue create --title "CI : echec galerie de captures @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport2.md || echo "Impossible de creer l'issue de rapport"
+          MOTIF="CI : echec galerie de captures"
+          EXISTANTE=$(gh issue list --state open --search "in:title \"$MOTIF\"" --json number --jq '.[].number' | head -n 1)
+          if [ -n "$EXISTANTE" ]; then
+            gh issue comment "$EXISTANTE" --body-file rapport2.md || echo "Impossible de commenter l'issue existante"
+          else
+            gh issue create --title "CI : echec galerie de captures @ $SHORT (run $GITHUB_RUN_ID)" --body-file rapport2.md || echo "Impossible de creer l'issue de rapport"
+          fi
       - name: Marquer le job en echec
         if: steps.captures.outputs.fail == '1'
         run: |
