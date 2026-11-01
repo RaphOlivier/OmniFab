@@ -4,7 +4,9 @@
 
 use crate::aide::avec_aide;
 use crate::atelier_esquisse;
+use crate::theme::COULEUR_GRILLE;
 use crate::theme::COULEUR_GRILLE_2D;
+use crate::theme::COULEUR_RECTANGLE_3D;
 use crate::theme::COULEUR_TRACES;
 use crate::theme::COULEUR_WIREFRAME;
 use crate::theme::GRILLE_CIBLE_PX;
@@ -17,7 +19,7 @@ use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
-    Boite2, Boite3D, Camera2D, Scene2D, Scene3D, Segment2D, Segment3D, dessiner_scene,
+    Boite2, Boite3D, Camera2D, Camera3D, Scene2D, Scene3D, Segment2D, Segment3D, dessiner_scene,
     dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 use forge_units::Length;
@@ -143,6 +145,50 @@ impl DemoApp {
     /// quand ils coïncident avec elle (validation C2, round 2).
     pub(crate) fn scene_vue_3d(
         traces: &[Path2],
+        wireframe: &[Segment3D],
+        camera: &Camera3D,
+        width: f64,
+        height: f64,
+    ) -> Scene3D {
+        let echelle = camera.echelle_cible(height);
+        let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
+        let mut scene = Scene3D::vide();
+        // La grille au sol couvre la partie du sol visible dans le
+        // champ de la caméra : elle atteint les bords de la vue, quel
+        // que soit le cadrage du contenu (validation jalon 2 — elle
+        // s'arrêtait auparavant au contenu).
+        let sol = camera.sol_visible(width, height);
+        let boite_grille = Boite3D::du_point(sol.min_x, sol.min_y, 0.0);
+        let boite_grille = boite_grille.etendre(sol.max_x, sol.max_y, 0.0);
+        scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
+        scene
+            .segments
+            .extend(Scene3D::depuis_traces(traces, COULEUR_TRACES).segments);
+        // Contour du rectangle paramétrique, posé sur le plan z = 0
+        // (ADR-0015, phase C2).
+        scene.ajouter(Segment3D {
+            depart: (0.0, 0.0, 0.0),
+            arrivee: (width, 0.0, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (width, 0.0, 0.0),
+            arrivee: (width, height, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (width, height, 0.0),
+            arrivee: (0.0, height, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.ajouter(Segment3D {
+            depart: (0.0, height, 0.0),
+            arrivee: (0.0, 0.0, 0.0),
+            couleur: COULEUR_RECTANGLE_3D,
+        });
+        scene.segments.extend(wireframe.iter().copied());
+        scene
+    }
 
     /// Engagement d'un champ de dimension pour cette frame, s'il y en a
     /// un : le DragValue écrit son tampon au relâchement du geste ou à
@@ -154,6 +200,16 @@ impl DemoApp {
     /// gelée pendant le geste.
     pub(crate) fn engagement_params(
         avant: f64,
+        tampon: f64,
+        dragged: bool,
+        drag_stopped: bool,
+        changed: bool,
+    ) -> Option<f64> {
+        if drag_stopped || (changed && !dragged) {
+            return (tampon != avant).then_some(tampon);
+        }
+        None
+    }
 
     /// Valeur affichée d'un champ de dimension : inactif, le tampon
     /// suit le graphe (undo/redo, ouverture) ; actif, il persiste —

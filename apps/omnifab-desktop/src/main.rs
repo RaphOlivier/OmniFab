@@ -85,8 +85,8 @@ use forge_io::{dxf, stl, svg};
 #[cfg(test)]
 use forge_render::Couleur;
 #[cfg(test)]
-use forge_render::{Boite2, Scene2D};
-use forge_render::{Boite3D, Camera2D, Camera3D, Renderer2D, Scene3D, Segment3D, pas_de_grille};
+use forge_render::{Boite2, Scene2D, Scene3D, pas_de_grille};
+use forge_render::{Camera2D, Camera3D, Renderer2D, Segment3D};
 use forge_session::{
     Command, CroquisResolu, ImportMesh, ImportTraces, Session, SetExpression, SetInput, Unite,
 };
@@ -97,8 +97,11 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use theme::ACTEUR;
+#[cfg(test)]
 use theme::COULEUR_GRILLE;
+#[cfg(test)]
 use theme::COULEUR_RECTANGLE_3D;
+#[cfg(test)]
 use theme::COULEUR_TRACES;
 #[cfg(test)]
 use theme::COULEUR_WIREFRAME;
@@ -106,6 +109,7 @@ use theme::DEFAULT_DIAGONAL_EXPR;
 use theme::ECHELLE_METRES;
 #[cfg(test)]
 use theme::EVENEMENTS_VIERGES;
+#[cfg(test)]
 use theme::GRILLE_CIBLE_PX;
 use travail::Retour;
 use travail::Travail;
@@ -1271,62 +1275,6 @@ impl DemoApp {
             chemin: chemin.to_path_buf(),
         });
     }
-        wireframe: &[Segment3D],
-        camera: &Camera3D,
-        width: f64,
-        height: f64,
-    ) -> Scene3D {
-        let echelle = camera.echelle_cible(height);
-        let pas = pas_de_grille(echelle, GRILLE_CIBLE_PX);
-        let mut scene = Scene3D::vide();
-        // La grille au sol couvre la partie du sol visible dans le
-        // champ de la caméra : elle atteint les bords de la vue, quel
-        // que soit le cadrage du contenu (validation jalon 2 — elle
-        // s'arrêtait auparavant au contenu).
-        let sol = camera.sol_visible(width, height);
-        let boite_grille = Boite3D::du_point(sol.min_x, sol.min_y, 0.0);
-        let boite_grille = boite_grille.etendre(sol.max_x, sol.max_y, 0.0);
-        scene.ajouter_grille(&boite_grille, pas, COULEUR_GRILLE);
-        scene
-            .segments
-            .extend(Scene3D::depuis_traces(traces, COULEUR_TRACES).segments);
-        // Contour du rectangle paramétrique, posé sur le plan z = 0
-        // (ADR-0015, phase C2).
-        scene.ajouter(Segment3D {
-            depart: (0.0, 0.0, 0.0),
-            arrivee: (width, 0.0, 0.0),
-            couleur: COULEUR_RECTANGLE_3D,
-        });
-        scene.ajouter(Segment3D {
-            depart: (width, 0.0, 0.0),
-            arrivee: (width, height, 0.0),
-            couleur: COULEUR_RECTANGLE_3D,
-        });
-        scene.ajouter(Segment3D {
-            depart: (width, height, 0.0),
-            arrivee: (0.0, height, 0.0),
-            couleur: COULEUR_RECTANGLE_3D,
-        });
-        scene.ajouter(Segment3D {
-            depart: (0.0, height, 0.0),
-            arrivee: (0.0, 0.0, 0.0),
-            couleur: COULEUR_RECTANGLE_3D,
-        });
-        scene.segments.extend(wireframe.iter().copied());
-        scene
-    }
-
-        tampon: f64,
-        dragged: bool,
-        drag_stopped: bool,
-        changed: bool,
-    ) -> Option<f64> {
-        if drag_stopped || (changed && !dragged) {
-            return (tampon != avant).then_some(tampon);
-        }
-        None
-    }
-
 }
 
 impl eframe::App for DemoApp {
