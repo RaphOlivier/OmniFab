@@ -3,6 +3,8 @@
 //! extraits de `main.rs` (découpage étape 3, fiche
 //! `preparation/decoupage-main-rs.md`).
 
+use forge_session::Unite;
+
 /// Dialogue « + Nouvel alias » (ADR-0019 §6) : nom, entrée ou
 /// expression, unité — état de l'app UI, jamais un événement tant
 /// que « Poser » n'est pas cliqué.
