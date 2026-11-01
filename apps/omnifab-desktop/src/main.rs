@@ -1419,6 +1419,15 @@ mod tests {
     use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
     use travail::{ecris_fichier, lire_borne, plus_grande_dimension};
 
+    /// Découpage 6/6 de `main.rs` (fiche
+    /// `preparation/decoupage-main-rs.md`) : `DemoApp` vit dans son
+    /// propre module `app`, le lanceur ne porte que `main` — garde
+    /// structurelle du refactor.
+    #[test]
+    fn demoapp_vit_dans_le_module_app() {
+        let _demo = crate::app::DemoApp::new(i18n::catalogue(), None);
+    }
+
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
         b"<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M 0 0 L 10 0 L 0 10 Z\"/></svg>\n";
