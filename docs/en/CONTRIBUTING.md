@@ -1,12 +1,12 @@
 # Contributing to OmniFab
 
-> **English translation.** The French documentation is authoritative: [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [`README.md`](../../README.md) · [ADR index](adr.md). Translated as of 2026-11-01 (commit `d871072`) — the French originals are updated continuously and may be ahead. [`AGENTS.md`](../../AGENTS.md) is deliberately left untranslated (French only).
+> **English translation.** The French documentation is authoritative: [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [`README.md`](../../README.md) · [ADR index](adr.md). Translated as of 2026-11-01 (commit `58bf733`) — the French originals are updated continuously and may be ahead. [`AGENTS.md`](../../AGENTS.md) is deliberately left untranslated (French only).
 
 This document describes the project's **non-negotiable conventions**. Every contribution (PR, commit, issue) must follow them. These conventions are refined over time through ADRs; when in doubt, open an issue to discuss before coding.
 
 ## Project status
 
-**Milestone 3 (parametric CAD), phase A open.** The repository is public; milestones 5 to 10 are frozen until the reference-case piece of furniture is built end-to-end (see the `README.md` roadmap). Every settled decision gets an **ADR** in [`docs/adr/`](../adr/) — [English index](adr.md).
+**Milestone 3 (parametric CAD), phase A closed (OpenCascade binding validated).** The repository is public; milestones 5 to 10 are frozen until the reference-case piece of furniture is built end-to-end (see the `README.md` roadmap). Every settled decision gets an **ADR** in [`docs/adr/`](../adr/) — [English index](adr.md).
 
 - The *why* of decisions lives in the project Knowledge, a read-only subset of which is replicated in [`docs/knowledge/`](../knowledge/) (ADR-0028); the *how* (the code) lives in the repository, the single source of truth for the code.
 - Working preferences and conventions for AI agents are in [`AGENTS.md`](../../AGENTS.md) (French only — deliberately not translated).

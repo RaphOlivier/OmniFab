@@ -1,6 +1,6 @@
 # OmniFab
 
-> **English translation.** The French documentation is authoritative: [`README.md`](../../README.md) · [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [ADR index](adr.md). Translated as of 2026-11-01 (commit `d871072`) — the French originals are updated continuously and may be ahead. [`AGENTS.md`](../../AGENTS.md) is deliberately left untranslated (French only).
+> **English translation.** The French documentation is authoritative: [`README.md`](../../README.md) · [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [ADR index](adr.md). Translated as of 2026-11-01 (commit `58bf733`) — the French originals are updated continuously and may be ahead. [`AGENTS.md`](../../AGENTS.md) is deliberately left untranslated (French only).
 
 [![CI](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml/badge.svg)](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](../../LICENSE)
@@ -22,7 +22,7 @@ The project advances by **horizontal slices**: deliver one reference case end-to
 | 0 | Architecture + ADRs + compilable core | ✅ closed (2026-10-12) |
 | 1 | Project core + undo + SVG/DXF/STL import/export + built-in help | ✅ closed (2026-10-15) |
 | 2 | wgpu viewport + constraint-based 2D sketch + binding engine | ✅ delivered (phases A–E, green multi-OS CI) |
-| 3 | Parametric CAD + nodal value editor (forge-cad / OCCT) | ◐ **in progress** — phase A opened (2026-10-25) |
+| 3 | Parametric CAD + nodal value editor (forge-cad / OCCT) | ◐ **in progress** — phase A closed (OpenCascade binding validated) |
 | 4 | 2.5-axis CAM + multi-process + G-code editor + simulator | ⏸ next — frozen until the furniture case is fully built |
 | 5 | forge-link: LinuxCNC + multi-machine management | ⏸ frozen |
 | 6 | Raster painting + layers + filters | ⏸ frozen |
