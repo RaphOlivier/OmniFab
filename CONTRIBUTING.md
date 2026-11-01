@@ -4,7 +4,7 @@ Ce document décrit les **conventions non négociables** du projet. Chaque contr
 
 ## Statut du projet
 
-**Jalon 3 (CAO paramétrique), phase A ouverte.** Le dépôt est public ; les jalons 5 à 10 sont gelés tant que le meuble du cas d'école n'est pas fabriqué de bout en bout (cf. la feuille de route du `README.md`). Chaque décision tranchée fait l'objet d'un **ADR** dans [`docs/adr/`](docs/adr/).
+**Jalon 3 (CAO paramétrique), phase A clôturée (binding OpenCascade validé).** Le dépôt est public ; les jalons 5 à 10 sont gelés tant que le meuble du cas d'école n'est pas fabriqué de bout en bout (cf. la feuille de route du `README.md`). Chaque décision tranchée fait l'objet d'un **ADR** dans [`docs/adr/`](docs/adr/).
 
 - Le *pourquoi* des décisions vit dans la Knowledge, dont un sous-ensemble est répliqué en lecture seule dans [`docs/knowledge/`](docs/knowledge/) (ADR-0028) ; le *comment* (le code) vit dans le dépôt, seule source de vérité du code.
 - Les préférences de travail et conventions pour agents IA sont dans [`AGENTS.md`](AGENTS.md).

@@ -20,7 +20,7 @@ Le projet avance par **tranche horizontale** : livrer de bout en bout un cas d'�
 | 0 | Architecture + ADR + noyau compilable | ✅ clos (2026-10-12) |
 | 1 | Noyau projet + undo + import/export SVG/DXF/STL + aide intégrée | ✅ clos (2026-10-15) |
 | 2 | Viewport wgpu + esquisse 2D contrainte + moteur de liaisons | ✅ livré (phases A–E, CI verte multi-OS) |
-| 3 | CAO paramétrique + éditeur nodal de valeurs (forge-cad / OCCT) | ◐ **en cours** — phase A ouverte (2026-10-25) |
+| 3 | CAO paramétrique + éditeur nodal de valeurs (forge-cad / OCCT) | ◐ **en cours** — phase A clôturée (binding OpenCascade validé) |
 | 4 | CAM 2,5D + multi-procédés + éditeur G-code + simulateur | ⏸ prochain — gelé jusqu'au meuble fabriqué |
 | 5 | forge-link : LinuxCNC + gestion multi-machines | ⏸ gelé |
 | 6 | Painting raster + calques + filtres | ⏸ gelé |
