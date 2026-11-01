@@ -15,7 +15,7 @@ use forge_session::{
     AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, ImportTraces, ValeurCote,
 };
 use forge_units::Length;
-use theme::GRILLE_CIBLE_PX;
+use crate::theme::GRILLE_CIBLE_PX;
 
 /// SVG de démonstration de la galerie de captures : sans
 /// `width`/`height`, usvg le lit à 25,4 dpi — une unité vaut

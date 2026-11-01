@@ -89,9 +89,7 @@ use forge_render::{
     dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 #[cfg(test)]
-use forge_session::{
-    AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, EsquisseProjection, ValeurCote,
-};
+use forge_session::{EsquisseProjection, ValeurCote};
 use forge_session::{
     Command, CroquisResolu, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
     SetExpression, SetInput, Unite,
