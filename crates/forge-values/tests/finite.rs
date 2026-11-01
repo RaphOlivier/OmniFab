@@ -1,6 +1,12 @@
 //! Rejet des résultats non finis (revue point 5) : ni NaN ni un infini
 //! ne doit pouvoir entrer dans le journal via une valeur calculée.
 
+// Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
+// `allow-expect-in-tests` (clippy.toml) ne couvre que les fonctions
+// `#[test]` et les modules `#[cfg(test)]`, pas les helpers de ce
+// fichier d'intégration : expect admis dans tout le fichier.
+#![allow(clippy::expect_used)]
+
 use forge_values::{ValueGraph, ValuesError};
 
 /// Construit un graphe minimal et évalue l'expression « x ».

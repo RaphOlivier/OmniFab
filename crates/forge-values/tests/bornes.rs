@@ -4,6 +4,12 @@
 //! tournent dans un fil de 2 Mio : le pire environnement d'exécution
 //! d'OmniFab (fil de rendu Android, audit n°2).
 
+// Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
+// `allow-expect-in-tests` (clippy.toml) ne couvre que les fonctions
+// `#[test]` et les modules `#[cfg(test)]`, pas les helpers de ce
+// fichier d'intégration : expect admis dans tout le fichier.
+#![allow(clippy::expect_used)]
+
 use forge_values::{LONGUEUR_MAX_EXPRESSION, ValueGraph, ValuesError};
 
 /// Exécute `corps` dans un fil de pile de 2 Mio : un débordement de
