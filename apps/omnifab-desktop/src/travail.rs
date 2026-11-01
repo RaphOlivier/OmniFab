@@ -4,8 +4,8 @@
 //! N8) ; échecs de parse mémorisés — un fichier invalide n'est
 //! plus re-parsé à chaque frame.
 
-use crate::SEUIL_METRES;
 use crate::esquisse;
+use crate::theme::SEUIL_METRES;
 use eframe::egui;
 use forge_geom::Mesh;
 use forge_geom::Point3;

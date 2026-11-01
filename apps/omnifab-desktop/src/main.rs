@@ -69,6 +69,7 @@ mod bibliotheque;
 mod esquisse;
 mod fichiers;
 mod i18n;
+mod theme;
 mod travail;
 
 use aide::{avec_aide, avec_aide_sur_calque};
@@ -78,9 +79,11 @@ use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
+#[cfg(test)]
+use forge_render::Couleur;
 use forge_render::{
-    Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
-    Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
+    Boite2, Boite3D, Camera2D, Camera3D, Renderer2D, Scene2D, Scene3D, Segment2D, Segment3D,
+    dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 #[cfg(test)]
 use forge_session::EsquisseProjection;
@@ -93,6 +96,17 @@ use forge_units::Length;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
+use theme::ACTEUR;
+use theme::COULEUR_GRILLE;
+use theme::COULEUR_GRILLE_2D;
+use theme::COULEUR_RECTANGLE_3D;
+use theme::COULEUR_TRACES;
+use theme::COULEUR_WIREFRAME;
+use theme::DEFAULT_DIAGONAL_EXPR;
+use theme::ECHELLE_METRES;
+use theme::EVENEMENTS_VIERGES;
+use theme::GRILLE_CIBLE_PX;
+use theme::LARGEUR_TRACES_PX;
 use travail::Retour;
 use travail::Travail;
 use travail::fil_de_travail;
@@ -106,46 +120,6 @@ use travail::touche_les_liaisons;
 /// État de rendu wgpu d'eframe : alias pour alléger la signature du
 /// constructeur (ADR-0015).
 type RenderState = eframe::egui_wgpu::RenderState;
-
-/// Acteur des événements écrits par le démonstrateur (ADR-0011).
-const ACTEUR: &str = "desktop.demo";
-/// Expression initiale de la diagonale du rectangle.
-const DEFAULT_DIAGONAL_EXPR: &str = "sqrt(largeur * largeur + hauteur * hauteur)";
-/// Couleur du wireframe 3D du maillage, RGBA normalisé — parité avec
-/// le painter egui (40, 220, 220) (ADR-0015, phase C2).
-const COULEUR_WIREFRAME: Couleur = [40.0 / 255.0, 220.0 / 255.0, 220.0 / 255.0, 1.0];
-/// Couleur du contour du rectangle paramétrique posé sur le plan z = 0
-/// de la vue 3D, RGBA normalisé (ADR-0015, phase C2).
-const COULEUR_RECTANGLE_3D: Couleur = [1.0, 1.0, 1.0, 1.0];
-/// Couleur des tracés importés, RGBA normalisé — parité avec le painter
-/// egui (240, 180, 20) (ADR-0015).
-const COULEUR_TRACES: Couleur = [240.0 / 255.0, 180.0 / 255.0, 20.0 / 255.0, 1.0];
-/// Largeur du trait des tracés importés, en pixels logiques (ADR-0015).
-const LARGEUR_TRACES_PX: f32 = 1.5;
-/// Couleur de la grille de fond 3D, RGBA normalisé (ADR-0015).
-const COULEUR_GRILLE: Couleur = [0.35, 0.40, 0.47, 1.0];
-/// Couleur de la grille 2D, plus claire que la feuille bleue du
-/// rectangle paramétrique pour éviter la confusion (ADR-0015, phase C2).
-const COULEUR_GRILLE_2D: Couleur = [0.55, 0.62, 0.75, 1.0];
-/// Espacement visé entre deux lignes de grille, en pixels (ADR-0015).
-/// 40 px (re-validation §7) : des cellules plus fines au même niveau
-/// de zoom restent lisibles, le pas s'adapte par puissances de dix.
-const GRILLE_CIBLE_PX: f64 = 40.0;
-/// Seuil de détection d'un export en mètres : un maillage dont la
-/// plus grande dimension est sous ce seuil (en millimètres) propose
-/// l'échelle × 1000 à l'import (ADR-0017). 10 mm : un objet de 3 m
-/// exporté en mètres depuis Blender mesure 3,0 « mm » après lecture
-/// (retour checklist jalon 2) — le seuil couvre les objets jusqu'à
-/// ~10 m en mètres ; une pièce réellement plus petite déclenche
-/// aussi le dialogue, au prix d'un clic « Millimètres ».
-const SEUIL_METRES: f64 = 10.0;
-/// Échelle proposée pour un maillage exporté en mètres (Blender) :
-/// les coordonnées sont multipliées par 1000 pour revenir en
-/// millimètres (ADR-0017).
-const ECHELLE_METRES: f64 = 1000.0;
-/// Nombre d'événements posés par une session vierge : au-delà, la
-/// session est considérée « en cours » sur l'écran d'accueil.
-const EVENEMENTS_VIERGES: usize = 3;
 
 /// Écran affiché : accueil (bibliothèque) ou atelier (ADR-0014).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
