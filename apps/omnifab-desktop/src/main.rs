@@ -84,13 +84,11 @@ use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 #[cfg(test)]
 use forge_render::Couleur;
-use forge_render::{
-    Boite2, Boite3D, Camera2D, Camera3D, Renderer2D, Scene2D, Scene3D, Segment2D, Segment3D,
-    dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
-};
+#[cfg(test)]
+use forge_render::{Boite2, Scene2D};
+use forge_render::{Boite3D, Camera2D, Camera3D, Renderer2D, Scene3D, Segment3D, pas_de_grille};
 use forge_session::{
-    Command, CroquisResolu, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
-    SetExpression, SetInput, Unite,
+    Command, CroquisResolu, ImportMesh, ImportTraces, Session, SetExpression, SetInput, Unite,
 };
 #[cfg(test)]
 use forge_session::{EsquisseProjection, ValeurCote};
@@ -100,53 +98,22 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use theme::ACTEUR;
 use theme::COULEUR_GRILLE;
-use theme::COULEUR_GRILLE_2D;
 use theme::COULEUR_RECTANGLE_3D;
 use theme::COULEUR_TRACES;
-use theme::COULEUR_WIREFRAME;
-use theme::DEFAULT_DIAGONAL_EXPR;
-use theme::ECHELLE_METRES;
-use theme::EVENEMENTS_VIERGES;
-use theme::GRILLE_CIBLE_PX;
-use theme::LARGEUR_TRACES_PX;
-use travail::Retour;
-use travail::Travail;
-use travail::fil_de_travail;
-use travail::garde_actuels;
-use travail::maillage_echelle;
-use travail::met_en_cache;
-use travail::propose_echelle_metres;
-use travail::raccourcis_annulation;
-use travail::touche_les_liaisons;
-    Boite2, Boite3D, Camera2D, Camera3D, Renderer2D, Scene2D, Scene3D, Segment2D, Segment3D,
-    dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
-};
-use forge_session::{
-    Command, CroquisResolu, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
-    SetExpression, SetInput, Unite,
-};
 #[cfg(test)]
-use forge_session::{EsquisseProjection, ValeurCote};
-use forge_units::Length;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-use std::sync::mpsc;
-use theme::ACTEUR;
-use theme::COULEUR_GRILLE;
-use theme::COULEUR_GRILLE_2D;
-use theme::COULEUR_RECTANGLE_3D;
-use theme::COULEUR_TRACES;
 use theme::COULEUR_WIREFRAME;
 use theme::DEFAULT_DIAGONAL_EXPR;
 use theme::ECHELLE_METRES;
+#[cfg(test)]
 use theme::EVENEMENTS_VIERGES;
 use theme::GRILLE_CIBLE_PX;
-use theme::LARGEUR_TRACES_PX;
 use travail::Retour;
 use travail::Travail;
 use travail::fil_de_travail;
 use travail::garde_actuels;
+#[cfg(test)]
 use travail::maillage_echelle;
+#[cfg(test)]
 use travail::met_en_cache;
 use travail::propose_echelle_metres;
 use travail::raccourcis_annulation;
