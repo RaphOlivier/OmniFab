@@ -116,7 +116,7 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-10-31-j3-lot-c-forge-session-expect`](knowledge/archives/2026-10-31-j3-lot-c-forge-session-expect.md) | J3 — lot C expect : graine de passe absente au rejeu = refus typé (PR #555) |
 | [`2026-10-31-j3-lot-a-forge-render-expect`](knowledge/archives/2026-10-31-j3-lot-a-forge-render-expect.md) | J3 — lot A expect : renderer absent = frame sautée, poison assumé (PR #557) |
 | [`2026-10-31-j3-lot-b-forge-io-expect`](knowledge/archives/2026-10-31-j3-lot-b-forge-io-expect.md) | J3 — lot B expect : 11 messages d'invariant forge-io, zéro changement de comportement (PR #561) |
-| [`2026-10-31-j3-lot-d-desktop-expect`](knowledge/archives/2026-10-31-j3-lot-d-desktop-expect.md) | J3 — lot D expect : 7 messages d'invariant desktop, graine de déme hors lot (PR #562) |
+| [`2026-10-31-j3-lot-d-desktop-expect`](knowledge/archives/2026-10-31-j3-lot-d-desktop-expect.md) | J3 — lot D expect : 7 messages d'invariant desktop, graine de démo hors lot (PR #562) |
 | [`2026-11-01-j3-lot-e-clippy-expect-workspace`](knowledge/archives/2026-11-01-j3-lot-e-clippy-expect-workspace.md) | J3 — lot E expect : clippy `expect_used` workspace warn, 22 `#[expect]`, échappatoires datées (PR #563) |
 | [`2026-11-01-j0-injection-prompt-contributions-externes`](knowledge/archives/2026-11-01-j0-injection-prompt-contributions-externes.md) | J0 — injection de prompt via contributions externes (cas OpenAgents) : règle anti-injection, signalement GitHub |
 | [`2026-11-01-j0-securisation-depot`](knowledge/archives/2026-11-01-j0-securisation-depot.md) | J0 — sécurisation du dépôt : CONTRIBUTING/AGENTS anti-injection, modération 3 niveaux, protection main |
