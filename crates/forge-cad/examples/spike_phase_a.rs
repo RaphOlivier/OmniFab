@@ -17,6 +17,11 @@
 //! process : chaque cas dégénéré se lance individuellement via
 //! `cargo run -p forge-cad --example spike_phase_a -- <n° 1-4>`.
 
+// Convention expect v2 (2026-10-31, lot E, reprise issue #564) : expect admis dans cet
+// exemple de spike — code de démonstration du jalon révolu, pas du noyau (même
+// statut que la graine preparer_demo, décision 4 de l'inventaire-expect).
+#![allow(clippy::expect_used)]
+
 use forge_cad::{CadBudgets, Solide, brep, step};
 use forge_units::Length;
 

@@ -8,3 +8,6 @@ edition.workspace = true
 
 [dependencies]
 # Invariant (ADR-0000) : forge-units ne dépend d'aucune autre crate.
+
+[lints]
+workspace = true

@@ -82,6 +82,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
     let mut visible = true;
     match catalogue.page_aide(&help_id) {
         Ok(page) => {
+            #[expect(clippy::expect_used)]
             let titre = catalogue
                 .traduction_avec(CLE_TITRE, &[("titre", page.titre.as_str().into())])
                 .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)");
@@ -95,6 +96,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
                 ui.heading(&page.titre);
                 ui.label(&page.description);
                 ui.separator();
+                #[expect(clippy::expect_used)]
                 let exemple = catalogue
                     .traduction(CLE_EXEMPLE)
                     .expect("invariant : clé FTL vérifiée par toutes_les_cles_existent (CI)");
@@ -103,6 +105,7 @@ pub fn fenetre(ctx: &egui::Context, catalogue: &Catalogue, ouverte: &mut Option<
             });
         }
         Err(erreur) => {
+            #[expect(clippy::expect_used)]
             let texte = match erreur {
                 I18nError::CleAbsente { .. } => catalogue
                     .traduction_avec(CLE_INTROUVABLE, &[("identifiant", help_id.as_str().into())])

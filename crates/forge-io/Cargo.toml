@@ -13,3 +13,6 @@ forge-units = { path = "../forge-units" }
 roxmltree = "0.21.1"
 thiserror.workspace = true
 usvg = "0.48.1"
+
+[lints]
+workspace = true

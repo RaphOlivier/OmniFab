@@ -9,6 +9,12 @@
 //! rejeu — et le refus typé \`OF-GCS-0001\` le remplace en défense
 //! en profondeur.
 
+// Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
+// `allow-expect-in-tests` (clippy.toml) ne couvre que les fonctions
+// `#[test]` et les modules `#[cfg(test)]`, pas les helpers de ce
+// fichier d'intégration : expect admis dans tout le fichier.
+#![allow(clippy::expect_used)]
+
 use forge_doc::{Document, NewEvent};
 use forge_gcs::Systeme2D;
 use forge_session::Session;

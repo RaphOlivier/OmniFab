@@ -21,3 +21,6 @@ zip.workspace = true
 log.workspace = true
 uuid.workspace = true
 sha2.workspace = true
+
+[lints]
+workspace = true

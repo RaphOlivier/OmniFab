@@ -2,6 +2,12 @@
 //! réservés, protection des nœuds système, cohérence des unités à la
 //! définition, et les trois modes Simple / Cascade / Remplacer.
 
+// Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
+// `allow-expect-in-tests` (clippy.toml) ne couvre que les fonctions
+// `#[test]` et les modules `#[cfg(test)]`, pas les helpers de ce
+// fichier d'intégration : expect admis dans tout le fichier.
+#![allow(clippy::expect_used)]
+
 use forge_values::{ModeSuppression, Origine, ResultatSuppression, Unite, ValueGraph, ValuesError};
 
 /// Pose une entrée utilisateur et panique si elle est refusée.

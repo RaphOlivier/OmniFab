@@ -23,3 +23,6 @@ forge-units = { path = "../forge-units" }
 # Adaptateur egui_wgpu::CallbackTrait : le cœur de la crate ne dépend
 # pas d'egui (ADR-0015).
 egui = ["dep:egui", "dep:egui-wgpu"]
+
+[lints]
+workspace = true

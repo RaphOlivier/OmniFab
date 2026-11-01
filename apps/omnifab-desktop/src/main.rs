@@ -1211,6 +1211,7 @@ impl DemoApp {
     }
 
     /// Traduit une clé du catalogue embarqué.
+    #[expect(clippy::expect_used)]
     fn texte(&self, cle: &str) -> String {
         self.i18n
             .traduction(cle)
@@ -1218,6 +1219,7 @@ impl DemoApp {
     }
 
     /// Traduit une clé du catalogue embarqué, avec arguments.
+    #[expect(clippy::expect_used)]
     fn texte_avec(&self, cle: &str, arguments: &[(&str, Argument)]) -> String {
         self.i18n
             .traduction_avec(cle, arguments)
@@ -1785,6 +1787,11 @@ impl DemoApp {
     /// 2026-10-19) : la galerie de captures lance l'application sous
     /// Xvfb avec le scénario donné — rien n'est ajouté au rendu, la
     /// scène est posée comme par un utilisateur.
+    // Graine de démo (décision 4 de l'inventaire-expect) : les 8 expect
+    // de preparer_demo sont admis jusqu'au découpage de main.rs
+    // (preparation/decoupage-main-rs.md), où la graine redeviendra du
+    // vrai code de démonstration testé.
+    #[allow(clippy::expect_used)]
     fn preparer_demo(&mut self, scenario: &str) {
         if scenario == "accueil" {
             return;
@@ -3354,6 +3361,7 @@ fn octets_stl_demo() -> Vec<u8> {
     octets
 }
 
+#[expect(clippy::expect_used)]
 fn main() -> eframe::Result<()> {
     let scenario = std::env::var("OMNIFAB_DEMO").ok();
     let catalogue = i18n::catalogue();

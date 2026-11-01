@@ -31,3 +31,11 @@ log = "0.4"
 libm = "0.2"
 uuid = { version = "1", features = ["v7"] }
 sha2 = "0.10"
+
+# Convention expect v2 (2026-10-31, lot E) : expect_used en warn au
+# niveau du workspace — bascule "deny" au lot suivant. Les
+# échappatoires datées vivent près des sites (#[expect]) ; les
+# tests sont exemptés via clippy.toml (allow-expect-in-tests),
+# build.rs via un allow daté.
+[workspace.lints.clippy]
+expect_used = "warn"

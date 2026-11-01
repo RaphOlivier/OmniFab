@@ -22,3 +22,6 @@ native = ["dep:forge-gcs-sys"]
 # Implémentation wasm du même trait : jalon 9 (port Emscripten prouvé,
 # cf. ADR-0013 — décisions futures suspendues).
 wasm = []
+
+[lints]
+workspace = true
