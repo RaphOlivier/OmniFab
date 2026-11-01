@@ -1,11 +1,13 @@
 # OmniFab
 
-> **English translation.** The French documentation is authoritative: [`README.md`](../../README.md) · [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [ADR index](adr.md). Translated as of 2026-10-26 (commit `74cd704`) — the French originals are updated continuously and may be ahead.
+> **English translation.** The French documentation is authoritative: [`README.md`](../../README.md) · [`CONTRIBUTING.md`](../../CONTRIBUTING.md) · [ADR index](adr.md). Translated as of 2026-11-01 (commit `d871072`) — the French originals are updated continuously and may be ahead. [`AGENTS.md`](../../AGENTS.md) is deliberately left untranslated (French only).
 
 [![CI](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml/badge.svg)](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](../../LICENSE)
 
-> **🚧 Status: milestone 3 (parametric CAD) in progress — phase A.** Milestones 1 and 2 are delivered (core + undo + SVG/DXF/STL imports/exports, wgpu viewport, constraint-based 2D sketch, binding engine). CI is **temporarily red**: `Cargo.lock` must be regenerated after the `forge-cad` crate (OpenCascade, system installation required) was added — the fix is already planned. Detailed progress tracking (French): [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](../knowledge/etat-actuel/KNOWLEDGE.md).
+> **🚧 Status: milestone 3 (parametric CAD) in progress — phase A closed (OpenCascade binding validated).** Milestones 1 and 2 are delivered (core + undo + SVG/DXF/STL imports/exports, wgpu viewport, constraint-based 2D sketch, binding engine). CI is **green** on `main` (multi-OS, cargo-deny). Detailed progress tracking (French): [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](../knowledge/etat-actuel/KNOWLEDGE.md).
+
+> 🗺️ **Getting your bearings:** the [general table of contents](../sommaire.md) maps **all** the documentation and the repository — every entry is clickable and explained in one line.
 
 **OmniFab** is free (libre) software for the full digital fabrication chain: **CAD** (computer-aided design), **CAM** (computer-aided manufacturing), **G-code** generation and **machine control**.
 
@@ -112,12 +114,17 @@ All commands: `cargo test --workspace`, `cargo clippy --workspace --all-targets 
 
 ## Documentation
 
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — mandatory development conventions ([English](CONTRIBUTING.md)).
+- [`docs/sommaire.md`](../sommaire.md) — **general table of contents**: a clickable map of all the documentation and the repository.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — mandatory development conventions.
 - [`docs/architecture.md`](../architecture.md) — target workspace architecture (guardrail).
 - [`docs/adr/`](../adr/) — architecture decision records, with rejected alternatives ([English index](adr.md)).
 - [`docs/audit-protocole.md`](../audit-protocole.md) — repository audit protocol (French; to be read by any external auditor before filing findings).
 - [`docs/error-codes.md`](../error-codes.md) — central error-code registry.
 - [`docs/knowledge/`](../knowledge/README.md) — **the project Knowledge** (French): decision notes, current state, discussion archives, function journal (ADR-0028).
+
+## Development with AI assistance
+
+OmniFab is developed with the assistance of artificial-intelligence tools (writing code, tests and documentation). Every contribution is reviewed, validated and merged by the maintainer, who takes full responsibility for it. Messages sent to other projects (issues, pull requests, comments) resulting from this work carry an explicit AI-assistance notice.
 
 ## Language
 

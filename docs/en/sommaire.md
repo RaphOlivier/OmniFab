@@ -1,4 +1,4 @@
-> **English translation.** The French documentation is authoritative: [`docs/sommaire.md`](../sommaire.md). Translated as of 2026-10-26 — the French original is updated continuously and may be ahead. All links below point to the authoritative French files.
+> **English translation.** The French documentation is authoritative: [`docs/sommaire.md`](../sommaire.md). Translated as of 2026-11-01 (commit `d871072`) — the French original is updated continuously and may be ahead. All links below point to the authoritative French files. `AGENTS.md` is deliberately left untranslated (French only).
 
 # General table of contents — the project map
 
@@ -10,7 +10,7 @@
 |---|---|
 | [`README.md`](../../README.md) | Project presentation: roadmap, vision, technical stack, repository layout, per-OS build |
 | [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | Mandatory development conventions: status, native prerequisites, branches/PRs, regression tests |
-| [`AGENTS.md`](../../AGENTS.md) | Contribution rules for AI agents (tooling, conventions, limits) |
+| [`AGENTS.md`](../../AGENTS.md) | Contribution rules for AI agents (tooling, conventions, limits) — French only, deliberately not translated |
 | [`LICENSE`](../../LICENSE) | GPL-3.0+ — application license (isolated crates: MPL-2.0, see `crates/*/LICENSE`) |
 
 ## Documentation — `docs/`
