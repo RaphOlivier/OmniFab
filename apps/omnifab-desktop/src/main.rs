@@ -66,6 +66,7 @@
 mod aide;
 mod atelier_esquisse;
 mod bibliotheque;
+mod demo;
 mod dialogues;
 mod esquisse;
 mod fichiers;
@@ -88,11 +89,12 @@ use forge_render::{
     dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 #[cfg(test)]
-use forge_session::EsquisseProjection;
 use forge_session::{
-    AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
-    ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session, SetExpression, SetInput,
-    Unite, ValeurCote,
+    AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, EsquisseProjection, ValeurCote,
+};
+use forge_session::{
+    Command, CroquisResolu, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
+    SetExpression, SetInput, Unite,
 };
 use forge_units::Length;
 use std::collections::BTreeMap;
@@ -1203,90 +1205,6 @@ impl DemoApp {
         } else {
             None
         }
-    }
-
-    /// Prépare la scène du mode démo scripté (gouvernance
-    /// 2026-10-19) : la galerie de captures lance l'application sous
-    /// Xvfb avec le scénario donné — rien n'est ajouté au rendu, la
-    /// scène est posée comme par un utilisateur.
-    // Graine de démo (décision 4 de l'inventaire-expect) : les 8 expect
-    // de preparer_demo sont admis jusqu'au découpage de main.rs
-    // (preparation/decoupage-main-rs.md), où la graine redeviendra du
-    // vrai code de démonstration testé.
-    #[allow(clippy::expect_used)]
-    fn preparer_demo(&mut self, scenario: &str) {
-        if scenario == "accueil" {
-            return;
-        }
-        self.ecran = Ecran::Atelier;
-        if scenario == "atelier-3d" {
-            self.vue = Vue::TroisD;
-        }
-        let traces = svg::import(SVG_DEMO, &svg::SvgBudgets::default()).expect("svg de démo");
-        let sommets: usize = traces.iter().map(|trace| trace.len()).sum();
-        self.executer(&ImportTraces {
-            format: "svg".into(),
-            octets: SVG_DEMO.to_vec(),
-            traces: traces.len(),
-            sommets,
-        })
-        .expect("tracés importés");
-        self.importer_maillage(octets_stl_demo(), 4, 1.0);
-        let pas = pas_de_grille(self.camera.echelle, GRILLE_CIBLE_PX);
-        for (x, y) in [
-            (0.0, 0.0),
-            (pas * 4.0, 0.0),
-            (pas * 4.0, pas * 3.0),
-            (0.0, pas * 3.0),
-        ] {
-            self.executer(&AddEntity {
-                entite: EntiteEsquisse::Point {
-                    x: Length::from_millimeters(x),
-                    y: Length::from_millimeters(y),
-                },
-            })
-            .expect("coin posé");
-        }
-        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
-            self.executer(&AddEntity {
-                entite: EntiteEsquisse::Ligne { p1, p2 },
-            })
-            .expect("côté posé");
-        }
-        for (ligne, horizontale) in [(4, true), (5, false), (6, true), (7, false)] {
-            let contrainte = if horizontale {
-                ContrainteEsquisse::Horizontale { ligne }
-            } else {
-                ContrainteEsquisse::Verticale { ligne }
-            };
-            self.executer(&AddConstraint { contrainte })
-                .expect("contrainte posée");
-        }
-        self.executer(&AddConstraint {
-            contrainte: ContrainteEsquisse::Distance {
-                p1: 0,
-                p2: 1,
-                valeur: ValeurCote::Fixe {
-                    mm: Length::from_millimeters(pas * 4.0),
-                },
-            },
-        })
-        .expect("cote posée");
-        self.executer(&AddConstraint {
-            contrainte: ContrainteEsquisse::Distance {
-                p1: 1,
-                p2: 2,
-                valeur: ValeurCote::Fixe {
-                    mm: Length::from_millimeters(pas * 3.0),
-                },
-            },
-        })
-        .expect("cote posée");
-        self.executer(&AddConstraint {
-            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
-        })
-        .expect("coin fixé");
-        self.demande_resolution_esquisse();
     }
 
     /// Importe le maillage à l'échelle donnée : commande tout-ou-rien,
@@ -2742,47 +2660,6 @@ impl eframe::App for DemoApp {
     }
 }
 
-/// SVG de démonstration de la galerie de captures : sans
-/// `width`/`height`, usvg le lit à 25,4 dpi — une unité vaut
-/// exactement 1 mm (gouvernance 2026-10-19).
-const SVG_DEMO: &[u8] = b"<?xml version=\"1.0\"?>
-<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 100 100\">
-  <circle cx=\"30\" cy=\"40\" r=\"20\" fill=\"none\"/>
-  <rect x=\"55\" y=\"10\" width=\"40\" height=\"30\" fill=\"none\"/>
-  <path d=\"M10,80 C40,60 60,95 90,70\" fill=\"none\"/>
-</svg>
-";
-
-/// Maillage de démonstration de la galerie de captures : un
-/// tétraèdre STL binaire, quatre triangles écrits octet par
-/// octet en petit-boutiste (gouvernance 2026-10-19).
-fn octets_stl_demo() -> Vec<u8> {
-    let sommets = [
-        (0.0f32, 0.0f32, 0.0f32),
-        (30.0, 0.0, 0.0),
-        (0.0, 40.0, 0.0),
-        (0.0, 0.0, 25.0),
-    ];
-    let faces = [(0, 1, 2), (0, 1, 3), (1, 2, 3), (0, 2, 3)];
-    let mut octets = vec![0u8; 80];
-    octets.extend_from_slice(&4u32.to_le_bytes());
-    let normale_nulle = 0.0f32.to_le_bytes();
-    let attribut_nul = 0u16.to_le_bytes();
-    for (a, b, c) in faces {
-        octets.extend_from_slice(&normale_nulle);
-        octets.extend_from_slice(&normale_nulle);
-        octets.extend_from_slice(&normale_nulle);
-        for indice in [a, b, c] {
-            let (x, y, z) = sommets[indice];
-            octets.extend_from_slice(&x.to_le_bytes());
-            octets.extend_from_slice(&y.to_le_bytes());
-            octets.extend_from_slice(&z.to_le_bytes());
-        }
-        octets.extend_from_slice(&attribut_nul);
-    }
-    octets
-}
-
 #[expect(clippy::expect_used)]
 fn main() -> eframe::Result<()> {
     let scenario = std::env::var("OMNIFAB_DEMO").ok();
@@ -2802,7 +2679,9 @@ fn main() -> eframe::Result<()> {
             let etat = cc.wgpu_render_state.as_ref();
             let mut app = DemoApp::new(catalogue, etat);
             if let Some(scenario) = scenario.as_deref() {
-                app.preparer_demo(scenario);
+                if let Err(raison) = app.preparer_demo(scenario) {
+                    eprintln!("omnifab : scénario de démo refusé : {raison}");
+                }
             }
             Ok(Box::new(app))
         }),
