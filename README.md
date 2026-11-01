@@ -3,7 +3,7 @@
 [![CI](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml/badge.svg)](https://github.com/RaphOlivier/OmniFab/actions/workflows/ci.yml)
 [![Licence : GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0--or--later-blue)](LICENSE)
 
-> **🚧 Statut : jalon 3 (CAO paramétrique) en cours — phase A.** Jalons 1 et 2 livrés (noyau + undo + imports/exports SVG/DXF/STL, viewport wgpu, esquisse 2D à contraintes, moteur de liaisons). La CI est **temporairement rouge** : le `Cargo.lock` doit être régénéré après l'ajout de la crate `forge-cad` (OpenCascade, installation système requise) — correction déjà planifiée. Suivi d'avancement détaillé : [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](docs/knowledge/etat-actuel/KNOWLEDGE.md).
+> **🚧 Statut : jalon 3 (CAO paramétrique) en cours — phase A clôturée (binding OpenCascade validé).** Jalons 1 et 2 livrés (noyau + undo + imports/exports SVG/DXF/STL, viewport wgpu, esquisse 2D à contraintes, moteur de liaisons). La CI est **verte** sur main (multi-OS, cargo-deny). Suivi d'avancement détaillé : [`docs/knowledge/etat-actuel/KNOWLEDGE.md`](docs/knowledge/etat-actuel/KNOWLEDGE.md).
 
 > 🗺️ **Se repérer dans le projet :** le [sommaire général](docs/sommaire.md) cartographie **toute** la documentation et le dépôt — chaque entrée est cliquable et expliquée en une ligne.
 
