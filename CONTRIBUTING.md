@@ -40,7 +40,7 @@ Ce document décrit les **conventions non négociables** du projet. Chaque contr
 ## Branches et PR
 
 - **Documentation, ADR, Knowledge (`docs/**`, `*.md`, `AGENTS.md`, `LICENSE`)** : push direct sur `main` autorisé.
-- **Code (`apps/**`, `crates/**`, workflows)** : branche courte + PR, fusion seulement avec le job `lint-test` vert. Au-delà d'un seuil de ~3 fichiers ou de plusieurs crates, la PR est obligatoire. (Règle actée conventions v4 ; activation pleine dès que la CI est verte.)
+- **Code (`apps/**`, `crates/**`, workflows)** : branche courte + PR, fusion seulement avec le job `lint-test` vert. Au-delà d'un seuil de ~3 fichiers ou de plusieurs crates, la PR est obligatoire. (Règle actée conventions v4 ; protection de branche active — status check `lint-test`, vérifiée le 2026-11-01.)
 
 ## Données
 

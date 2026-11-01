@@ -57,11 +57,9 @@ conventions et architecture. Les décisions tranchées vivent dans
 - Docs, ADR, fiches Knowledge : **push direct** sur main.
 - Code Rust : **branche courte + PR** fusionnée seulement quand `lint-test`
   est vert (lots ≥ ~3 fichiers ou multi-crates ; micro-correctifs tolérés en
-  direct). À activer dès que la CI est repassée au vert.
-- La protection de branche main (status check `lint-test`) est à
-  (re)prendre une fois la CI verte ; en attendant (fenêtre de convergence,
-  CI rouge), la règle branches/PR ci-dessus s'applique par discipline.
-  Quand la protection est active : ne pas la contourner.
+  direct).
+- La protection de branche main (status check `lint-test`) est **active**
+  (vérifiée le 2026-11-01, réglage conforme) : ne pas la contourner.
 - Après tout push via un connecteur : **vérifier le contenu re-fetché**
   (roundtrip) — des pushes tronqués/altérés ont déjà eu lieu sans trace dans
   la réponse du connecteur.
