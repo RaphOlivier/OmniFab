@@ -28,8 +28,8 @@
 //! point 8) : le point reste là où il est dessiné, le reste du
 //! croquis absorbe (alignement FreeCAD).
 
-use crate::DemoApp;
 use crate::aide::{avec_aide, avec_aide_sur_calque};
+use crate::app::DemoApp;
 use eframe::egui;
 use forge_i18n::Argument;
 use forge_render::{Camera2D, pas_de_grille};

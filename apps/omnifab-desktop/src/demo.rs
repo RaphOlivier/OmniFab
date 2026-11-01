@@ -8,8 +8,8 @@
 //! remonte à l'appelant, l'application retombe sur l'écran
 //! d'accueil (repli dégradé).
 
+use crate::app::{DemoApp, Ecran, Vue};
 use crate::theme::GRILLE_CIBLE_PX;
-use crate::{DemoApp, Ecran, Vue};
 use forge_io::svg;
 use forge_render::pas_de_grille;
 use forge_session::{

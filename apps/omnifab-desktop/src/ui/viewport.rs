@@ -3,6 +3,7 @@
 //! déplacement mécanique).
 
 use crate::aide::avec_aide;
+use crate::app::{DemoApp, Vue};
 use crate::atelier_esquisse;
 use crate::theme::COULEUR_GRILLE;
 use crate::theme::COULEUR_GRILLE_2D;
@@ -13,7 +14,6 @@ use crate::theme::GRILLE_CIBLE_PX;
 use crate::theme::LARGEUR_TRACES_PX;
 use crate::travail::maillage_echelle;
 use crate::travail::met_en_cache;
-use crate::{DemoApp, Vue};
 use eframe::egui;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;

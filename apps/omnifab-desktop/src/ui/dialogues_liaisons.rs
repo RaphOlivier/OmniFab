@@ -2,8 +2,8 @@
 //! découpage étape 5 de `preparation/decoupage-main-rs.md`,
 //! déplacement mécanique).
 
-use crate::DemoApp;
 use crate::aide::avec_aide;
+use crate::app::DemoApp;
 use eframe::egui;
 use forge_i18n::Argument;
 use forge_session::{ModeSuppression, RemoveAlias, SetExpression, SetInput, Unite};

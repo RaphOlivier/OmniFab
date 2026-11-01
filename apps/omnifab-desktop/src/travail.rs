@@ -559,3 +559,291 @@ pub(crate) fn touche_les_liaisons(evenement: &str) -> bool {
         || evenement == EVENT_ALIAS_REMOVED
         || evenement == EVENT_SKETCH_CONSTRAINT_UPDATED
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// La lecture d'un fichier d'import est bornée AVANT lecture
+    /// (audit n°3 A3-07, ADR-0009) : un fichier plus gros que le
+    /// budget est refusé sans être lu — le refus porte le code
+    /// OF-IO-0001 du registre.
+    #[test]
+    fn lire_borne_refuse_avant_lecture() {
+        let chemin = std::env::temp_dir().join("omnifab-audit3-import.bin");
+        std::fs::write(&chemin, [0u8; 32]).expect("écriture du fichier test");
+        // 32 octets sous un budget de 64 : lecture entière.
+        assert_eq!(
+            lire_borne(&chemin, 64).expect("lecture sous budget"),
+            vec![0u8; 32]
+        );
+        // 32 octets au-dessus d'un budget de 16 : refus avant
+        // lecture, code OF-IO-0001 (ADR-0009).
+        let erreur = lire_borne(&chemin, 16).expect_err("refus attendu");
+        assert!(
+            erreur.contains("OF-IO-0001"),
+            "le refus doit porter le code du registre : {erreur}"
+        );
+        assert!(
+            erreur.contains("32") && erreur.contains("16"),
+            "le refus cite la taille et le budget : {erreur}"
+        );
+        let _ = std::fs::remove_file(&chemin);
+    }
+
+    // --- Fil de travail résilient (audit n°3 N8) ---
+
+    /// Pompe les retours du fil de travail jusqu'à en recevoir le
+    /// nombre attendu, 10 secondes au plus (audit n°3 N8).
+    fn pomper_retours(recepteur: &mpsc::Receiver<Retour>, attendus: usize) -> Vec<Retour> {
+        let mut retours: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            retours.extend(recepteur.try_iter());
+            if retours.len() >= attendus {
+                return retours;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        retours
+    }
+
+    /// Le fil survit à une panique du travail (audit n°3 N8) : le
+    /// travail qui panique revient en erreur typée OF-WORK-0001 —
+    /// code à inscrire au registre central — et le travail suivant
+    /// est traité normalement.
+    #[test]
+    fn le_fil_survit_a_une_panique_de_travail() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        emetteur_travaux
+            .send(Travail::Bogue { generation: 1 })
+            .expect("envoi du travail bogué");
+        emetteur_travaux
+            .send(Travail::ResoudreApercu {
+                generation: 2,
+                croquis: EsquisseProjection::default(),
+            })
+            .expect("envoi du travail sain");
+        let retours = pomper_retours(&recepteur_retours, 2);
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil se termine proprement à la déconnexion");
+        assert_eq!(retours.len(), 2, "un retour par travail, même bogué");
+        match &retours[0] {
+            Retour::Erreur {
+                generation,
+                message,
+            } => {
+                assert_eq!(
+                    *generation, 1,
+                    "l'erreur porte la génération du travail bogué"
+                );
+                assert!(
+                    message.contains("OF-WORK-0001"),
+                    "l'échec inopiné doit porter le code du registre : {message}"
+                );
+            }
+            _ => panic!("le travail bogué doit revenir en erreur typée"),
+        }
+        assert_eq!(retours[1].generation(), 2, "le travail suivant est traité");
+    }
+
+    /// La déconnexion de l'émetteur éteint le fil comme un état, pas
+    /// un crash (audit n°3 N8) : le fil se termine proprement.
+    #[test]
+    fn la_deconnexion_eteint_le_fil_proprement() {
+        let (emetteur_travaux, recepteur_travaux) = mpsc::channel::<Travail>();
+        let (emetteur_retours, _recepteur_retours) = mpsc::channel::<Retour>();
+        let fil = std::thread::spawn(move || fil_de_travail(recepteur_travaux, emetteur_retours));
+        drop(emetteur_travaux);
+        fil.join()
+            .expect("le fil s'éteint proprement à la déconnexion");
+    }
+
+    /// Le code du fil de travail vit au registre central des codes
+    /// d'erreur (ADR-0003, audit n°3 N8) : OF-WORK-0001 doit y
+    /// figurer, comme les codes des crates du noyau.
+    #[test]
+    fn of_work_0001_est_au_registre() {
+        const REGISTRE: &str = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../docs/error-codes.md"
+        ));
+        assert!(
+            REGISTRE.contains("OF-WORK-0001"),
+            "OF-WORK-0001 absent du registre docs/error-codes.md"
+        );
+    }
+
+    /// Parse factice : échoue en comptant ses appels.
+    fn echec_de_parse(parses: &mut u32) -> impl FnOnce() -> Result<Vec<u8>, String> + '_ {
+        move || {
+            *parses += 1;
+            Err("fichier invalide".to_string())
+        }
+    }
+
+    /// Un échec de parse reste en cache : la même clé n'est plus
+    /// re-parsée à chaque frame (ADR-0016 C1).
+    #[test]
+    fn un_echec_de_parse_est_en_cache_pas_reparse() {
+        let mut parses: u32 = 0;
+        let mut cache: Option<(String, Result<Vec<u8>, String>)> = None;
+        assert!(met_en_cache(
+            &mut cache,
+            "a".into(),
+            echec_de_parse(&mut parses)
+        ));
+        assert!(!met_en_cache(
+            &mut cache,
+            "a".into(),
+            echec_de_parse(&mut parses)
+        ));
+        assert!(met_en_cache(
+            &mut cache,
+            "b".into(),
+            echec_de_parse(&mut parses)
+        ));
+        assert_eq!(parses, 2, "deux parses pour deux clés distinctes");
+        let (_, resultat) = cache.expect("entrée en cache");
+        assert!(resultat.is_err(), "l'échec est mémorisé");
+    }
+
+    /// Les retours d'une génération obsolète sont ignorés : un
+    /// travail parti avant une réinitialisation ou une ouverture ne
+    /// touche plus l'état (ADR-0016 C1).
+    #[test]
+    fn les_retours_obsoletes_sont_ignores() {
+        let file = vec![
+            Retour::Erreur {
+                generation: 7,
+                message: "obsolète".to_string(),
+            },
+            Retour::Erreur {
+                generation: 8,
+                message: "actuel".to_string(),
+            },
+        ];
+        let gardes = garde_actuels(file, 8);
+        assert_eq!(gardes.len(), 1, "seul le retour courant est gardé");
+        assert_eq!(gardes[0].generation(), 8, "le retour gardé est courant");
+    }
+
+    /// Modificateurs pour un test de raccourcis (ADR-0016 C2).
+    fn modificateurs(ctrl: bool, command: bool, maj: bool) -> egui::Modifiers {
+        egui::Modifiers {
+            alt: false,
+            ctrl,
+            shift: maj,
+            mac_cmd: false,
+            command,
+        }
+    }
+
+    /// Raccourcis globaux : Cmd annule, Cmd+Y ou Cmd+Maj+Z rétablit,
+    /// rien ne se déclenche quand un champ de texte a le focus, et
+    /// Ctrl nu ne fait rien — Cmd macOS est « command », pas « ctrl »
+    /// (ADR-0016 C2).
+    #[test]
+    fn les_raccourcis_ignorent_la_saisie_en_cours() {
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), true, false, false),
+            (true, false)
+        );
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), false, true, false),
+            (false, true)
+        );
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, true), true, false, false),
+            (false, true)
+        );
+        // Un champ de texte a le focus : la saisie n'est pas écrasée.
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(false, true, false), true, false, true),
+            (false, false)
+        );
+        // Ctrl seul (sans Cmd) ne déclenche rien sous macOS.
+        assert_eq!(
+            raccourcis_annulation(&modificateurs(true, false, false), true, false, false),
+            (false, false)
+        );
+    }
+
+    /// L'échelle mètres est proposée pour un maillage dont la plus
+    /// grande dimension reste dans la bande des exports en mètres :
+    /// un objet Blender de 3 m de diamètre exporté en mètres mesure
+    /// 3,0 « mm » après lecture et déclenche le dialogue (retour
+    /// checklist jalon 2) ; une dimension nulle (maillage vide) ou
+    /// franchement millimétrique ne déclenche rien (ADR-0017).
+    #[test]
+    fn echelle_metres_proposee_sous_le_seuil() {
+        assert!(propose_echelle_metres(0.05));
+        assert!(propose_echelle_metres(1.0));
+        assert!(
+            propose_echelle_metres(3.0),
+            "objet Blender de 3 m (retour jalon 2)"
+        );
+        assert!(!propose_echelle_metres(0.0));
+        assert!(!propose_echelle_metres(10.0));
+        assert!(!propose_echelle_metres(50.0));
+    }
+
+    /// La plus grande dimension est le plus grand côté de la boîte
+    /// englobante ; un maillage vide mesure 0 (ADR-0017).
+    #[test]
+    fn plus_grande_dimension_est_le_plus_grand_cote() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s1 = Point3::new(un, un, Length::ZERO).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        assert_eq!(plus_grande_dimension(&maillage), 1.0);
+        assert_eq!(plus_grande_dimension(&Mesh::new()), 0.0);
+    }
+
+    /// L'échelle d'import multiplie les coordonnées : × 1000 pour un
+    /// export en mètres, l'identité ne touche à rien (ADR-0017).
+    #[test]
+    fn maillage_echelle_multiplie_les_coordonnees() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let s2 = Point3::new(un, un, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let grossi = maillage_echelle(maillage, 1000.0).expect("échelle appliquée");
+        assert_eq!(grossi.vertices()[0].x().millimeters(), 0.0);
+        assert_eq!(grossi.vertices()[0].z().millimeters(), 1000.0);
+        let intact = maillage_echelle(grossi, 1.0).expect("identité");
+        assert_eq!(intact.vertices()[0].z().millimeters(), 1000.0);
+    }
+
+    /// L'export écrit au chemin cible via un temporaire synchronisé
+    /// puis renommé : le fichier de l'utilisateur n'est jamais
+    /// tronqué par un échec en cours d'écriture, aucun temporaire
+    /// ne survit (audit n°2, N7).
+    #[test]
+    fn l_ecriture_d_export_est_atomique() {
+        let cible = std::env::temp_dir().join("omnifab-audit2-export.svg");
+        let _ = std::fs::remove_file(&cible);
+        assert!(
+            matches!(ecris_fichier(0, &cible, b"<svg/>"), Retour::Export { .. }),
+            "l'export doit réussir"
+        );
+        assert_eq!(
+            std::fs::read(&cible).expect("fichier écrit"),
+            b"<svg/>".to_vec()
+        );
+        let mut tmp = cible.as_os_str().to_owned();
+        tmp.push(".tmp");
+        assert!(!PathBuf::from(tmp).exists(), "aucun temporaire résiduel");
+        let _ = std::fs::remove_file(&cible);
+        // un dossier parent absent : échec propre, retour d'erreur
+        let absent = std::env::temp_dir().join("omnifab-audit2-absent/sortie.svg");
+        assert!(
+            matches!(ecris_fichier(0, &absent, b"x"), Retour::Erreur { .. }),
+            "l'échec remonte comme erreur"
+        );
+    }
+}

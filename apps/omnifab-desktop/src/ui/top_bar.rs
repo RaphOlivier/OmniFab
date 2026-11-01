@@ -2,8 +2,8 @@
 //! `preparation/decoupage-main-rs.md`, déplacement mécanique).
 
 use crate::aide::{avec_aide, avec_aide_sur_calque};
+use crate::app::{ActionDestructrice, DemoApp, Ecran};
 use crate::fichiers;
-use crate::{ActionDestructrice, DemoApp, Ecran};
 use eframe::egui;
 
 impl DemoApp {

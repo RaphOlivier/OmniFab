@@ -3,10 +3,10 @@
 //! déplacement mécanique).
 
 use crate::aide::avec_aide;
+use crate::app::{ActionDestructrice, DemoApp};
 use crate::bibliotheque;
 use crate::bibliotheque::EntreeProjet;
 use crate::theme::EVENEMENTS_VIERGES;
-use crate::{ActionDestructrice, DemoApp};
 use eframe::egui;
 use forge_i18n::Argument;
 
