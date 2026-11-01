@@ -120,6 +120,10 @@ Toutes commandes : `cargo test --workspace`, `cargo clippy --workspace --all-tar
 - [`docs/error-codes.md`](docs/error-codes.md) — registre central des codes d'erreur.
 - [`docs/knowledge/`](docs/knowledge/README.md) — **la Knowledge du projet** : fiches de décisions, état actuel, archives des discussions, journal des fonctions (ADR-0028).
 
+## Développement avec assistance IA
+
+OmniFab est développé avec l'assistance d'outils d'intelligence artificielle (rédaction du code, des tests et de la documentation). Toute contribution est relue, validée et fusionnée par le mainteneur, qui en assume l'entière responsabilité. Les messages envoyés vers d'autres projets (issues, pull requests, commentaires) issus de ce travail portent une mention explicite d'assistance IA.
+
 ## Langue
 
 > 🌍 La documentation de ce dépôt est **en français** — version de référence. Les pages d'entrée sont traduites en anglais dans [`docs/en/`](docs/en/README.md) (README, CONTRIBUTING, index des ADR, en-têtes de la matrice), synchronisées par lots ; en cas de divergence, le français fait foi.
