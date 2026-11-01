@@ -79,9 +79,11 @@ use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
+#[cfg(test)]
+use forge_render::Couleur;
 use forge_render::{
-    Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
-    Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
+    Boite2, Boite3D, Camera2D, Camera3D, Renderer2D, Scene2D, Scene3D, Segment2D, Segment3D,
+    dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
 #[cfg(test)]
 use forge_session::EsquisseProjection;
