@@ -1352,7 +1352,7 @@ pub(crate) fn dessiner_apercu(
 ) {
     // Affichage de l'aperçu : même règle anti-flash que le dessin.
     let resolu = resolu_affichage(app);
-    let pas = pas_de_grille(app.camera.echelle, crate::GRILLE_CIBLE_PX);
+    let pas = pas_de_grille(app.camera.echelle, crate::theme::GRILLE_CIBLE_PX);
     let vise = viser(app.session.esquisse(), resolu, pas, x, y, None);
     let camera = &app.camera;
     match app.geste.as_ref() {
