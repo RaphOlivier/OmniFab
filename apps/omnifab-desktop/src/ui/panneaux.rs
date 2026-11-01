@@ -3,10 +3,10 @@
 //! déplacement mécanique).
 
 use crate::aide::avec_aide;
-use crate::aide_du_code;
+use crate::app::aide_du_code;
+use crate::app::{DemoApp, Vue};
 use crate::atelier_esquisse;
 use crate::dialogues::{DialogueNouvelAlias, DialogueSuppression};
-use crate::{DemoApp, Vue};
 use eframe::egui;
 use forge_i18n::Argument;
 use forge_session::{ModeSuppression, RemoveAlias, SetExpression, SetInput, Unite};
