@@ -4,6 +4,7 @@
 
 use crate::aide::avec_aide;
 use crate::bibliotheque::EntreeProjet;
+use crate::bibliotheque;
 use crate::theme::EVENEMENTS_VIERGES;
 use crate::{ActionDestructrice, DemoApp};
 use eframe::egui;

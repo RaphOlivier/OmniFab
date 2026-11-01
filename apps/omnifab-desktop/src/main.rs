@@ -81,7 +81,8 @@ use eframe::egui;
 use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
-use forge_io::{dxf, stl, svg};
+#[cfg(test)]
+use forge_io::svg;
 #[cfg(test)]
 use forge_render::Couleur;
 #[cfg(test)]

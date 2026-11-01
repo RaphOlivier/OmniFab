@@ -5,7 +5,6 @@ use crate::aide::{avec_aide, avec_aide_sur_calque};
 use crate::fichiers;
 use crate::{ActionDestructrice, DemoApp, Ecran};
 use eframe::egui;
-use forge_io::{dxf, stl, svg};
 
 impl DemoApp {
     pub(crate) fn top_bar(&mut self, ui: &mut egui::Ui) {
