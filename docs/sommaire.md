@@ -121,6 +121,7 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-11-01-j0-injection-prompt-contributions-externes`](knowledge/archives/2026-11-01-j0-injection-prompt-contributions-externes.md) | J0 — injection de prompt via contributions externes (cas OpenAgents) : règle anti-injection, signalement GitHub |
 | [`2026-11-01-j0-securisation-depot`](knowledge/archives/2026-11-01-j0-securisation-depot.md) | J0 — sécurisation du dépôt : CONTRIBUTING/AGENTS anti-injection, modération 3 niveaux, protection main |
 | [`2026-11-01-j0-bump-en-couche-accueil`](knowledge/archives/2026-11-01-j0-bump-en-couche-accueil.md) | J0 — bump EN de la couche d'accueil + alignement du statut « phase A clôturée » (FR/EN) |
+| [`2026-11-01-j3-decoupage-main-6-app`](knowledge/archives/2026-11-01-j3-decoupage-main-6-app.md) | J3 — découpage main.rs 6/6 : app.rs, tests du fil vers travail.rs, lanceur 53 lignes (PR #596) |
 
 ## Code
 
