@@ -109,7 +109,7 @@ impl Travail {
     /// Génération de l'état au moment de l'envoi (audit n°3 N8) :
     /// connue avant l'exécution — un travail qui panique garde sa
     /// génération pour le retour d'erreur typé.
-    fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         match self {
             Travail::ImportTraces { generation, .. }
             | Travail::ImportMaillage { generation, .. }
@@ -321,7 +321,7 @@ pub(crate) enum Retour {
 
 impl Retour {
     /// Génération de l'état au moment de l'envoi du travail.
-    fn generation(&self) -> u64 {
+    pub(crate) fn generation(&self) -> u64 {
         match self {
             Retour::ImportTraces { generation, .. }
             | Retour::ImportMaillage { generation, .. }
