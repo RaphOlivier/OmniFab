@@ -82,13 +82,14 @@ use forge_render::{
     Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
-use forguse forge_session::{
+use forge_session::{
     AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
     ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session, SetExpression, SetInput, Unite,
     ValeurCote,
 };
 #[cfg(test)]
-use forge_session::EsquisseProjection;ge_units::Length;
+use forge_session::EsquisseProjection;
+use forge_units::Length;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
