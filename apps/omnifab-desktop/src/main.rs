@@ -88,12 +88,12 @@ use forge_render::{
     Boite2, Boite3D, Camera2D, Camera3D, Renderer2D, Scene2D, Scene3D, Segment2D, Segment3D,
     dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
-#[cfg(test)]
-use forge_session::{EsquisseProjection, ValeurCote};
 use forge_session::{
     Command, CroquisResolu, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
     SetExpression, SetInput, Unite,
 };
+#[cfg(test)]
+use forge_session::{EsquisseProjection, ValeurCote};
 use forge_units::Length;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -2676,10 +2676,10 @@ fn main() -> eframe::Result<()> {
         Box::new(move |cc| {
             let etat = cc.wgpu_render_state.as_ref();
             let mut app = DemoApp::new(catalogue, etat);
-            if let Some(scenario) = scenario.as_deref() {
-                if let Err(raison) = app.preparer_demo(scenario) {
-                    eprintln!("omnifab : scénario de démo refusé : {raison}");
-                }
+            if let Some(scenario) = scenario.as_deref()
+                && let Err(raison) = app.preparer_demo(scenario)
+            {
+                eprintln!("omnifab : scénario de démo refusé : {raison}");
             }
             Ok(Box::new(app))
         }),

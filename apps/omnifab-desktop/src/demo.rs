@@ -8,6 +8,7 @@
 //! remonte à l'appelant, l'application retombe sur l'écran
 //! d'accueil (repli dégradé).
 
+use crate::theme::GRILLE_CIBLE_PX;
 use crate::{DemoApp, Ecran, Vue};
 use forge_io::svg;
 use forge_render::pas_de_grille;
@@ -15,7 +16,6 @@ use forge_session::{
     AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, ImportTraces, ValeurCote,
 };
 use forge_units::Length;
-use crate::theme::GRILLE_CIBLE_PX;
 
 /// SVG de démonstration de la galerie de captures : sans
 /// `width`/`height`, usvg le lit à 25,4 dpi — une unité vaut
