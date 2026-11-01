@@ -66,6 +66,7 @@
 mod aide;
 mod atelier_esquisse;
 mod bibliotheque;
+mod dialogues;
 mod esquisse;
 mod fichiers;
 mod i18n;
@@ -74,6 +75,7 @@ mod travail;
 
 use aide::{avec_aide, avec_aide_sur_calque};
 use bibliotheque::EntreeProjet;
+use dialogues::{DialogueNouvelAlias, DialogueSuppression};
 use eframe::egui;
 use forge_doc::Document;
 use forge_geom::{Mesh, Path2};
@@ -198,34 +200,6 @@ struct DemandeEchelle {
     triangles: usize,
     /// Plus grande dimension du maillage, en millimètres.
     dimension: f64,
-}
-
-/// Dialogue « + Nouvel alias » (ADR-0019 §6) : nom, entrée ou
-/// expression, unité — état de l'app UI, jamais un événement tant
-/// que « Poser » n'est pas cliqué.
-struct DialogueNouvelAlias {
-    /// Nom de l'alias à créer.
-    nom: String,
-    /// `true` : expression calculée ; `false` : entrée numérique.
-    expression: bool,
-    /// Valeur de l'entrée.
-    valeur: f64,
-    /// Texte de l'expression.
-    texte: String,
-    /// Unité déclarée (`None` = sans unité).
-    unite: Option<Unite>,
-}
-
-/// Dialogue de suppression d'un alias référencé (ADR-0019 §6,
-/// amendement 2026-10-20) : les formules concernées sont listées, la
-/// suppression propose cascade, remplacement ou annulation.
-struct DialogueSuppression {
-    /// Alias demandé en suppression.
-    alias: String,
-    /// Formules et cotes qui lisent encore l'alias.
-    references: Vec<String>,
-    /// Alias de remplacement choisi (mode Remplacer).
-    remplacement: String,
 }
 
 /// `help_id` de la page d'aide du code d'erreur **terminal** du
