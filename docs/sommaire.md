@@ -102,6 +102,25 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-10-26-j4-ouverture-lot-adr`](knowledge/archives/2026-10-26-j4-ouverture-lot-adr.md) | J4 — ouverture du jalon 4 : ADR-0029..0034 validés + conventions `expect` |
 | [`2026-10-26-j0-sans-pc-convergence-docs`](knowledge/archives/2026-10-26-j0-sans-pc-convergence-docs.md) | J0 — session sans PC n°2 : spécifs phase D, matrice EN, sommaire général, ADR-0016/0019, patchs `expect` |
 | [`2026-10-29-j0-audit4-claude`](knowledge/archives/2026-10-29-j0-audit4-claude.md) | J0 — audit externe n°4 (rapport + verdicts) |
+| [`2026-10-31-j3-a3-08-validation-entrees-cad`](knowledge/archives/2026-10-31-j3-a3-08-validation-entrees-cad.md) | J3 — A3-08 : validation des entrées forge-cad avant le pont OCCT (PR #519) |
+| [`2026-10-31-j3-a3-08-dette-contours-auto-secants`](knowledge/archives/2026-10-31-j3-a3-08-dette-contours-auto-secants.md) | J3 — dette A3-08 : contours auto-sécants refusés avant le pont OCCT (PR #526) |
+| [`2026-10-31-j3-a3-09-10-mineurs-forge-values`](knowledge/archives/2026-10-31-j3-a3-09-10-mineurs-forge-values.md) | J3 — mineurs forge-values A3-09/10 : plus de nœud fantôme, unités des dépendants revalidées (PR #530) |
+| [`2026-10-31-j3-a3-11-12-13-18-mineurs-forge-doc`](knowledge/archives/2026-10-31-j3-a3-11-12-13-18-mineurs-forge-doc.md) | J3 — mineurs forge-doc A3-11/12/13/18 : UUIDv7 repris au rechargement, journal corrompu refusé, traversée par segment (PR #536) |
+| [`2026-10-31-j3-a3-14-15-16-mineurs-forge-io`](knowledge/archives/2026-10-31-j3-a3-14-15-16-mineurs-forge-io.md) | J3 — mineurs forge-io A3-14/15/16 : STL binaire/ASCII, SVG résolveur neutralisé + DTD internes refusées (PR #528) |
+| [`2026-10-31-j3-a3-17-longueur-faillible`](knowledge/archives/2026-10-31-j3-a3-17-longueur-faillible.md) | J3 — mineur forge-units A3-17 : constructeur faillible `Length::try_millimeters` (PR #540) |
+| [`2026-10-31-j3-a4-04-05-06-hygiene-gcs`](knowledge/archives/2026-10-31-j3-a4-04-05-06-hygiene-gcs.md) | J3 — hygiène forge-gcs A4-04/05/06 : troncature signalée, statut 3 typé, arène avant système (PR #542) |
+| [`2026-10-31-j3-a4-07-13-robustesse-geometrie`](knowledge/archives/2026-10-31-j3-a4-07-13-robustesse-geometrie.md) | J3 — hygiène A4-07/13 : zoom gardé, borne de magnitude OF-GEO-0003, garde ADR-0020 (PR #547) |
+| [`2026-10-31-j3-a4-08-forbid-unsafe`](knowledge/archives/2026-10-31-j3-a4-08-forbid-unsafe.md) | J3 — hygiène A4-08 : `forbid(unsafe_code)` sur les crates cœur, exemption FFI documentée (PR #549) |
+| [`2026-10-31-j3-a4-09-10-hygiene-i18n`](knowledge/archives/2026-10-31-j3-a4-09-10-hygiene-i18n.md) | J3 — hygiène i18n A4-09/10 : marques d'isolation Fluent coupées, clés des tables de complétude (PR #550) |
+| [`2026-10-31-j3-a4-12-restes-supply-chain`](knowledge/archives/2026-10-31-j3-a4-12-restes-supply-chain.md) | J3 — hygiène A4-12 restes : issues auto dédoublonnées, actions épinglées SHA, cargo-apk verrouillé, APK « debug » (PR #553) |
+| [`2026-10-31-j3-lot-c-forge-session-expect`](knowledge/archives/2026-10-31-j3-lot-c-forge-session-expect.md) | J3 — lot C expect : graine de passe absente au rejeu = refus typé (PR #555) |
+| [`2026-10-31-j3-lot-a-forge-render-expect`](knowledge/archives/2026-10-31-j3-lot-a-forge-render-expect.md) | J3 — lot A expect : renderer absent = frame sautée, poison assumé (PR #557) |
+| [`2026-10-31-j3-lot-b-forge-io-expect`](knowledge/archives/2026-10-31-j3-lot-b-forge-io-expect.md) | J3 — lot B expect : 11 messages d'invariant forge-io, zéro changement de comportement (PR #561) |
+| [`2026-10-31-j3-lot-d-desktop-expect`](knowledge/archives/2026-10-31-j3-lot-d-desktop-expect.md) | J3 — lot D expect : 7 messages d'invariant desktop, graine de déme hors lot (PR #562) |
+| [`2026-11-01-j3-lot-e-clippy-expect-workspace`](knowledge/archives/2026-11-01-j3-lot-e-clippy-expect-workspace.md) | J3 — lot E expect : clippy `expect_used` workspace warn, 22 `#[expect]`, échappatoires datées (PR #563) |
+| [`2026-11-01-j0-injection-prompt-contributions-externes`](knowledge/archives/2026-11-01-j0-injection-prompt-contributions-externes.md) | J0 — injection de prompt via contributions externes (cas OpenAgents) : règle anti-injection, signalement GitHub |
+| [`2026-11-01-j0-securisation-depot`](knowledge/archives/2026-11-01-j0-securisation-depot.md) | J0 — sécurisation du dépôt : CONTRIBUTING/AGENTS anti-injection, modération 3 niveaux, protection main |
+| [`2026-11-01-j0-bump-en-couche-accueil`](knowledge/archives/2026-11-01-j0-bump-en-couche-accueil.md) | J0 — bump EN de la couche d'accueil + alignement du statut « phase A clôturée » (FR/EN) |
 
 ## Code
 
