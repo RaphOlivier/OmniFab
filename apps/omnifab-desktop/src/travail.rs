@@ -5,6 +5,8 @@
 //! plus re-parsé à chaque frame.
 
 use crate::SEUIL_METRES;
+use crate::esquisse;
+use eframe::egui;
 use forge_geom::Mesh;
 use forge_geom::Point3;
 use forge_io::dxf;
@@ -16,7 +18,6 @@ use forge_session::EVENT_EXPRESSION_SET;
 use forge_session::EVENT_INPUT_SET;
 use forge_session::EVENT_SKETCH_CONSTRAINT_UPDATED;
 use forge_session::EsquisseProjection;
-use forge_session::ImportTraces;
 use forge_units::Length;
 use std::path::Path;
 use std::path::PathBuf;

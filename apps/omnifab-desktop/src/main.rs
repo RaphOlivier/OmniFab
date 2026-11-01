@@ -75,32 +75,29 @@ use aide::{avec_aide, avec_aide_sur_calque};
 use bibliotheque::EntreeProjet;
 use eframe::egui;
 use forge_doc::Document;
-use forge_geom::{Mesh, Path2, Point3};
+use forge_geom::{Mesh, Path2};
 use forge_i18n::Argument;
 use forge_io::{dxf, stl, svg};
 use forge_render::{
     Boite2, Boite3D, Camera2D, Camera3D, Couleur, Renderer2D, Scene2D, Scene3D, Segment2D,
     Segment3D, dessiner_scene, dessiner_wireframe, pas_de_grille, pas_decimation,
 };
-use forge_session::{
-    AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EVENT_ALIAS_REMOVED,
-    EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_SKETCH_CONSTRAINT_UPDATED, EntiteEsquisse,
-    EsquisseProjection, ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session,
-    SetExpression, SetInput, Unite, ValeurCote,
+use forguse forge_session::{
+    AddConstraint, AddEntity, Command, ContrainteEsquisse, CroquisResolu, EntiteEsquisse,
+    ImportMesh, ImportTraces, ModeSuppression, RemoveAlias, Session, SetExpression, SetInput, Unite,
+    ValeurCote,
 };
-use forge_units::Length;
+#[cfg(test)]
+use forge_session::EsquisseProjection;ge_units::Length;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use travail::Retour;
 use travail::Travail;
-use travail::ecris_fichier;
 use travail::fil_de_travail;
 use travail::garde_actuels;
-use travail::lire_borne;
 use travail::maillage_echelle;
 use travail::met_en_cache;
-use travail::plus_grande_dimension;
 use travail::propose_echelle_metres;
 use travail::raccourcis_annulation;
 use travail::touche_les_liaisons;
@@ -2868,6 +2865,7 @@ mod tests {
     use super::*;
     use forge_geom::{Point2, Point3};
     use forge_session::{AddConstraint, AddEntity, ContrainteEsquisse, EntiteEsquisse, MovePoint};
+    use travail::{ecris_fichier, lire_borne, plus_grande_dimension};
 
     /// SVG minimal de test : un triangle fermé.
     const SVG_TEST: &[u8] =
