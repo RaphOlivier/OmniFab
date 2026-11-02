@@ -18,6 +18,7 @@
 //! (OF-GEO-0001).
 
 mod error;
+mod segments;
 
 pub use error::GeomError;
 
