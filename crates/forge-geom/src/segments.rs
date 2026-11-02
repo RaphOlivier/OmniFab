@@ -560,7 +560,9 @@ mod tests {
         let premier = points[0];
         let dernier = points[points.len() - 1];
         assert!(points.len() > 8, "cercle discrétisé : {}", points.len());
-        assert_eq!(premier.x().millimeters(), 1.0);
+        // cos(π/2) n'est pas nul en f64 : le sommet du cercle se
+        // vérifie à la tolérance près.
+        assert!((premier.x().millimeters() - 1.0).abs() < 1e-9);
         assert_eq!(premier.y().millimeters(), 7.0);
         assert!(points_recolles(premier, dernier), "le cercle se referme");
     }
