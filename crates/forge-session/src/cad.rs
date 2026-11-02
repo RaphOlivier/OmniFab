@@ -1,0 +1,882 @@
+//! Domaine CAO de la session (ADR-0024, phase B lot 2) : features
+//! d'extrusion rejouées depuis le journal, reconstruction du corps
+//! par un moteur CAO **injecté** ([`MoteurCad`]).
+//!
+//! - **journal** : `cad.feature.added` et `cad.feature.updated` — la
+//!   feature porte son croquis, son mode, sa profondeur journalisée
+//!   et sa couleur ; le corps reconstruit n'est JAMAIS sérialisé
+//!   (état dérivé, ADR-0016 D8 étendu au CAO, ADR-0024 D4) ;
+//! - **moteur injecté** : forge-session n'instancie jamais le noyau
+//!   OCCT (même frontière que le solveur 2D, ADR-0018 D3 / ADR-0013)
+//!   — le lot 2 teste contre un moteur trivial aux volumes
+//!   analytiques, le lot 3 branche le vrai noyau (ADR-0023) ;
+//! - **profondeurs en expression** : l'alias
+//!   `cad.extrusion{id}.profondeur` vit dans le graphe des liaisons
+//!   comme nœud système, posé dans la même transaction que la
+//!   feature (un groupe d'undo, ADR-0011) ;
+//! - **« à travers »** : enveloppe dérivée =
+//!   [`FACTEUR_ATRAVERS`] × diagonale de la boîte du corps courant —
+//!   jamais journalisée (dérivé déterministe, ADR-0024 D4).
+
+use crate::SessionError;
+use crate::command::{EVENT_FEATURE_ADDED, EVENT_FEATURE_UPDATED, EVENT_SKETCH_CREATED};
+use crate::esquisse::{
+    EntiteEsquisse, VERSION_SCHEMA_CROQUIS, ValeurCote, champ_id, nombre_cote, texte_cote,
+};
+use crate::projection::{Projection, TypesIgnores, verifie_schema};
+use forge_doc::NewEvent;
+use forge_geom::{Contour2, Mesh, Point2, Point3, Segment2, SensHoraire, points_recolles};
+use forge_units::{Angle, Length};
+use std::collections::BTreeMap;
+
+/// Version de schéma courante des événements `cad.feature.added` et
+/// `cad.feature.updated` (ADR-0024 §7, lot 2) : nés en v1.
+pub(crate) const VERSION_SCHEMA_FEATURE: u32 = 1;
+
+/// Plan d'un croquis (ADR-0024 §7, lot 2) : seul « xy » est supporté —
+/// un plan inconnu d'un journal plus récent est retenu tel quel,
+/// jamais deviné, jamais refusé.
+#[derive(Debug, Clone, PartialEq)]
+pub enum PlanCroquis {
+    /// Plan xy, origine du corps (le lot 2 extrude en +z).
+    Xy,
+    /// Plan inconnu, genre retenu tel quel.
+    Inconnu {
+        /// Genre du plan lu au journal.
+        genre: String,
+    },
+}
+
+/// Mode d'une extrusion (ADR-0024 §7) : addition au corps courant ou
+/// soustraction (poche, perçage).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeExtrusion {
+    /// Ajout au corps courant (première feature : corps initial).
+    Addition,
+    /// Soustraction du corps courant (poche, perçage).
+    Soustraction,
+}
+
+/// Profondeur d'une extrusion, entrée des commandes (ADR-0024 D4) :
+/// cote fixe, expression pilotée ou « à travers » — l'expression vit
+/// dans le nœud système `cad.extrusion{id}.profondeur` du graphe des
+/// liaisons, la valeur journalisée est la [`ProfondeurCad`] dérivée.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProfondeurFeature {
+    /// Cote fixe, finie et strictement positive.
+    Fixe {
+        /// Profondeur (millimètres).
+        mm: Length,
+    },
+    /// Expression pilotée du moteur de liaisons.
+    Expression {
+        /// Texte de l'expression (sous-ensemble déterministe).
+        texte: String,
+    },
+    /// À travers : enveloppe dérivée du corps courant.
+    ATravers,
+}
+
+/// Profondeur journalisée d'une extrusion (ADR-0024 D4) : la cote
+/// (figée ou pilotée par alias) ou « à travers » — jamais l'enveloppe
+/// dérivée, recomputée à chaque reconstruction.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProfondeurCad {
+    /// Cote : fixe ou expression pilotée (alias sous `cad.`).
+    Cote(ValeurCote),
+    /// À travers : enveloppe dérivée à la reconstruction.
+    ATravers,
+}
+
+/// Couleur d'affichage d'une feature (ADR-0024 D4) : RGBA et
+/// composante spéculaire — métadonnée d'affichage, jamais de la
+/// géométrie.
+#[derive(Debug, Clone, PartialEq)]
+pub struct CouleurFeature {
+    /// Composantes rouge, vert, bleu, alpha (0..=1).
+    pub rgba: [f64; 4],
+    /// Composante spéculaire du rendu.
+    pub speculaire: f64,
+}
+
+/// Feature CAO du journal (ADR-0024 §7) : extrusion d'un croquis
+/// fermé ; un genre inconnu d'un journal plus récent rejoue sans
+/// refus (jamais deviné).
+#[derive(Debug, Clone, PartialEq)]
+pub enum FeatureCad {
+    /// Extrusion d'un croquis fermé.
+    Extrusion {
+        /// Croquis extrudé.
+        croquis: u32,
+        /// Mode : addition ou soustraction.
+        mode: ModeExtrusion,
+        /// Profondeur journalisée.
+        profondeur: ProfondeurCad,
+        /// Couleur d'affichage.
+        couleur: Option<CouleurFeature>,
+    },
+    /// Feature de genre inconnu (journal plus récent).
+    Inconnu {
+        /// Genre retenu tel quel.
+        genre: String,
+    },
+}
+
+/// Boîte englobante d'un solide (millimètres).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BoiteEnglobante {
+    /// Coin minimal.
+    pub min: Point3,
+    /// Coin maximal.
+    pub max: Point3,
+}
+
+impl BoiteEnglobante {
+    /// Diagonale de la boîte, en millimètres — base de l'enveloppe
+    /// « à travers » (ADR-0024 D4).
+    pub fn diagonale(&self) -> f64 {
+        let dx = self.max.x().millimeters() - self.min.x().millimeters();
+        let dy = self.max.y().millimeters() - self.min.y().millimeters();
+        let dz = self.max.z().millimeters() - self.min.z().millimeters();
+        (dx * dx + dy * dy + dz * dz).sqrt()
+    }
+}
+
+/// Erreur du moteur CAO injecté (OF-CAD-0005) : échec d'extrusion, de
+/// booléen, de tessellation ou de boîte englobante — la feature
+/// fautive est marquée en échec, le corps courant survit.
+#[derive(Debug, thiserror::Error)]
+pub enum ErreurMoteurCad {
+    /// Échec générique du moteur.
+    #[error("OF-CAD-0005 : échec du moteur CAO : {raison}")]
+    Echec {
+        /// Explication de l'échec.
+        raison: String,
+    },
+}
+
+impl ErreurMoteurCad {
+    /// Code stable de l'erreur (ADR-0003), registre
+    /// `docs/error-codes.md`.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Echec { .. } => "OF-CAD-0005",
+        }
+    }
+}
+
+/// État d'une feature après reconstruction (ADR-0024 D4).
+#[derive(Debug, Clone, PartialEq)]
+pub enum EtatFeature {
+    /// Feature appliquée au corps.
+    Ok,
+    /// Feature en échec (OF-CAD-0005) : le corps courant survit.
+    EnEchec {
+        /// Message de l'échec du moteur.
+        message: String,
+    },
+}
+
+impl EtatFeature {
+    /// Code stable de l'état : `None` si la feature est saine,
+    /// OF-CAD-0005 si elle est en échec.
+    pub fn code(&self) -> Option<&'static str> {
+        match self {
+            Self::Ok => None,
+            Self::EnEchec { .. } => Some("OF-CAD-0005"),
+        }
+    }
+}
+
+/// Facteur de l'enveloppe « à travers » (ADR-0024 D4) : la profondeur
+/// dérivée vaut ce facteur × la diagonale de la boîte du corps
+/// courant — jamais journalisée, recomputée à chaque reconstruction.
+pub const FACTEUR_ATRAVERS: f64 = 1.1;
+
+/// Moteur CAO injecté (ADR-0024 §7, même frontière que le solveur 2D
+/// — ADR-0018 D3) : forge-session n'instancie jamais le noyau. Le
+/// lot 2 teste contre des volumes analytiques de prisme, le lot 3
+/// branche OCCT (ADR-0023).
+pub trait MoteurCad {
+    /// Type du solide produit par le moteur.
+    type Solide;
+
+    /// Extrue un contour fermé dans le plan xy du croquis, vers +z
+    /// (ADR-0024 D3), de la profondeur donnée.
+    ///
+    /// # Erreurs
+    /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
+    fn extruder(
+        &self,
+        contour: &Contour2,
+        mode: ModeExtrusion,
+        profondeur: Length,
+    ) -> Result<Self::Solide, ErreurMoteurCad>;
+
+    /// Fusionne deux solides (mode addition).
+    ///
+    /// # Erreurs
+    /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
+    fn fusionner(
+        &self,
+        base: &Self::Solide,
+        autre: &Self::Solide,
+    ) -> Result<Self::Solide, ErreurMoteurCad>;
+
+    /// Soustrait l'outil du corps (mode soustraction).
+    ///
+    /// # Erreurs
+    /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
+    fn soustraire(
+        &self,
+        base: &Self::Solide,
+        outil: &Self::Solide,
+    ) -> Result<Self::Solide, ErreurMoteurCad>;
+
+    /// Tesselation du solide à la tolérance donnée.
+    ///
+    /// # Erreurs
+    /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
+    fn tesseller(
+        &self,
+        solide: &Self::Solide,
+        tolerance: Length,
+    ) -> Result<Mesh, ErreurMoteurCad>;
+
+    /// Boîte englobante du solide — base de l'enveloppe « à travers ».
+    ///
+    /// # Erreurs
+    /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
+    fn boite_englobante(&self, solide: &Self::Solide) -> Result<BoiteEnglobante, ErreurMoteurCad>;
+}
+
+/// Corps reconstruit et état de chaque feature (ADR-0024 D4) : le
+/// corps est un état dérivé jamais sérialisé ; une feature en échec
+/// est marquée [`EtatFeature::EnEchec`] (OF-CAD-0005) pendant que le
+/// corps courant survit — la reconstruction est déterministe, le
+/// rejeu du journal redonne le même corps.
+pub struct CorpsCad<S> {
+    /// Corps courant après la dernière feature saine, `None` si
+    /// aucune feature n'a abouti.
+    pub corps: Option<S>,
+    /// État de chaque feature, dans l'ordre du journal.
+    pub etats: Vec<(u32, EtatFeature)>,
+}
+
+/// Projection du domaine CAO (ADR-0024 §7, lot 2) : features rejouées
+/// depuis le journal ; le corps reconstruit est un état dérivé,
+/// recalculé à la demande par un moteur CAO **injecté** — le fil de
+/// travail de l'application cache le résultat par le numéro
+/// d'édition.
+#[derive(Debug, Clone, Default)]
+pub struct CadProjection {
+    /// Features dans l'ordre d'ajout au journal.
+    features: Vec<(u32, FeatureCad)>,
+    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
+    unknown: TypesIgnores,
+    /// Numéro d'édition : croît à CHAQUE événement appliqué, tout
+    /// type — toute écriture au journal invalide le fil de travail
+    /// CAO (ADR-0024 D4).
+    edition: u64,
+}
+
+impl CadProjection {
+    /// Nouvelle projection vide.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Features dans l'ordre d'ajout au journal.
+    pub fn features(&self) -> &[(u32, FeatureCad)] {
+        &self.features
+    }
+
+    /// Feature de l'identifiant donné, ou `None`.
+    pub fn feature(&self, id: u32) -> Option<&FeatureCad> {
+        self.features
+            .iter()
+            .find(|(identifiant, _)| *identifiant == id)
+            .map(|(_, feature)| feature)
+    }
+
+    /// Feature d'extrusion dont la profondeur pilotée s'appuie sur le
+    /// nœud donné, clonée avec son identifiant — la substitution
+    /// d'alias (`RemoveAlias`) l'atteint : la feature suit la cote
+    /// remplacée (ADR-0024 §7, lot 2).
+    pub fn feature_de_alias(&self, alias: &str) -> Option<(u32, FeatureCad)> {
+        self.features
+            .iter()
+            .find(|(_, feature)| {
+                if let FeatureCad::Extrusion {
+                    profondeur: ProfondeurCad::Cote(ValeurCote::Expression { alias: cible, .. }),
+                    ..
+                } = feature
+                {
+                    cible == alias
+                } else {
+                    false
+                }
+            })
+            .cloned()
+    }
+
+    /// Prochain identifiant de feature (séquentiel : l'ordre d'ajout
+    /// au journal fait foi, ADR-0024 §7).
+    pub fn prochaine_id_feature(&self) -> u32 {
+        self.features.len() as u32
+    }
+
+    /// Numéro d'édition : croît à chaque événement appliqué, tout
+    /// type — clé de cache monotone pour le fil de travail CAO.
+    pub fn edition(&self) -> u64 {
+        self.edition
+    }
+
+    /// Types d'événements ignorés par cette projection.
+    pub fn unknown_types(&self) -> &[String] {
+        self.unknown.retenus()
+    }
+
+    /// Reconstruit le corps dans l'ordre du journal (ADR-0024 D4) :
+    /// chaque feature s'applique au corps courant — l'addition
+    /// fusionne (la première devient le corps initial), la
+    /// soustraction exige un corps courant, « à travers » prend
+    /// l'enveloppe [`FACTEUR_ATRAVERS`] × diagonale de la boîte du
+    /// corps courant (jamais journalisée). La profondeur en
+    /// expression se fige par la valeur du nœud
+    /// `cad.extrusion{id}.profondeur` (carte `profondeurs`, échecs
+    /// sautés) ; un contour absent ou ouvert marque la feature en
+    /// échec (OF-CAD-0005) — le corps courant survit, le reste des
+    /// features continue.
+    pub fn reconstruire<S>(
+        &self,
+        moteur: &dyn MoteurCad<Solide = S>,
+        contours: &BTreeMap<u32, Contour2>,
+        profondeurs: &BTreeMap<u32, Length>,
+    ) -> CorpsCad<S> {
+        let mut corps: Option<S> = None;
+        let mut etats: Vec<(u32, EtatFeature)> = Vec::new();
+        for (id, feature) in &self.features {
+            let FeatureCad::Extrusion {
+                croquis,
+                mode,
+                profondeur,
+                ..
+            } = feature
+            else {
+                etats.push((
+                    *id,
+                    EtatFeature::EnEchec {
+                        message: "feature de genre inconnu au moteur".to_string(),
+                    },
+                ));
+                continue;
+            };
+            let echec = |message: String| (*id, EtatFeature::EnEchec { message });
+            let Some(contour) = contours.get(croquis) else {
+                etats.push(echec(format!(
+                    "le croquis {croquis} n'a pas de contour fermé à extruder"
+                )));
+                continue;
+            };
+            if !contour.is_closed() {
+                etats.push(echec(format!(
+                    "le contour du croquis {croquis} n'est pas fermé"
+                )));
+                continue;
+            }
+            let profondeur = match profondeur {
+                ProfondeurCad::Cote(ValeurCote::Fixe { mm }) => *mm,
+                ProfondeurCad::Cote(ValeurCote::Expression { alias, .. }) => {
+                    let Some(mm) = profondeurs.get(id) else {
+                        etats.push(echec(format!(
+                            "la profondeur « {alias} » n'évalue pas en une longueur"
+                        )));
+                        continue;
+                    };
+                    *mm
+                }
+                ProfondeurCad::ATravers => {
+                    let Some(courant) = &corps else {
+                        etats.push(echec(
+                            "« à travers » exige un corps courant".to_string(),
+                        ));
+                        continue;
+                    };
+                    let Ok(boite) = moteur.boite_englobante(courant) else {
+                        etats.push(echec(
+                            "la boîte du corps courant est indéterminée".to_string(),
+                        ));
+                        continue;
+                    };
+                    Length::from_millimeters(FACTEUR_ATRAVERS * boite.diagonale())
+                }
+            };
+            let solide = match moteur.extruder(contour, *mode, profondeur) {
+                Ok(solide) => solide,
+                Err(erreur) => {
+                    etats.push(echec(erreur.to_string()));
+                    continue;
+                }
+            };
+            let resultat: Result<S, ErreurMoteurCad> = match (&corps, mode) {
+                (Some(base), ModeExtrusion::Addition) => moteur.fusionner(base, &solide),
+                (Some(base), ModeExtrusion::Soustraction) => moteur.soustraire(base, &solide),
+                (None, ModeExtrusion::Addition) => Ok(solide),
+                (None, ModeExtrusion::Soustraction) => {
+                    etats.push(echec(
+                        "une soustraction exige un corps courant".to_string(),
+                    ));
+                    continue;
+                }
+            };
+            match resultat {
+                Ok(nouveau) => {
+                    corps = Some(nouveau);
+                    etats.push((*id, EtatFeature::Ok));
+                }
+                Err(erreur) => etats.push(echec(erreur.to_string())),
+            }
+        }
+        CorpsCad { corps, etats }
+    }
+}
+
+impl Projection for CadProjection {
+    fn name(&self) -> &'static str {
+        "cad"
+    }
+
+    fn reset(&mut self) {
+        self.features.clear();
+        self.unknown.clear();
+        // `edition` n'est jamais remis à zéro : clé de cache monotone —
+        // deux contenus différents du fil CAO portent des éditions
+        // différentes, même après un rejeu complet.
+    }
+
+    fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
+        // Toute écriture au journal invalide le fil de travail CAO :
+        // l'édition croît à chaque événement appliqué, tout type
+        // (ADR-0024 D4).
+        self.edition += 1;
+        match event.event_type.as_str() {
+            // Croquis créé : le domaine CAO n'y accroche rien — la
+            // projection d'esquisse porte l'état, l'édition suffit
+            // ici (validation de schéma : un journal plus récent n'est
+            // jamais lu comme du v1).
+            EVENT_SKETCH_CREATED => verifie_schema(event, VERSION_SCHEMA_CROQUIS),
+            EVENT_FEATURE_ADDED => {
+                verifie_schema(event, VERSION_SCHEMA_FEATURE)?;
+                let id = champ_id(event, "id")?;
+                let feature = feature_de_journal(event)?;
+                if id != self.features.len() as u32 {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("identifiant de feature {id} non séquentiel"),
+                    });
+                }
+                self.features.push((id, feature));
+                Ok(())
+            }
+            EVENT_FEATURE_UPDATED => {
+                verifie_schema(event, VERSION_SCHEMA_FEATURE)?;
+                let id = champ_id(event, "id")?;
+                let feature = feature_de_journal(event)?;
+                let Some(position) = self
+                    .features
+                    .iter()
+                    .position(|(identifiant, _)| *identifiant == id)
+                else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("feature {id} inconnue au fil CAO"),
+                    });
+                };
+                // Identifiant conservé : seule la feature change,
+                // l'ordre d'ajout au journal fait foi (ADR-0024 §7).
+                self.features[position].1 = feature;
+                Ok(())
+            }
+            _ => {
+                self.unknown.noter(&event.event_type);
+                Ok(())
+            }
+        }
+    }
+
+    fn types_connus(&self) -> &'static [&'static str] {
+        &[
+            EVENT_SKETCH_CREATED,
+            EVENT_FEATURE_ADDED,
+            EVENT_FEATURE_UPDATED,
+        ]
+    }
+}
+
+/// Sérialise une feature pour les événements `cad.feature.*` :
+/// objet typé — `type`, puis les champs de la feature (ADR-0024 §7).
+pub(crate) fn feature_en_json(feature: &FeatureCad) -> serde_json::Value {
+    match feature {
+        FeatureCad::Extrusion {
+            croquis,
+            mode,
+            profondeur,
+            couleur,
+        } => serde_json::json!({
+            "type": "extrusion",
+            "croquis": croquis,
+            "mode": mode_en_json(mode),
+            "profondeur": profondeur_en_json(profondeur),
+            "couleur": couleur.as_ref().map(couleur_en_json),
+        }),
+        FeatureCad::Inconnu { genre } => serde_json::json!({
+            "type": genre,
+        }),
+    }
+}
+
+/// Mode d'extrusion en chaîne du journal (`addition` /
+/// `soustraction`, ADR-0024 §7).
+fn mode_en_json(mode: &ModeExtrusion) -> &'static str {
+    match mode {
+        ModeExtrusion::Addition => "addition",
+        ModeExtrusion::Soustraction => "soustraction",
+    }
+}
+
+/// Profondeur journalisée : cote typée ou « à travers »
+/// (ADR-0024 D4).
+fn profondeur_en_json(profondeur: &ProfondeurCad) -> serde_json::Value {
+    match profondeur {
+        ProfondeurCad::Cote(valeur) => serde_json::json!({
+            "type": "cote",
+            "valeur": crate::esquisse::valeur_cote_en_json(valeur),
+        }),
+        ProfondeurCad::ATravers => serde_json::json!({
+            "type": "a_travers",
+        }),
+    }
+}
+
+/// Couleur d'affichage de la feature (ADR-0024 D4).
+fn couleur_en_json(couleur: &CouleurFeature) -> serde_json::Value {
+    serde_json::json!({
+        "rgba": [
+            couleur.rgba[0],
+            couleur.rgba[1],
+            couleur.rgba[2],
+            couleur.rgba[3],
+        ],
+        "speculaire": couleur.speculaire,
+    })
+}
+
+/// Relit une feature depuis le champ « feature » d'un événement
+/// `cad.feature.*` : le genre choisit la variante — un genre inconnu
+/// d'un journal plus récent rejoue comme [`FeatureCad::Inconnu`],
+/// jamais refusé, jamais deviné.
+fn feature_de_journal(event: &NewEvent) -> Result<FeatureCad, SessionError> {
+    let Some(serde_json::Value::Object(feature)) = event.data.get("feature") else {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « feature » (objet) absent".to_string(),
+        });
+    };
+    let Some(genre) = feature.get("type").and_then(serde_json::Value::as_str) else {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « type » absent de la feature".to_string(),
+        });
+    };
+    if genre != "extrusion" {
+        return Ok(FeatureCad::Inconnu {
+            genre: genre.to_string(),
+        });
+    }
+    let croquis = entier_de_objet(event, feature, "croquis")?;
+    let mode = match feature.get("mode").and_then(serde_json::Value::as_str) {
+        Some("addition") => ModeExtrusion::Addition,
+        Some("soustraction") => ModeExtrusion::Soustraction,
+        _ => {
+            return Err(SessionError::InvalidEventData {
+                event_type: event.event_type.clone(),
+                reason: "champ « mode » absent ou inconnu de l'extrusion".to_string(),
+            });
+        }
+    };
+    let profondeur = profondeur_de_journal(event, feature)?;
+    let couleur = couleur_de_journal(event, feature)?;
+    Ok(FeatureCad::Extrusion {
+        croquis,
+        mode,
+        profondeur,
+        couleur,
+    })
+}
+
+/// Relit la profondeur journalisée d'une extrusion : cote typée ou
+/// « à travers » (ADR-0024 D4).
+fn profondeur_de_journal(
+    event: &NewEvent,
+    feature: &serde_json::Map<String, serde_json::Value>,
+) -> Result<ProfondeurCad, SessionError> {
+    let Some(serde_json::Value::Object(profondeur)) = feature.get("profondeur") else {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « profondeur » (objet typé) absent de la feature".to_string(),
+        });
+    };
+    match profondeur.get("type").and_then(serde_json::Value::as_str) {
+        Some("cote") => Ok(ProfondeurCad::Cote(valeur_cote_de_objet(
+            event,
+            profondeur,
+        )?)),
+        Some("a_travers") => Ok(ProfondeurCad::ATravers),
+        _ => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "profondeur de type inconnu".to_string(),
+        }),
+    }
+}
+
+/// Relit la cote d'une profondeur depuis l'objet typé qui la porte.
+fn valeur_cote_de_objet(
+    event: &NewEvent,
+    profondeur: &serde_json::Map<String, serde_json::Value>,
+) -> Result<ValeurCote, SessionError> {
+    let Some(serde_json::Value::Object(cote)) = profondeur.get("valeur") else {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "cote de la profondeur absente".to_string(),
+        });
+    };
+    match cote.get("type").and_then(serde_json::Value::as_str) {
+        Some("fixe") => Ok(ValeurCote::Fixe {
+            mm: Length::from_millimeters(nombre_cote(event, cote, "mm")?),
+        }),
+        Some("expression") => Ok(ValeurCote::Expression {
+            texte: texte_cote(event, cote, "texte")?.to_string(),
+            alias: texte_cote(event, cote, "alias")?.to_string(),
+        }),
+        autre => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("type de cote inconnu : « {autre:?} »"),
+        }),
+    }
+}
+
+/// Relit la couleur d'une extrusion : absente, `null` ou objet RGBA.
+fn couleur_de_journal(
+    event: &NewEvent,
+    feature: &serde_json::Map<String, serde_json::Value>,
+) -> Result<Option<CouleurFeature>, SessionError> {
+    match feature.get("couleur") {
+        None | Some(serde_json::Value::Null) => Ok(None),
+        Some(serde_json::Value::Object(couleur)) => {
+            let Some(rgba) = couleur.get("rgba").and_then(serde_json::Value::as_array) else {
+                return Err(SessionError::InvalidEventData {
+                    event_type: event.event_type.clone(),
+                    reason: "champ « rgba » absent de la couleur".to_string(),
+                });
+            };
+            if rgba.len() != 4 {
+                return Err(SessionError::InvalidEventData {
+                    event_type: event.event_type.clone(),
+                    reason: format!("« rgba » n'a pas quatre composantes : {}", rgba.len()),
+                });
+            }
+            let mut composantes = [0.0; 4];
+            for (i, composante) in rgba.iter().enumerate() {
+                let Some(valeur) = composante.as_f64() else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("composante {i} de « rgba » non numérique"),
+                    });
+                };
+                composantes[i] = valeur;
+            }
+            let speculaire = nombre_de_objet(event, couleur, "speculaire")?;
+            Ok(Some(CouleurFeature {
+                rgba: composantes,
+                speculaire,
+            }))
+        }
+        _ => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « couleur » ni null ni objet".to_string(),
+        }),
+    }
+}
+
+/// Lit un champ entier non négatif d'un objet imbriqué, borné `u32`.
+fn entier_de_objet(
+    event: &NewEvent,
+    objet: &serde_json::Map<String, serde_json::Value>,
+    champ: &str,
+) -> Result<u32, SessionError> {
+    let valeur = objet
+        .get(champ)
+        .and_then(serde_json::Value::as_u64)
+        .ok_or_else(|| SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("champ « {champ} » (entier non négatif) absent ou invalide"),
+        })?;
+    u32::try_from(valeur).map_err(|_| SessionError::InvalidEventData {
+        event_type: event.event_type.clone(),
+        reason: format!("champ « {champ} » hors des bornes de u32"),
+    })
+}
+
+/// Lit un champ nombre d'un objet imbriqué.
+fn nombre_de_objet(
+    event: &NewEvent,
+    objet: &serde_json::Map<String, serde_json::Value>,
+    champ: &str,
+) -> Result<f64, SessionError> {
+    objet
+        .get(champ)
+        .and_then(serde_json::Value::as_f64)
+        .ok_or_else(|| SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: format!("champ « {champ} » (nombre) absent ou invalide"),
+        })
+}
+
+/// Segments du croquis aux positions données (ADR-0024 D4) : les
+/// entités deviennent des segments typés — lignes entre points,
+/// cercle en arc à balayage nul (le cercle complet), arc par son
+/// centre et ses angles (les points de début et de fin de l'entité ne
+/// portent que la sélection, la géométrie suit les angles — le sens
+/// est trigonométrique si l'angle de fin précède ou égale celui de
+/// début, horaire sinon). Une position absente saute l'entité : le
+/// croquis incomplet ne donne pas de contour.
+pub(crate) fn segments_du_croquis(
+    entites: &[(u32, EntiteEsquisse)],
+    position: &dyn Fn(u32) -> Option<(Length, Length)>,
+) -> Vec<Segment2> {
+    let point =
+        |id: u32| -> Option<Point2> { position(id).and_then(|(x, y)| Point2::new(x, y).ok()) };
+    let mut segments = Vec::new();
+    for (_, entite) in entites {
+        match entite {
+            EntiteEsquisse::Point { .. } => {}
+            EntiteEsquisse::Ligne { p1, p2 } => {
+                if let (Some(depart), Some(arrivee)) = (point(*p1), point(*p2)) {
+                    segments.push(Segment2::Ligne {
+                        p1: depart,
+                        p2: arrivee,
+                    });
+                }
+            }
+            EntiteEsquisse::Cercle { centre, rayon } => {
+                if let Some(centre) = point(*centre) {
+                    segments.push(Segment2::Arc {
+                        centre,
+                        rayon: *rayon,
+                        debut: Angle::ZERO,
+                        fin: Angle::ZERO,
+                        sens: SensHoraire::Trigonometrique,
+                    });
+                }
+            }
+            EntiteEsquisse::Arc {
+                centre,
+                rayon,
+                angle_debut,
+                angle_fin,
+                ..
+            } => {
+                if let Some(centre) = point(*centre) {
+                    segments.push(Segment2::Arc {
+                        centre,
+                        rayon: *rayon,
+                        debut: *angle_debut,
+                        fin: *angle_fin,
+                        sens: if angle_fin.radians() >= angle_debut.radians() {
+                            SensHoraire::Trigonometrique
+                        } else {
+                            SensHoraire::Horaire
+                        },
+                    });
+                }
+            }
+        }
+    }
+    segments
+}
+
+/// Inverse un segment : départ et arrivée échangés, sens de balayage
+/// retourné (le balayage nul du cercle complet y est invariant).
+fn inverse_segment(segment: Segment2) -> Segment2 {
+    match segment {
+        Segment2::Ligne { p1, p2 } => Segment2::Ligne { p1: p2, p2: p1 },
+        Segment2::Arc {
+            centre,
+            rayon,
+            debut,
+            fin,
+            sens,
+        } => Segment2::Arc {
+            centre,
+            rayon,
+            debut: fin,
+            fin: debut,
+            sens: match sens {
+                SensHoraire::Trigonometrique => SensHoraire::Horaire,
+                SensHoraire::Horaire => SensHoraire::Trigonometrique,
+            },
+        },
+        Segment2::BezierQuadratique { p1, controle, p2 } => Segment2::BezierQuadratique {
+            p1: p2,
+            controle,
+            p2: p1,
+        },
+        Segment2::BezierCubique { p1, c1, c2, p2 } => Segment2::BezierCubique {
+            p1: p2,
+            c1: c2,
+            c2: c1,
+            p2: p1,
+        },
+    }
+}
+
+/// Chaîne les segments en contours (ADR-0024 D4) : parcours glouton —
+/// chaque segment se raccorde à l'arrivée du précédent, au besoin
+/// inversé ; forge-geom recolle les extrémités et refuse un écart
+/// réel (OF-GEO-0006). Le sens de rotation des segments est préservé
+/// tel quel.
+pub(crate) fn contours_des_segments(segments: &[Segment2]) -> Vec<Contour2> {
+    let mut chaines: Vec<Vec<Segment2>> = Vec::new();
+    let mut restants: Vec<Segment2> = segments.to_vec();
+    while let Some(premier) = restants.pop() {
+        let mut chaine = vec![premier];
+        while let Some(arrivee) = chaine.last().map(Segment2::fin) {
+            let index = restants.iter().position(|segment| {
+                points_recolles(segment.debut(), arrivee)
+                    || points_recolles(segment.fin(), arrivee)
+            });
+            let Some(index) = index else {
+                break;
+            };
+            let mut segment = restants.remove(index);
+            if !points_recolles(segment.debut(), arrivee) {
+                segment = inverse_segment(segment);
+            }
+            chaine.push(segment);
+        }
+        chaines.push(chaine);
+    }
+    chaines
+        .into_iter()
+        .filter_map(|chaine| forge_geom::contours(&chaine).ok().and_then(|c| c.into_iter().next()))
+        .collect()
+}
+
+/// Premier contour fermé de la chaîne de segments (ADR-0024 D4) : le
+/// corps CAO extrude une boucle fermée.
+pub(crate) fn premier_contour_ferme(segments: &[Segment2]) -> Option<Contour2> {
+    contours_des_segments(segments)
+        .into_iter()
+        .find(|contour| contour.is_closed())
+}

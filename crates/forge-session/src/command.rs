@@ -8,6 +8,10 @@
 //! d'esquisse se pilotent par expressions
 //! ([`crate::esquisse::ValeurCote`]).
 
+use crate::cad::{
+    CouleurFeature, FeatureCad, ModeExtrusion, ProfondeurCad, ProfondeurFeature, feature_en_json,
+    premier_contour_ferme, segments_du_croquis,
+};
 use crate::esquisse::{ContrainteEsquisse, EntiteEsquisse, ValeurCote};
 use crate::{Session, SessionError};
 use forge_doc::NewEvent;
@@ -45,8 +49,18 @@ pub const EVENT_SKETCH_CONSTRAINT_ADDED: &str = "sketch.constraint.added";
 /// projection remplace en place, ADR-0019).
 pub const EVENT_SKETCH_CONSTRAINT_UPDATED: &str = "sketch.constraint.updated";
 /// Type d'événement : germe de position d'un point du croquis
-/// (schéma v1 : `point`, `x`, `y` — ADR-0018).
+/// (schéma v2 : `croquis`, `point`, `x`, `y` — ADR-0024 §7, lot 2).
 pub const EVENT_SKETCH_POINT_MOVED: &str = "sketch.point.moved";
+/// Type d'événement : croquis nommé créé (schéma v1 : `nom`, `plan`
+/// — ADR-0024 §7, lot 2) ; le croquis créé devient l'actif.
+pub const EVENT_SKETCH_CREATED: &str = "sketch.created";
+/// Type d'événement : feature CAO ajoutée (schéma v1 : `id`,
+/// `feature` — ADR-0024 §7, lot 2).
+pub const EVENT_FEATURE_ADDED: &str = "cad.feature.added";
+/// Type d'événement : feature CAO remplacée à identifiant conservé
+/// (schéma v1, même forme que `cad.feature.added` — ADR-0024 §7,
+/// lot 2).
+pub const EVENT_FEATURE_UPDATED: &str = "cad.feature.updated";
 
 /// Production d'une commande : ses événements et les blobs à déposer.
 /// L'exécution est tout-ou-rien (ADR-0011) : si une projection refuse
@@ -376,25 +390,46 @@ impl RemoveAlias {
                 }),
             ));
             if info_dep.systeme {
-                // Cote d'esquisse : la contrainte porte le texte de
+                // Cote d'esquisse ou profondeur de feature : la
+                // contrainte ou la feature porte le texte de
                 // l'expression, elle suit la substitution à
-                // identifiant conservé (ADR-0019 §1).
-                let Some((id, mut contrainte)) = session.esquisse().contrainte_de_cote(&dep) else {
-                    continue;
-                };
-                if let ContrainteEsquisse::Distance {
-                    valeur: ValeurCote::Expression { texte, .. },
-                    ..
-                } = &mut contrainte
+                // identifiant conservé (ADR-0019 §1, ADR-0024 §7).
+                if let Some((croquis, id, mut contrainte)) = session
+                    .esquisse()
+                    .contrainte_de_cote_situation(&dep)
                 {
-                    *texte = nouveau;
+                    if let ContrainteEsquisse::Distance {
+                        valeur: ValeurCote::Expression { texte, .. },
+                        ..
+                    } = &mut contrainte
+                    {
+                        *texte = nouveau;
+                    }
+                    events.push(NewEvent::new(
+                        EVENT_SKETCH_CONSTRAINT_UPDATED,
+                        crate::esquisse::VERSION_SCHEMA_MISE_A_JOUR,
+                        "",
+                        crate::esquisse::contrainte_en_json(croquis, id, &contrainte),
+                    ));
+                } else if let Some((id, mut feature)) = session.cad().feature_de_alias(&dep)
+                {
+                    if let FeatureCad::Extrusion {
+                        profondeur: ProfondeurCad::Cote(ValeurCote::Expression { texte, .. }),
+                        ..
+                    } = &mut feature
+                    {
+                        *texte = nouveau;
+                    }
+                    events.push(NewEvent::new(
+                        EVENT_FEATURE_UPDATED,
+                        crate::cad::VERSION_SCHEMA_FEATURE,
+                        "",
+                        serde_json::json!({
+                            "id": id,
+                            "feature": feature_en_json(&feature),
+                        }),
+                    ));
                 }
-                events.push(NewEvent::new(
-                    EVENT_SKETCH_CONSTRAINT_UPDATED,
-                    1,
-                    "",
-                    crate::esquisse::contrainte_en_json(id, &contrainte),
-                ));
             }
         }
         events.push(evenement_alias_retire(&self.name));
@@ -512,12 +547,15 @@ impl Command for AddEntity {
         if let Some(reason) = esquisse.raison_refus_entite(&self.entite) {
             return Err(SessionError::CommandRejected { reason });
         }
+        // Croquis actif depuis le lot 2 (ADR-0024 §7) : l'entité vit
+        // dans le croquis visé, identifiant séquentiel PAR croquis.
+        let croquis = esquisse.croquis_actif();
         let id = esquisse.prochaine_id_entite();
         Ok(CommandPlan::new(vec![NewEvent::new(
             EVENT_SKETCH_ENTITY_ADDED,
             crate::esquisse::VERSION_SCHEMA_ENTITE,
             "",
-            crate::esquisse::entite_en_json(id, &self.entite),
+            crate::esquisse::entite_en_json(croquis, id, &self.entite),
         )]))
     }
 }
@@ -598,6 +636,9 @@ impl Command for AddConstraint {
             });
         }
         let id = esquisse.prochaine_id_contrainte();
+        // Croquis actif depuis le lot 2 (ADR-0024 §7) : la contrainte
+        // vit dans le croquis visé, identifiant séquentiel PAR croquis.
+        let croquis = esquisse.croquis_actif();
         let valeur = match &self.contrainte {
             ContrainteEsquisse::Distance { valeur, .. } => Some(valeur),
             _ => None,
@@ -605,9 +646,9 @@ impl Command for AddConstraint {
         let Some(ValeurCote::Expression { texte, alias }) = valeur else {
             return Ok(CommandPlan::new(vec![NewEvent::new(
                 EVENT_SKETCH_CONSTRAINT_ADDED,
-                2,
+                crate::esquisse::VERSION_SCHEMA_CONTRAINTE,
                 "",
-                crate::esquisse::contrainte_en_json(id, &self.contrainte),
+                crate::esquisse::contrainte_en_json(croquis, id, &self.contrainte),
             )]));
         };
         if !alias.starts_with("esquisse.") {
@@ -640,9 +681,9 @@ impl Command for AddConstraint {
         )];
         events.push(NewEvent::new(
             EVENT_SKETCH_CONSTRAINT_ADDED,
-            2,
+            crate::esquisse::VERSION_SCHEMA_CONTRAINTE,
             "",
-            crate::esquisse::contrainte_en_json(id, &self.contrainte),
+            crate::esquisse::contrainte_en_json(croquis, id, &self.contrainte),
         ));
         Ok(CommandPlan::new(events))
     }
@@ -688,12 +729,17 @@ impl Command for AncrerPoint {
             return Err(SessionError::CommandRejected { reason });
         }
         let id = esquisse.prochaine_id_contrainte();
+        // Croquis actif depuis le lot 2 (ADR-0024 §7) : le
+        // déplacement capturé et la contrainte d'ancrage visent le
+        // même croquis, dans la même transaction.
+        let croquis = esquisse.croquis_actif();
         Ok(CommandPlan::new(vec![
             NewEvent::new(
                 EVENT_SKETCH_POINT_MOVED,
-                1,
+                crate::esquisse::VERSION_SCHEMA_DEPLACEMENT,
                 "",
                 serde_json::json!({
+                    "croquis": croquis,
                     "point": self.point,
                     "x": self.x.millimeters(),
                     "y": self.y.millimeters(),
@@ -701,9 +747,10 @@ impl Command for AncrerPoint {
             ),
             NewEvent::new(
                 EVENT_SKETCH_CONSTRAINT_ADDED,
-                2,
+                crate::esquisse::VERSION_SCHEMA_CONTRAINTE,
                 "",
                 crate::esquisse::contrainte_en_json(
+                    croquis,
                     id,
                     &ContrainteEsquisse::PointFixe { point: self.point },
                 ),
@@ -745,15 +792,229 @@ impl Command for MovePoint {
         if let Some(reason) = esquisse.raison_refus_deplacement(self.point, self.x, self.y) {
             return Err(SessionError::CommandRejected { reason });
         }
+        // Croquis actif depuis le lot 2 (ADR-0024 §7) : le
+        // déplacement vise le croquis courant.
+        let croquis = esquisse.croquis_actif();
         Ok(CommandPlan::new(vec![NewEvent::new(
             EVENT_SKETCH_POINT_MOVED,
-            1,
+            crate::esquisse::VERSION_SCHEMA_DEPLACEMENT,
             "",
             serde_json::json!({
+                "croquis": croquis,
                 "point": self.point,
                 "x": self.x.millimeters(),
                 "y": self.y.millimeters(),
             }),
         )]))
+    }
+}
+
+/// Crée un croquis nommé (ADR-0024 §7, lot 2) : il devient le croquis
+/// actif — les commandes d'esquisse s'y adressent jusqu'au prochain
+/// `sketch.created`. Un nom vide ou déjà pris est refusé, rien au
+/// journal (OF-SES-0001) ; au rejeu d'un journal hostile, le nom
+/// dupliqué est un refus de données (OF-SES-0005) — le journal fait
+/// foi, la projection ne devine jamais.
+#[derive(Debug, Clone)]
+pub struct CreateSketch {
+    /// Nom du croquis, unique dans la session.
+    pub nom: String,
+}
+
+impl Command for CreateSketch {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        if self.nom.trim().is_empty() {
+            return Err(SessionError::CommandRejected {
+                reason: "le nom du croquis ne peut pas être vide".to_string(),
+            });
+        }
+        if session.esquisse().croquis_de_nom(&self.nom).is_some() {
+            return Err(SessionError::CommandRejected {
+                reason: format!("le nom de croquis « {} » est déjà pris", self.nom),
+            });
+        }
+        Ok(CommandPlan::new(vec![NewEvent::new(
+            EVENT_SKETCH_CREATED,
+            crate::esquisse::VERSION_SCHEMA_CROQUIS,
+            "",
+            serde_json::json!({
+                "nom": self.nom,
+                "plan": { "type": "xy" },
+            }),
+        )]))
+    }
+}
+
+/// Profondeur journalisée d'une commande de feature (ADR-0024 D4) :
+/// la profondeur en expression devient une cote pilotée par l'alias
+/// système `cad.extrusion{id}.profondeur`, posé dans la même
+/// transaction — le préfixe `cad.` est réservé (OF-VAL-0008), la
+/// création utilisateur y est refusée.
+fn profondeur_de_commande(id: u32, profondeur: &ProfondeurFeature) -> ProfondeurCad {
+    match profondeur {
+        ProfondeurFeature::Fixe { mm } => ProfondeurCad::Cote(ValeurCote::Fixe { mm: *mm }),
+        ProfondeurFeature::Expression { texte } => ProfondeurCad::Cote(ValeurCote::Expression {
+            texte: texte.clone(),
+            alias: format!("cad.extrusion{id}.profondeur"),
+        }),
+        ProfondeurFeature::ATravers => ProfondeurCad::ATravers,
+    }
+}
+
+/// Garde commune des commandes de feature (ADR-0024 §7, lot 2) :
+/// croquis connu et pourvu d'un contour fermé aux graines du journal,
+/// profondeur valide, couleur finie — un refus ne laisse rien au
+/// journal (OF-SES-0001).
+fn feature_valide(
+    session: &Session,
+    croquis: u32,
+    profondeur: &ProfondeurFeature,
+    couleur: &Option<CouleurFeature>,
+) -> Result<(), SessionError> {
+    let esquisse = session.esquisse();
+    let Some(entites) = esquisse.entites_du_croquis(croquis) else {
+        return Err(SessionError::CommandRejected {
+            reason: format!("le croquis {croquis} n'existe pas"),
+        });
+    };
+    let positions = |point: u32| esquisse.position_graine_du_croquis(croquis, point);
+    if premier_contour_ferme(&segments_du_croquis(entites, &positions)).is_none() {
+        return Err(SessionError::CommandRejected {
+            reason: format!("le croquis {croquis} n'a pas de contour fermé à extruder"),
+        });
+    }
+    match profondeur {
+        ProfondeurFeature::Fixe { mm } => {
+            if !mm.millimeters().is_finite() || mm.millimeters() <= 0.0 {
+                return Err(SessionError::CommandRejected {
+                    reason: "la profondeur doit être finie et strictement positive".to_string(),
+                });
+            }
+        }
+        ProfondeurFeature::Expression { texte } => {
+            if texte.trim().is_empty() {
+                return Err(SessionError::CommandRejected {
+                    reason: "l'expression de la profondeur ne peut pas être vide".to_string(),
+                });
+            }
+            // Borne de longueur (audit n°3, A3-02) : même garde que
+            // `SetExpression`, refus au plan, rien au journal.
+            if texte.chars().count() > LONGUEUR_MAX_EXPRESSION {
+                return Err(SessionError::CommandRejected {
+                    reason: format!("l'expression dépasse {LONGUEUR_MAX_EXPRESSION} caractères"),
+                });
+            }
+        }
+        ProfondeurFeature::ATravers => {}
+    }
+    if let Some(couleur) = couleur
+        && (!couleur.rgba.iter().all(f64::is_finite) || !couleur.speculaire.is_finite())
+    {
+        return Err(SessionError::CommandRejected {
+            reason: "les composantes de la couleur doivent être finies".to_string(),
+        });
+    }
+    Ok(())
+}
+
+/// Plan d'une commande de feature (ADR-0024 §7, lot 2) : la profondeur
+/// en expression pose D'ABORD le nœud système
+/// `cad.extrusion{id}.profondeur` — même mécanique que la cote
+/// pilotée (ADR-0019 décision 4) — puis la feature elle-même ; deux
+/// événements, une transaction, un seul groupe d'undo (ADR-0011).
+fn plan_feature(id: u32, feature: &FeatureCad, event_type: &str) -> CommandPlan {
+    let mut events = Vec::new();
+    if let FeatureCad::Extrusion {
+        profondeur: ProfondeurCad::Cote(ValeurCote::Expression { texte, alias }),
+        ..
+    } = feature
+    {
+        events.push(NewEvent::new(
+            EVENT_EXPRESSION_SET,
+            2,
+            "",
+            serde_json::json!({
+                "name": alias,
+                "expression": texte,
+                "unit": "mm",
+            }),
+        ));
+    }
+    events.push(NewEvent::new(
+        event_type,
+        crate::cad::VERSION_SCHEMA_FEATURE,
+        "",
+        serde_json::json!({
+            "id": id,
+            "feature": feature_en_json(feature),
+        }),
+    ));
+    CommandPlan::new(events)
+}
+
+/// Ajoute une feature d'extrusion au corps CAO (ADR-0024 §7, lot 2) :
+/// le croquis doit exister et porter un contour fermé, la profondeur
+/// est une cote fixe, pilotée par expression ou « à travers »
+/// (enveloppe dérivée du corps courant, jamais journalisée,
+/// ADR-0024 D4). Un refus ne laisse rien au journal (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct AddFeature {
+    /// Croquis extrudé.
+    pub croquis: u32,
+    /// Mode : addition au corps courant ou soustraction.
+    pub mode: ModeExtrusion,
+    /// Profondeur d'extrusion.
+    pub profondeur: ProfondeurFeature,
+    /// Couleur d'affichage (facultative).
+    pub couleur: Option<CouleurFeature>,
+}
+
+impl Command for AddFeature {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        feature_valide(session, self.croquis, &self.profondeur, &self.couleur)?;
+        let id = session.cad().prochaine_id_feature();
+        let feature = FeatureCad::Extrusion {
+            croquis: self.croquis,
+            mode: self.mode,
+            profondeur: profondeur_de_commande(id, &self.profondeur),
+            couleur: self.couleur.clone(),
+        };
+        Ok(plan_feature(id, &feature, EVENT_FEATURE_ADDED))
+    }
+}
+
+/// Remplace une feature à identifiant conservé (ADR-0024 §7, lot 2) :
+/// mêmes gardes que [`AddFeature`] — le changement de croquis est
+/// autorisé dès la v1, l'ordre d'ajout au journal fait foi. Un refus
+/// ne laisse rien au journal (OF-SES-0001).
+#[derive(Debug, Clone)]
+pub struct UpdateFeature {
+    /// Identifiant de la feature remplacée.
+    pub id: u32,
+    /// Croquis extrudé (peut changer).
+    pub croquis: u32,
+    /// Mode : addition au corps courant ou soustraction.
+    pub mode: ModeExtrusion,
+    /// Profondeur d'extrusion.
+    pub profondeur: ProfondeurFeature,
+    /// Couleur d'affichage (facultative).
+    pub couleur: Option<CouleurFeature>,
+}
+
+impl Command for UpdateFeature {
+    fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        if session.cad().feature(self.id).is_none() {
+            return Err(SessionError::CommandRejected {
+                reason: format!("la feature {} n'existe pas", self.id),
+            });
+        }
+        feature_valide(session, self.croquis, &self.profondeur, &self.couleur)?;
+        let feature = FeatureCad::Extrusion {
+            croquis: self.croquis,
+            mode: self.mode,
+            profondeur: profondeur_de_commande(self.id, &self.profondeur),
+            couleur: self.couleur.clone(),
+        };
+        Ok(plan_feature(self.id, &feature, EVENT_FEATURE_UPDATED))
     }
 }
