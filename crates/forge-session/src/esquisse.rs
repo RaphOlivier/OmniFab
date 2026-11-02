@@ -285,11 +285,7 @@ pub enum ContrainteEsquisse {
 /// schéma plat v3 — `genre`, `croquis`, `id`, puis les champs de
 /// l'entité (coordonnées en millimètres, angles en radians) ; le
 /// champ `croquis` (ADR-0024 §7, lot 2) porte le croquis visé.
-pub(crate) fn entite_en_json(
-    croquis: u32,
-    id: u32,
-    entite: &EntiteEsquisse,
-) -> serde_json::Value {
+pub(crate) fn entite_en_json(croquis: u32, id: u32, entite: &EntiteEsquisse) -> serde_json::Value {
     match entite {
         EntiteEsquisse::Point { x, y } => serde_json::json!({
             "genre": "point",
@@ -1861,11 +1857,7 @@ impl EsquisseProjection {
     /// Position de départ d'un point DU croquis donné (graine ou
     /// origine de l'entité, ADR-0018 D7), ou `None` si le point n'y
     /// est pas.
-    pub fn position_graine_du_croquis(
-        &self,
-        croquis: u32,
-        point: u32,
-    ) -> Option<(Length, Length)> {
+    pub fn position_graine_du_croquis(&self, croquis: u32, point: u32) -> Option<(Length, Length)> {
         self.etat(croquis)?.position_graine(point)
     }
 
@@ -1952,8 +1944,7 @@ impl EsquisseProjection {
         alias: &str,
     ) -> Option<(u32, u32, ContrainteEsquisse)> {
         self.croquis.iter().find_map(|(croquis, etat)| {
-            etat
-                .contrainte_de_cote_dans(alias)
+            etat.contrainte_de_cote_dans(alias)
                 .map(|(id, contrainte)| (*croquis, id, contrainte))
         })
     }

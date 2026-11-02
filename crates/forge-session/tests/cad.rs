@@ -54,7 +54,12 @@ fn pose_ligne(session: &mut Session, p1: u32, p2: u32) {
 /// actif, coin inférieur en (x, y) — identifiants séquentiels
 /// depuis un croquis vierge.
 fn pose_rectangle(session: &mut Session, x: f64, y: f64, largeur: f64, hauteur: f64) {
-    let coins = [(x, y), (x + largeur, y), (x + largeur, y + hauteur), (x, y + hauteur)];
+    let coins = [
+        (x, y),
+        (x + largeur, y),
+        (x + largeur, y + hauteur),
+        (x, y + hauteur),
+    ];
     for (px, py) in coins {
         pose_point(session, px, py);
     }
@@ -67,7 +72,10 @@ fn pose_rectangle(session: &mut Session, x: f64, y: f64, largeur: f64, hauteur: 
 /// identifiants séquentiels depuis un croquis vierge.
 fn pose_cercle(session: &mut Session, x: f64, y: f64, rayon: f64) {
     pose_point(session, x, y);
-    let entite = EntiteEsquisse::Cercle { centre: 0, rayon: mm(rayon) };
+    let entite = EntiteEsquisse::Cercle {
+        centre: 0,
+        rayon: mm(rayon),
+    };
     session.execute(&AddEntity { entite }).expect("cercle posé");
 }
 
@@ -100,7 +108,10 @@ fn boite_des_points(points: &[Point2], profondeur: Length) -> [(f64, f64, f64); 
         max.0 = max.0.max(point.x().millimeters());
         max.1 = max.1.max(point.y().millimeters());
     }
-    [(min.0, min.1, 0.0), (max.0, max.1, profondeur.millimeters())]
+    [
+        (min.0, min.1, 0.0),
+        (max.0, max.1, profondeur.millimeters()),
+    ]
 }
 
 /// Moteur de test trivial (ADR-0024 §7, lot 2) : l'extrusion
@@ -121,7 +132,9 @@ impl MoteurCad for MoteurPrismesAnalytiques {
         profondeur: Length,
     ) -> Result<SolideAnalytique, ErreurMoteurCad> {
         let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
-        let points = contour.discretiser(tolerance).map_err(|erreur| echec(&erreur.to_string()))?;
+        let points = contour
+            .discretiser(tolerance)
+            .map_err(|erreur| echec(&erreur.to_string()))?;
         if points.len() < 3 {
             return Err(echec("moins de trois sommets au contour"));
         }
@@ -209,7 +222,11 @@ impl MoteurCad for MoteurPrismesAnalytiques {
 #[test]
 fn create_sketch_journalise_et_devient_actif() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis créé");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis créé");
     let events = session.document().events();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].event_type, EVENT_SKETCH_CREATED);
@@ -226,9 +243,15 @@ fn create_sketch_journalise_et_devient_actif() {
 #[test]
 fn create_sketch_nom_duplique_refuse() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "bois".to_string() }).expect("croquis créé");
+    session
+        .execute(&CreateSketch {
+            nom: "bois".to_string(),
+        })
+        .expect("croquis créé");
     let erreur = session
-        .execute(&CreateSketch { nom: "bois".to_string() })
+        .execute(&CreateSketch {
+            nom: "bois".to_string(),
+        })
         .expect_err("nom dupliqué refusé");
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert_eq!(session.document().events().len(), 1, "rien au journal");
@@ -237,9 +260,19 @@ fn create_sketch_nom_duplique_refuse() {
 #[test]
 fn evenements_de_croquis_portent_le_champ_croquis() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
-    session.execute(&MovePoint { point: 0, x: mm(1.0), y: mm(1.0) }).expect("déplacement");
+    session
+        .execute(&MovePoint {
+            point: 0,
+            x: mm(1.0),
+            y: mm(1.0),
+        })
+        .expect("déplacement");
     let events = session.document().events();
     // entités et déplacements portent le croquis actif, aux
     // schémas du lot 2 (ADR-0024 §7)
@@ -259,7 +292,13 @@ fn evenements_de_croquis_portent_le_champ_croquis() {
     // historique reste vide
     let entites = session.esquisse().entites_du_croquis(1).expect("croquis 1");
     assert_eq!(entites.len(), 8);
-    assert!(session.esquisse().entites_du_croquis(0).expect("croquis 0").is_empty());
+    assert!(
+        session
+            .esquisse()
+            .entites_du_croquis(0)
+            .expect("croquis 0")
+            .is_empty()
+    );
 }
 
 #[test]
@@ -315,19 +354,26 @@ fn migrations_croquis_implicite_alignent_les_anciens_journaux() {
         serde_json::json!({"point": 0, "x": 3.0, "y": 4.0}),
     ));
     let octets = document.to_bytes().expect("conteneur sérialisé");
-    let document = Document::from_bytes_with(&octets, registre_migrations_courant())
-        .expect("journal migré");
+    let document =
+        Document::from_bytes_with(&octets, registre_migrations_courant()).expect("journal migré");
     let events = document.events();
     assert_eq!(events[0].schema_version, 3, "entité au schéma du croquis");
     assert_eq!(events[0].data["croquis"], 0);
-    assert_eq!(events[1].schema_version, 2, "déplacement au schéma du croquis");
+    assert_eq!(
+        events[1].schema_version, 2,
+        "déplacement au schéma du croquis"
+    );
     assert_eq!(events[1].data["croquis"], 0);
 }
 
 #[test]
 fn add_feature_extrusion_rectangle_volume_analytique() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let commande = AddFeature {
         croquis: 1,
@@ -346,7 +392,10 @@ fn add_feature_extrusion_rectangle_volume_analytique() {
     assert_eq!(dernier.data["feature"]["croquis"], 1);
     assert_eq!(dernier.data["feature"]["mode"], "addition");
     assert_eq!(dernier.data["feature"]["profondeur"]["type"], "cote");
-    assert_eq!(dernier.data["feature"]["profondeur"]["valeur"]["type"], "fixe");
+    assert_eq!(
+        dernier.data["feature"]["profondeur"]["valeur"]["type"],
+        "fixe"
+    );
     assert_eq!(dernier.data["feature"]["profondeur"]["valeur"]["mm"], 4.0);
     // projection : une feature extrusion, profondeur fixe
     let features = session.cad().features();
@@ -362,7 +411,9 @@ fn add_feature_extrusion_rectangle_volume_analytique() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let contours = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
-    let corps = session.cad().reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+    let corps = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     let solide = corps.corps.expect("corps reconstruit");
     assert!(
         (solide.volume_mm3 - 4000.0).abs() < 1e-9,
@@ -376,7 +427,11 @@ fn add_feature_extrusion_rectangle_volume_analytique() {
 #[test]
 fn add_feature_refuse_croquis_inconnu() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let commande = AddFeature {
         croquis: 9,
@@ -384,7 +439,9 @@ fn add_feature_refuse_croquis_inconnu() {
         profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
         couleur: None,
     };
-    let erreur = session.execute(&commande).expect_err("croquis inconnu refusé");
+    let erreur = session
+        .execute(&commande)
+        .expect_err("croquis inconnu refusé");
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert!(session.cad().features().is_empty(), "rien projeté");
 }
@@ -392,7 +449,11 @@ fn add_feature_refuse_croquis_inconnu() {
 #[test]
 fn add_feature_refuse_contour_ouvert() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     // deux points et une ligne : chaîne ouverte, jamais un contour
     pose_point(&mut session, 0.0, 0.0);
     pose_point(&mut session, 10.0, 0.0);
@@ -403,14 +464,20 @@ fn add_feature_refuse_contour_ouvert() {
         profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
         couleur: None,
     };
-    let erreur = session.execute(&commande).expect_err("contour ouvert refusé");
+    let erreur = session
+        .execute(&commande)
+        .expect_err("contour ouvert refusé");
     assert_eq!(erreur.code(), "OF-SES-0001");
 }
 
 #[test]
 fn add_feature_refuse_profondeur_invalide() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     for profondeur in [0.0, -4.0, f64::NAN] {
         let commande = AddFeature {
@@ -436,15 +503,26 @@ fn add_feature_refuse_profondeur_invalide() {
 #[test]
 fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
     let mut session = Session::new("tests");
-    session.execute(&SetInput { name: "epaisseur".to_string(), value: 2.0, unite: None })
+    session
+        .execute(&SetInput {
+            name: "epaisseur".to_string(),
+            value: 2.0,
+            unite: None,
+        })
         .expect("entrée");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let avant = session.document().events().len();
     let commande = AddFeature {
         croquis: 1,
         mode: ModeExtrusion::Addition,
-        profondeur: ProfondeurFeature::Expression { texte: "epaisseur * 2".to_string() },
+        profondeur: ProfondeurFeature::Expression {
+            texte: "epaisseur * 2".to_string(),
+        },
         couleur: None,
     };
     session.execute(&commande).expect("feature posée");
@@ -452,7 +530,10 @@ fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
     // un seul groupe d'undo (ADR-0011)
     let apres = session.document().events().len();
     assert_eq!(apres, avant + 2);
-    let noeud = session.graph().noeud("cad.extrusion0.profondeur").expect("alias posé");
+    let noeud = session
+        .graph()
+        .noeud("cad.extrusion0.profondeur")
+        .expect("alias posé");
     assert!(noeud.systeme, "le nœud cad.* est système");
     session.undo().expect("undo du groupe entier");
     assert!(session.graph().noeud("cad.extrusion0.profondeur").is_none());
@@ -464,7 +545,9 @@ fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let contours = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
-    let corps = session.cad().reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+    let corps = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     let solide = corps.corps.expect("corps reconstruit");
     assert!(
         (solide.volume_mm3 - 4000.0).abs() < 1e-9,
@@ -476,7 +559,11 @@ fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
 #[test]
 fn alias_cad_reserve_a_la_creation_utilisateur() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     // le préfixe cad. est réservé : ni expression, ni entrée
     let erreur = session
@@ -492,7 +579,9 @@ fn alias_cad_reserve_a_la_creation_utilisateur() {
     let commande = AddFeature {
         croquis: 1,
         mode: ModeExtrusion::Addition,
-        profondeur: ProfondeurFeature::Expression { texte: "2".to_string() },
+        profondeur: ProfondeurFeature::Expression {
+            texte: "2".to_string(),
+        },
         couleur: None,
     };
     session.execute(&commande).expect("feature posée");
@@ -508,7 +597,11 @@ fn alias_cad_reserve_a_la_creation_utilisateur() {
 #[test]
 fn update_feature_remplace_a_identifiant_conserve() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let commande = AddFeature {
         croquis: 1,
@@ -518,7 +611,11 @@ fn update_feature_remplace_a_identifiant_conserve() {
     };
     session.execute(&commande).expect("feature posée");
     // second croquis : le cercle de la future poche
-    session.execute(&CreateSketch { nom: "poche".to_string() }).expect("croquis 2");
+    session
+        .execute(&CreateSketch {
+            nom: "poche".to_string(),
+        })
+        .expect("croquis 2");
     pose_cercle(&mut session, 20.0, 12.5, 5.0);
     let maj = UpdateFeature {
         id: 0,
@@ -548,7 +645,11 @@ fn update_feature_remplace_a_identifiant_conserve() {
 #[test]
 fn poche_a_travers_perce_le_corps() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "corps".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "corps".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let corps = AddFeature {
         croquis: 1,
@@ -557,7 +658,11 @@ fn poche_a_travers_perce_le_corps() {
         couleur: None,
     };
     session.execute(&corps).expect("corps extrudé");
-    session.execute(&CreateSketch { nom: "poche".to_string() }).expect("croquis 2");
+    session
+        .execute(&CreateSketch {
+            nom: "poche".to_string(),
+        })
+        .expect("croquis 2");
     pose_cercle(&mut session, 20.0, 12.5, 5.0);
     let poche = AddFeature {
         croquis: 2,
@@ -572,7 +677,9 @@ fn poche_a_travers_perce_le_corps() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let contours = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
-    let resultat = session.cad().reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+    let resultat = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     let solide = resultat.corps.expect("corps percé");
     let diagonale = (40.0_f64 * 40.0 + 25.0 * 25.0 + 12.0 * 12.0).sqrt();
     let attendu = 40.0 * 25.0 * 12.0 - std::f64::consts::PI * 25.0 * diagonale * 1.1;
@@ -586,7 +693,11 @@ fn poche_a_travers_perce_le_corps() {
 #[test]
 fn feature_en_echec_marquee_le_reste_du_corps_survit() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "corps".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "corps".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let extrusion = AddFeature {
         croquis: 1,
@@ -595,21 +706,32 @@ fn feature_en_echec_marquee_le_reste_du_corps_survit() {
         couleur: None,
     };
     session.execute(&extrusion).expect("corps extrudé");
-    session.execute(&CreateSketch { nom: "poche".to_string() }).expect("croquis 2");
+    session
+        .execute(&CreateSketch {
+            nom: "poche".to_string(),
+        })
+        .expect("croquis 2");
     pose_cercle(&mut session, 20.0, 12.5, 5.0);
     // profondeur d'expression qui n'évalue pas : 1/0 (OF-VAL-0004)
     let poche = AddFeature {
         croquis: 2,
         mode: ModeExtrusion::Soustraction,
-        profondeur: ProfondeurFeature::Expression { texte: "1 / 0".to_string() },
+        profondeur: ProfondeurFeature::Expression {
+            texte: "1 / 0".to_string(),
+        },
         couleur: None,
     };
     session.execute(&poche).expect("feature posée");
     let mut solveur = Systeme2D::new().expect("solveur");
     let contours = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
-    assert!(profondeurs.get(&1).is_none(), "la profondeur 1/0 n'évalue pas");
-    let resultat = session.cad().reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+    assert!(
+        !profondeurs.contains_key(&1),
+        "la profondeur 1/0 n'évalue pas"
+    );
+    let resultat = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     // la feature 0 survit, la 1 est EN ÉCHEC typée OF-CAD-0005
     assert!(matches!(resultat.etats[0].1, EtatFeature::Ok));
     let code = resultat.etats[1].1.code().expect("échec typée");
@@ -622,7 +744,13 @@ fn feature_en_echec_marquee_le_reste_du_corps_survit() {
 fn edition_cad_invalidee_par_toute_ecriture_au_journal() {
     let mut session = Session::new("tests");
     let avant = session.cad().edition();
-    session.execute(&SetInput { name: "a".to_string(), value: 1.0, unite: None }).expect("entrée");
+    session
+        .execute(&SetInput {
+            name: "a".to_string(),
+            value: 1.0,
+            unite: None,
+        })
+        .expect("entrée");
     assert!(
         session.cad().edition() > avant,
         "toute écriture au journal invalide le fil de travail CAO"
@@ -632,7 +760,11 @@ fn edition_cad_invalidee_par_toute_ecriture_au_journal() {
 #[test]
 fn rejeu_reconstruit_le_meme_corps() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "corps".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "corps".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let extrusion = AddFeature {
         croquis: 1,
@@ -651,7 +783,9 @@ fn rejeu_reconstruit_le_meme_corps() {
     let mut solveur = Systeme2D::new().expect("solveur");
     let contours = relue.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = relue.profondeurs_pour_cad();
-    let resultat = relue.cad().reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+    let resultat = relue
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     let solide = resultat.corps.expect("corps rejoué");
     assert!((solide.volume_mm3 - 4000.0).abs() <= 1e-6);
 }
@@ -659,7 +793,11 @@ fn rejeu_reconstruit_le_meme_corps() {
 #[test]
 fn couleur_de_feature_journalisee() {
     let mut session = Session::new("tests");
-    session.execute(&CreateSketch { nom: "croquis-1".to_string() }).expect("croquis");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
     let commande = AddFeature {
         croquis: 1,
@@ -683,7 +821,10 @@ fn couleur_de_feature_journalisee() {
     assert!((speculaire - 0.5).abs() < 1e-9);
     let features = session.cad().features();
     match &features[0].1 {
-        FeatureCad::Extrusion { couleur: Some(couleur), .. } => {
+        FeatureCad::Extrusion {
+            couleur: Some(couleur),
+            ..
+        } => {
             assert_eq!(couleur.rgba, [0.2, 0.4, 0.6, 1.0]);
             assert!((couleur.speculaire - 0.5).abs() < 1e-9);
         }

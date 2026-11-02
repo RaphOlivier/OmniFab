@@ -237,11 +237,7 @@ pub trait MoteurCad {
     ///
     /// # Erreurs
     /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
-    fn tesseller(
-        &self,
-        solide: &Self::Solide,
-        tolerance: Length,
-    ) -> Result<Mesh, ErreurMoteurCad>;
+    fn tesseller(&self, solide: &Self::Solide, tolerance: Length) -> Result<Mesh, ErreurMoteurCad>;
 
     /// Boîte englobante du solide — base de l'enveloppe « à travers ».
     ///
@@ -398,9 +394,7 @@ impl CadProjection {
                 }
                 ProfondeurCad::ATravers => {
                     let Some(courant) = &corps else {
-                        etats.push(echec(
-                            "« à travers » exige un corps courant".to_string(),
-                        ));
+                        etats.push(echec("« à travers » exige un corps courant".to_string()));
                         continue;
                     };
                     let Ok(boite) = moteur.boite_englobante(courant) else {
@@ -424,9 +418,7 @@ impl CadProjection {
                 (Some(base), ModeExtrusion::Soustraction) => moteur.soustraire(base, &solide),
                 (None, ModeExtrusion::Addition) => Ok(solide),
                 (None, ModeExtrusion::Soustraction) => {
-                    etats.push(echec(
-                        "une soustraction exige un corps courant".to_string(),
-                    ));
+                    etats.push(echec("une soustraction exige un corps courant".to_string()));
                     continue;
                 }
             };
@@ -629,8 +621,7 @@ fn profondeur_de_journal(
     };
     match profondeur.get("type").and_then(serde_json::Value::as_str) {
         Some("cote") => Ok(ProfondeurCad::Cote(valeur_cote_de_objet(
-            event,
-            profondeur,
+            event, profondeur,
         )?)),
         Some("a_travers") => Ok(ProfondeurCad::ATravers),
         _ => Err(SessionError::InvalidEventData {
@@ -853,8 +844,7 @@ pub(crate) fn contours_des_segments(segments: &[Segment2]) -> Vec<Contour2> {
         let mut chaine = vec![premier];
         while let Some(arrivee) = chaine.last().map(Segment2::fin) {
             let index = restants.iter().position(|segment| {
-                points_recolles(segment.debut(), arrivee)
-                    || points_recolles(segment.fin(), arrivee)
+                points_recolles(segment.debut(), arrivee) || points_recolles(segment.fin(), arrivee)
             });
             let Some(index) = index else {
                 break;
@@ -869,7 +859,11 @@ pub(crate) fn contours_des_segments(segments: &[Segment2]) -> Vec<Contour2> {
     }
     chaines
         .into_iter()
-        .filter_map(|chaine| forge_geom::contours(&chaine).ok().and_then(|c| c.into_iter().next()))
+        .filter_map(|chaine| {
+            forge_geom::contours(&chaine)
+                .ok()
+                .and_then(|c| c.into_iter().next())
+        })
         .collect()
 }
 

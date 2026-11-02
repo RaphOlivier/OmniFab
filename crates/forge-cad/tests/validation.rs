@@ -267,7 +267,9 @@ fn step_instances_au_dela_du_budget_refusees_avant_occt() {
         octets_max: 1024 * 1024,
         formes_max: 5,
     };
-    let erreur = step::importer(texte.as_bytes(), &budgets).unwrap_err().code();
+    let erreur = step::importer(texte.as_bytes(), &budgets)
+        .unwrap_err()
+        .code();
     assert_eq!(erreur, "OF-CAD-0004");
 }
 
@@ -280,6 +282,8 @@ fn step_texte_sans_instance_pas_refuse_par_le_budget() {
         octets_max: 1024 * 1024,
         formes_max: 5,
     };
-    let erreur = step::importer(b"n'est pas du STEP", &budgets).unwrap_err().code();
+    let erreur = step::importer(b"n'est pas du STEP", &budgets)
+        .unwrap_err()
+        .code();
     assert_eq!(erreur, "OF-CAD-0003");
 }

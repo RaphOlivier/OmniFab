@@ -450,17 +450,25 @@ impl Session {
     /// longueur finie et strictement positive sont sautées, le corps
     /// dérivé marquera la feature en échec (OF-CAD-0005).
     pub fn profondeurs_pour_cad(&mut self) -> BTreeMap<u32, Length> {
-        let mut profondeurs = BTreeMap::new();
+        // Emprunts séparés (E0502) : les alias sont collectés d'abord,
+        // le graphe muté ensuite.
+        let mut a_evaluer: Vec<(u32, String)> = Vec::new();
         for (id, feature) in self.cad.features() {
             if let FeatureCad::Extrusion {
                 profondeur: ProfondeurCad::Cote(ValeurCote::Expression { alias, .. }),
                 ..
             } = feature
-                && let Ok(millimetres) = self.graph_mut().value(alias)
+            {
+                a_evaluer.push((*id, alias.clone()));
+            }
+        }
+        let mut profondeurs = BTreeMap::new();
+        for (id, alias) in a_evaluer {
+            if let Ok(millimetres) = self.graph_mut().value(&alias)
                 && millimetres.is_finite()
                 && millimetres > 0.0
             {
-                profondeurs.insert(*id, Length::from_millimeters(millimetres));
+                profondeurs.insert(id, Length::from_millimeters(millimetres));
             }
         }
         profondeurs

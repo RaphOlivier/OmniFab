@@ -394,9 +394,8 @@ impl RemoveAlias {
                 // contrainte ou la feature porte le texte de
                 // l'expression, elle suit la substitution à
                 // identifiant conservé (ADR-0019 §1, ADR-0024 §7).
-                if let Some((croquis, id, mut contrainte)) = session
-                    .esquisse()
-                    .contrainte_de_cote_situation(&dep)
+                if let Some((croquis, id, mut contrainte)) =
+                    session.esquisse().contrainte_de_cote_situation(&dep)
                 {
                     if let ContrainteEsquisse::Distance {
                         valeur: ValeurCote::Expression { texte, .. },
@@ -411,8 +410,7 @@ impl RemoveAlias {
                         "",
                         crate::esquisse::contrainte_en_json(croquis, id, &contrainte),
                     ));
-                } else if let Some((id, mut feature)) = session.cad().feature_de_alias(&dep)
-                {
+                } else if let Some((id, mut feature)) = session.cad().feature_de_alias(&dep) {
                     if let FeatureCad::Extrusion {
                         profondeur: ProfondeurCad::Cote(ValeurCote::Expression { texte, .. }),
                         ..
@@ -908,7 +906,7 @@ fn feature_valide(
         ProfondeurFeature::ATravers => {}
     }
     if let Some(couleur) = couleur
-        && (!couleur.rgba.iter().all(f64::is_finite) || !couleur.speculaire.is_finite())
+        && (!couleur.rgba.iter().all(|c| c.is_finite()) || !couleur.speculaire.is_finite())
     {
         return Err(SessionError::CommandRejected {
             reason: "les composantes de la couleur doivent être finies".to_string(),
