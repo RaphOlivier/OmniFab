@@ -106,7 +106,11 @@ fn importe_une_courbe_quadratique() {
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     assert!(!traces[0].is_closed());
-    assert_eq!(traces[0].segments().len(), 1, "une Bézier quadratique native");
+    assert_eq!(
+        traces[0].segments().len(),
+        1,
+        "une Bézier quadratique native"
+    );
     match traces[0].segments()[0] {
         Segment2::BezierQuadratique { p1, p2, .. } => {
             assert_eq!(p1.x().millimeters(), 0.0);
@@ -308,7 +312,8 @@ fn export_puis_import() {
     assert!(!traces[0].is_closed());
     assert!(traces[1].is_closed());
     assert_eq!(traces[1].len(), 3);
-    let dernier = traces[1].points().last().expect("au moins un sommet");
+    let sommets = traces[1].points();
+    let dernier = sommets.last().expect("au moins un sommet");
     assert_eq!(dernier.y().millimeters(), 10.0);
 }
 

@@ -619,7 +619,12 @@ EOF
         assert_eq!(traces.len(), 1);
         assert_eq!(traces[0].segments().len(), 1, "un bulge = un arc natif");
         match traces[0].segments()[0] {
-            Segment2::Arc { centre, rayon, sens, .. } => {
+            Segment2::Arc {
+                centre,
+                rayon,
+                sens,
+                ..
+            } => {
                 assert_eq!(centre.x().millimeters(), 5.0);
                 assert!(centre.y().millimeters().abs() < 1e-9);
                 assert!((rayon.millimeters() - 5.0).abs() < 1e-9);
@@ -646,7 +651,12 @@ EOF
         assert_eq!(traces.len(), 1);
         assert_eq!(traces[0].segments().len(), 1, "un bulge = un arc natif");
         match traces[0].segments()[0] {
-            Segment2::Arc { centre, rayon, sens, .. } => {
+            Segment2::Arc {
+                centre,
+                rayon,
+                sens,
+                ..
+            } => {
                 assert_eq!(centre.x().millimeters(), 5.0);
                 assert!(centre.y().millimeters().abs() < 1e-9);
                 assert!((rayon.millimeters() - 5.0).abs() < 1e-9);

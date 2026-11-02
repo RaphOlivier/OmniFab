@@ -94,9 +94,9 @@ impl Segment2 {
             Self::Ligne { p1, .. }
             | Self::BezierQuadratique { p1, .. }
             | Self::BezierCubique { p1, .. } => *p1,
-            Self::Arc { centre, rayon, debut, .. } => {
-                point_d_angle(*centre, rayon.millimeters(), debut.radians()).unwrap_or(*centre)
-            }
+            Self::Arc {
+                centre, rayon, debut, ..
+            } => point_d_angle(*centre, rayon.millimeters(), debut.radians()).unwrap_or(*centre),
         }
     }
 
@@ -106,9 +106,9 @@ impl Segment2 {
             Self::Ligne { p2, .. }
             | Self::BezierQuadratique { p2, .. }
             | Self::BezierCubique { p2, .. } => *p2,
-            Self::Arc { centre, rayon, fin, .. } => {
-                point_d_angle(*centre, rayon.millimeters(), fin.radians()).unwrap_or(*centre)
-            }
+            Self::Arc {
+                centre, rayon, fin, ..
+            } => point_d_angle(*centre, rayon.millimeters(), fin.radians()).unwrap_or(*centre),
         }
     }
 
@@ -151,7 +151,13 @@ impl Segment2 {
     fn discretisation(&self, tolerance: Length) -> Result<(Vec<Point2>, bool), GeomError> {
         match self {
             Self::Ligne { p1, p2 } => Ok((vec![*p1, *p2], false)),
-            Self::Arc { centre, rayon, debut, fin, sens } => {
+            Self::Arc {
+                centre,
+                rayon,
+                debut,
+                fin,
+                sens,
+            } => {
                 let r = rayon.millimeters();
                 if !r.is_finite() || r <= 0.0 {
                     return Err(GeomError::DiscretisationImpossible {
@@ -183,7 +189,8 @@ impl Segment2 {
             }
             Self::BezierQuadratique { p1, controle, p2 } => {
                 let mut discretisee = vec![*p1];
-                let depasse = aplatit_bezier(&[*p1, *controle, *p2], tolerance, &mut discretisee, 0);
+                let depasse =
+                    aplatit_bezier(&[*p1, *controle, *p2], tolerance, &mut discretisee, 0);
                 Ok((discretisee, depasse))
             }
             Self::BezierCubique { p1, c1, c2, p2 } => {
@@ -203,19 +210,11 @@ fn balayage_signe(debut: Angle, fin: Angle, sens: SensHoraire) -> f64 {
     match sens {
         SensHoraire::Trigonometrique => {
             let positif = (fin.radians() - debut.radians()).rem_euclid(tour);
-            if positif <= 1e-12 {
-                tour
-            } else {
-                positif
-            }
+            if positif <= 1e-12 { tour } else { positif }
         }
         SensHoraire::Horaire => {
             let negatif = (debut.radians() - fin.radians()).rem_euclid(tour);
-            if negatif <= 1e-12 {
-                -tour
-            } else {
-                -negatif
-            }
+            if negatif <= 1e-12 { -tour } else { -negatif }
         }
     }
 }
@@ -660,7 +659,11 @@ mod tests {
         assert_eq!(contour.len(), 4, "quatre sommets");
         let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
         let points = contour.discretiser(tolerance).expect("discrétisation");
-        assert_eq!(points.len(), 4, "les fermetures recollées ne se répètent pas");
+        assert_eq!(
+            points.len(),
+            4,
+            "les fermetures recollées ne se répètent pas"
+        );
         assert_eq!(points[0].x().millimeters(), 0.0);
         assert_eq!(points[1].y().millimeters(), 0.0);
         assert_eq!(points[2].x().millimeters(), 10.0);
