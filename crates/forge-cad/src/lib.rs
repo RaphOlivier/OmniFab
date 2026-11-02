@@ -456,12 +456,46 @@ pub mod step {
         })
     }
 
+    /// Compte les en-têtes d'instances « #<chiffres> = » du texte STEP
+    /// (dette A3-08.e, réglée au lot 2 de la phase B) : chaque instance
+    /// déclarée majore les sous-formes que le lecteur construira — le
+    /// comptage parcourt les octets, sans allouer ni interpréter, et
+    /// reste volontairement conservateur (un sur-count sûr vaut mieux
+    /// qu'un sous-count).
+    fn compte_instances(octets: &[u8]) -> usize {
+        let mut total = 0;
+        let mut i = 0;
+        while i < octets.len() {
+            if octets[i] != b'#' {
+                i += 1;
+                continue;
+            }
+            let debut = i + 1;
+            let mut j = debut;
+            while j < octets.len() && octets[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > debut {
+                let mut k = j;
+                while k < octets.len() && (octets[k] == b' ' || octets[k] == b'\t') {
+                    k += 1;
+                }
+                if k < octets.len() && octets[k] == b'=' {
+                    total += 1;
+                }
+            }
+            i = j.max(i + 1);
+        }
+        total
+    }
+
     /// Importe les octets STEP (le lot 1 lit le fichier comme une forme
     /// unique : composés inclus).
     ///
     /// # Erreurs
     /// [`CadError::Budget`] (OF-CAD-0004) avant le premier octet confié à
-    /// OCCT ; [`CadError::Illisible`] (OF-CAD-0003) si le lecteur refuse ;
+    /// OCCT — budgets d'octets, de formes ou d'instances déclarées ;
+    /// [`CadError::Illisible`] (OF-CAD-0003) si le lecteur refuse ;
     /// [`CadError::FormeInvalide`] (OF-CAD-0002) si la forme importée est
     /// vide ou non solide.
     pub fn importer(octets: &[u8], budgets: &CadBudgets) -> Result<Vec<Solide>, CadError> {
@@ -473,6 +507,15 @@ pub mod step {
         if budgets.formes_max < 1 {
             return Err(CadError::Budget {
                 limite: format!("formes_max = {}", budgets.formes_max),
+            });
+        }
+        // Dette A3-08.e (réglée au lot 2 de la phase B) : `formes_max`
+        // devient un budget RÉEL — le dépassement du nombre d'instances
+        // déclarées est refusé AVANT le premier octet confié au noyau,
+        // le lecteur ne peut plus se voir confier un fichier démesuré.
+        if compte_instances(octets) > budgets.formes_max {
+            return Err(CadError::Budget {
+                limite: format!("formes_max = {} (instances STEP)", budgets.formes_max),
             });
         }
         let fichier = FichierTemporaire::creer(".step")?;

@@ -25,7 +25,7 @@
 //! Phase E (ADR-0019) : chaque nœud porte en outre une **unité**
 //! optionnelle (ADR-0007 phase 1 : métadonnée de validation, cohérence
 //! vérifiée à la définition) et une **origine** — utilisateur ou
-//! système, les préfixes `esquisse.`, `param.` et `doc.` étant
+//! système, les préfixes `esquisse.`, `param.`, `doc.` et `cad.` étant
 //! réservés aux nœuds système. La suppression d'un alias se fait en
 //! trois modes ([`ModeSuppression`]).
 
@@ -39,8 +39,10 @@ use std::fmt;
 
 use expr::Expr;
 
-/// Préfixes de noms réservés aux nœuds système (ADR-0019 §2).
-pub const PREFIXES_RESERVES: [&str; 3] = ["esquisse.", "param.", "doc."];
+/// Préfixes de noms réservés aux nœuds système (ADR-0019 §2 ; `cad.` —
+/// profondeurs des features d'extrusion — depuis le lot 2 de la
+/// phase B, ADR-0024 §7).
+pub const PREFIXES_RESERVES: [&str; 4] = ["esquisse.", "param.", "doc.", "cad."];
 
 /// Longueur maximale, en caractères, du texte d'une expression
 /// (ADR-0006 amendé le 2026-10-29, audit n°3 A3-02). La borne vit
