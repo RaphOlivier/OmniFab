@@ -195,7 +195,7 @@ fn importe_un_arc_svg() {
     assert_eq!(traces.len(), 1);
     assert!(!traces[0].is_closed());
     assert!(
-        traces[0].segments().len() >= 1,
+        !traces[0].segments().is_empty(),
         "arc en Béziers : {}",
         traces[0].segments().len()
     );

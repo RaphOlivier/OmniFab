@@ -95,7 +95,10 @@ impl Segment2 {
             | Self::BezierQuadratique { p1, .. }
             | Self::BezierCubique { p1, .. } => *p1,
             Self::Arc {
-                centre, rayon, debut, ..
+                centre,
+                rayon,
+                debut,
+                ..
             } => point_d_angle(*centre, rayon.millimeters(), debut.radians()).unwrap_or(*centre),
         }
     }
@@ -488,7 +491,7 @@ mod tests {
     /// Flèche maximale de la discrétisation : distance de la courbe
     /// exacte (échantillonnée à 1 001 points) à la polyligne.
     fn fleche_maximale(echantillons: &[Point2], discretise: &[Point2]) -> f64 {
-        let mut pire = 0.0;
+        let mut pire: f64 = 0.0;
         for point in echantillons {
             let mut distance = f64::INFINITY;
             for paire in discretise.windows(2) {
