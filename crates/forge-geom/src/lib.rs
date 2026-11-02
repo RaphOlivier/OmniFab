@@ -24,7 +24,7 @@ mod segments;
 pub use error::GeomError;
 
 pub use segments::{
-    Contour2, ErreurContour, MAX_POINTS_DISCRETISATION, MAX_PROFONDEUR_SUBDIVISION, Segment2,
+    Contour2, ErreurContour, MAX_PROFONDEUR_SUBDIVISION, MAX_POINTS_DISCRETISATION, Segment2,
     SensHoraire, TOLERANCE_DISCRETISATION_MM, contours, points_recolles,
 };
 

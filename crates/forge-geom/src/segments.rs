@@ -95,8 +95,7 @@ impl Segment2 {
             | Self::BezierQuadratique { p1, .. }
             | Self::BezierCubique { p1, .. } => *p1,
             Self::Arc { centre, rayon, debut, .. } => {
-                point_d_angle(*centre, rayon.millimeters(), debut.radians())
-                    .unwrap_or(*centre)
+                point_d_angle(*centre, rayon.millimeters(), debut.radians()).unwrap_or(*centre)
             }
         }
     }
@@ -108,8 +107,7 @@ impl Segment2 {
             | Self::BezierQuadratique { p2, .. }
             | Self::BezierCubique { p2, .. } => *p2,
             Self::Arc { centre, rayon, fin, .. } => {
-                point_d_angle(*centre, rayon.millimeters(), fin.radians())
-                    .unwrap_or(*centre)
+                point_d_angle(*centre, rayon.millimeters(), fin.radians()).unwrap_or(*centre)
             }
         }
     }
