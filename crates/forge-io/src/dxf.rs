@@ -3,9 +3,10 @@
 //!
 //! Convention d'unités : une unité = 1 mm ; le z est ignoré (tracés
 //! 2D). Les entités géométriques du jalon 1 sont lues : `LINE`,
-//! `LWPOLYLINE`, `POLYLINE` (bulges discrétisés en arcs),
-//! `CIRCLE`, `ARC` (cercles et arcs discrétisés) et `SPLINE`
-//! (B-splines rationnelles discrétisées par l'algorithme de
+//! `LWPOLYLINE`, `POLYLINE` (bulges devenus arcs natifs),
+//! `CIRCLE`, `ARC` (cercles et arcs natifs — un balayage nul
+//! dénote le cercle complet) et `SPLINE`
+//! (B-splines rationnelles échantillonnées par l'algorithme de
 //! de Boor — l'export DXF d'Inkscape y code toute courbe, cercle
 //! et arc) ; les entités non géométriques (textes, cotes,
 //! blocs…) sont ignorées par conception (ADR-0009) ; à l'import,
@@ -22,16 +23,10 @@
 //! erreur typée, levée avant tout traitement ultérieur.
 
 use crate::IoError;
-use dxf::entities::{Arc, Circle, Entity, EntityType, Line, Spline};
-use forge_geom::{Path2, Point2};
-use forge_units::Length;
+use dxf::entities::{Entity, EntityType, Line, Spline};
+use forge_geom::{Path2, Point2, Segment2, SensHoraire};
+use forge_units::{Angle, Length};
 use std::collections::HashSet;
-
-/// Nombre de sommets de la discrétisation d'un cercle.
-pub const POINTS_CERCLE: usize = 64;
-
-/// Nombre de segments de la discrétisation d'un arc.
-pub const SEGMENTS_ARC: usize = 32;
 
 /// Nombre de segments de la discrétisation d'une spline par
 /// intervalle de nœuds.
@@ -63,15 +58,14 @@ impl Default for DxfBudgets {
 }
 
 /// Importe un DXF en tracés 2D. Convention : une unité = 1 mm ; le
-/// z est ignoré. Les cercles deviennent des polygones fermés à
-/// [`POINTS_CERCLE`] sommets, les arcs des polylignes ouvertes à
-/// [`SEGMENTS_ARC`] segments ; les bulges des polylignes (arcs
-/// codés par sommet, code 42, générés par FreeCAD à l'export)
-/// deviennent des arcs discrétisés le long de la corde ; les
-/// splines — B-splines rationnelles, qu'Inkscape exporte pour
-/// toute courbe, cercle ou arc — deviennent des polylignes
-/// échantillonnées à [`SEGMENTS_SPLINE`] segments par intervalle
-/// de nœuds (algorithme de de Boor). Les budgets protègent contre
+/// z est ignoré. Les cercles et arcs deviennent des segments
+/// natifs — un cercle est un arc au balayage nul — ; les bulges
+/// des polylignes (arcs codés par sommet, code 42, générés par
+/// FreeCAD à l'export) deviennent des arcs natifs le long de la
+/// corde ; les splines — B-splines rationnelles, qu'Inkscape
+/// exporte pour toute courbe, cercle ou arc — restent des
+/// polylignes échantillonnées à [`SEGMENTS_SPLINE`] segments par
+/// intervalle de nœuds (algorithme de de Boor). Les budgets protègent contre
 /// les documents démesurés (ADR-0009).
 /// Délègue à [`import_avec_rapport`], sans exposer le rapport.
 pub fn import(bytes: &[u8], budgets: &DxfBudgets) -> Result<Vec<Path2>, IoError> {
@@ -147,12 +141,12 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
             rapport.calques_eteints += 1;
             continue;
         }
-        let mut points: Vec<Point2> = Vec::new();
-        let mut ferme = false;
+        let mut segments: Vec<Segment2> = Vec::new();
         let geometrique = match &entite.specific {
             EntityType::Line(ligne) => {
-                points.push(sommet(ligne.p1.x, ligne.p1.y, &mut total, budgets)?);
-                points.push(sommet(ligne.p2.x, ligne.p2.y, &mut total, budgets)?);
+                let p1 = sommet(ligne.p1.x, ligne.p1.y, &mut total, budgets)?;
+                let p2 = sommet(ligne.p2.x, ligne.p2.y, &mut total, budgets)?;
+                segments.push(Segment2::Ligne { p1, p2 });
                 true
             }
             EntityType::LwPolyline(polyligne) => {
@@ -161,8 +155,13 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
                     .iter()
                     .map(|v| (v.x, v.y, v.bulge))
                     .collect();
-                ferme = polyligne.is_closed();
-                pousse_polyligne(&sommets, ferme, &mut points, &mut total, budgets)?;
+                segments_polyligne(
+                    &sommets,
+                    polyligne.is_closed(),
+                    &mut segments,
+                    &mut total,
+                    budgets,
+                )?;
                 true
             }
             EntityType::Polyline(polyligne) => {
@@ -170,27 +169,64 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
                     .vertices()
                     .map(|v| (v.location.x, v.location.y, v.bulge))
                     .collect();
-                ferme = polyligne.is_closed();
-                pousse_polyligne(&sommets, ferme, &mut points, &mut total, budgets)?;
+                segments_polyligne(
+                    &sommets,
+                    polyligne.is_closed(),
+                    &mut segments,
+                    &mut total,
+                    budgets,
+                )?;
                 true
             }
             EntityType::Circle(cercle) => {
-                points = cercle_points(cercle, &mut total, budgets)?;
-                ferme = true;
+                segments.push(arc_cercle_natif(
+                    cercle.center.x,
+                    cercle.center.y,
+                    cercle.radius,
+                    0.0,
+                    0.0,
+                    &mut total,
+                    budgets,
+                )?);
                 true
             }
             EntityType::Arc(arc) => {
-                points = arc_points(arc, &mut total, budgets)?;
+                let mut span = arc.end_angle - arc.start_angle;
+                if span <= 0.0 {
+                    span += 360.0;
+                }
+                segments.push(arc_cercle_natif(
+                    arc.center.x,
+                    arc.center.y,
+                    arc.radius,
+                    arc.start_angle,
+                    arc.start_angle + span,
+                    &mut total,
+                    budgets,
+                )?);
                 true
             }
             EntityType::Spline(spline) => {
-                points = spline_points(spline, &mut total, budgets)?;
-                ferme = spline.is_closed();
+                let points = spline_points(spline, &mut total, budgets)?;
+                for paire in points.windows(2) {
+                    segments.push(Segment2::Ligne {
+                        p1: paire[0],
+                        p2: paire[1],
+                    });
+                }
+                if spline.is_closed() && points.len() >= 2 {
+                    let premier = points[0];
+                    let dernier = points[points.len() - 1];
+                    segments.push(Segment2::Ligne {
+                        p1: dernier,
+                        p2: premier,
+                    });
+                }
                 true
             }
             _ => false,
         };
-        if !geometrique || points.len() < 2 {
+        if !geometrique || segments.is_empty() {
             continue;
         }
         if traces.len() >= budgets.max_paths {
@@ -200,7 +236,7 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
                 unite: "tracés",
             });
         }
-        traces.push(Path2::from_points(points, ferme));
+        traces.push(Path2::from_segments(std::mem::take(&mut segments)));
     }
     Ok(ImportDxf { traces, rapport })
 }
@@ -255,122 +291,136 @@ fn sommet(x: f64, y: f64, total: &mut usize, budgets: &DxfBudgets) -> Result<Poi
     Ok(point)
 }
 
-/// Pousse les sommets d'une polyligne (x, y, bulge) dans `points`,
-/// en discrétisant chaque segment porteur d'un bulge (arc) ; les
-/// segments sans bulge restent des cordes droites. Sur une
-/// polyligne fermée, le bulge du dernier sommet s'applique au
-/// segment de fermeture vers le premier sommet.
-fn pousse_polyligne(
+/// Pousse les segments d'une polyligne (x, y, bulge) : chaque paire
+/// de sommets consécutifs devient un segment — corde droite sans
+/// bulge, arc natif avec (mathématiques du bulge, cf.
+/// [`arc_de_bulge`]). Sur une polyligne fermée, le bulge du dernier
+/// sommet s'applique au segment de fermeture vers le premier — la
+/// fermeture est un segment explicite.
+fn segments_polyligne(
     sommets: &[(f64, f64, f64)],
     ferme: bool,
-    points: &mut Vec<Point2>,
+    segments: &mut Vec<Segment2>,
     total: &mut usize,
     budgets: &DxfBudgets,
 ) -> Result<(), IoError> {
-    for (i, (x, y, bulge)) in sommets.iter().enumerate() {
-        points.push(sommet(*x, *y, total, budgets)?);
-        if bulge.abs() <= 1e-12 {
-            continue;
-        }
-        let prochain = if i + 1 < sommets.len() {
-            Some(sommets[i + 1])
-        } else if ferme && sommets.len() > 1 {
-            Some(sommets[0])
+    if sommets.len() < 2 {
+        return Ok(());
+    }
+    let points: Vec<Point2> = sommets
+        .iter()
+        .map(|(x, y, _)| sommet(*x, *y, total, budgets))
+        .collect::<Result<_, _>>()?;
+    let nombre = points.len() - 1 + usize::from(ferme);
+    for i in 0..nombre {
+        let depart = points[i];
+        let arrivee = if i + 1 < points.len() {
+            points[i + 1]
         } else {
-            None
+            points[0]
         };
-        if let Some((x2, y2, _)) = prochain {
-            points.extend(bulge_intermediaires(
-                (*x, *y),
-                (x2, y2),
-                *bulge,
-                total,
-                budgets,
-            )?);
+        let bulge = sommets[i].2;
+        if bulge.abs() <= 1e-12 {
+            segments.push(Segment2::Ligne {
+                p1: depart,
+                p2: arrivee,
+            });
+        } else {
+            segments.push(arc_de_bulge(depart, arrivee, bulge)?);
         }
     }
     Ok(())
 }
 
-/// Points intérieurs de la discrétisation d'un segment à bulge DXF
-/// (les deux extrémités sont exclues : l'appelant pousse les
-/// sommets). Mathématiques du bulge : angle inclus θ = 4·atan(b),
-/// positif = sens trigonométrique ; rayon signé r = demi-corde /
-/// sin(θ/2) ; centre = milieu de la corde décalé de r·cos(θ/2)
-/// le long de la normale à gauche de la corde.
-fn bulge_intermediaires(
-    debut: (f64, f64),
-    fin: (f64, f64),
-    bulge: f64,
-    total: &mut usize,
-    budgets: &DxfBudgets,
-) -> Result<Vec<Point2>, IoError> {
+/// Arc natif d'un segment à bulge DXF (code 42, généré par FreeCAD
+/// à l'export) : mathématiques du bulge — angle inclus
+/// θ = 4·atan(b), positif = sens trigonométrique ; rayon signé
+/// r = demi-corde / sin(θ/2) ; centre = milieu de la corde décalé
+/// de r·cos(θ/2) le long de la normale à gauche de la corde.
+fn arc_de_bulge(depart: Point2, arrivee: Point2, bulge: f64) -> Result<Segment2, IoError> {
     let theta = 4.0 * bulge.atan();
-    let dx = fin.0 - debut.0;
-    let dy = fin.1 - debut.1;
+    let dx = arrivee.x().millimeters() - depart.x().millimeters();
+    let dy = arrivee.y().millimeters() - depart.y().millimeters();
     let corde = (dx * dx + dy * dy).sqrt();
-    if corde < 1e-12 {
-        return Ok(Vec::new());
+    if !theta.is_finite() || corde <= 1e-12 {
+        return Err(IoError::InvalidDxf {
+            raison: format!("bulge {bulge} sur une corde vide"),
+        });
     }
-    let demi = corde / 2.0;
     let demi_theta = theta / 2.0;
-    let r_signe = demi / demi_theta.sin();
+    let r_signe = (corde / 2.0) / demi_theta.sin();
     let h = r_signe * demi_theta.cos();
-    let mx = (debut.0 + fin.0) / 2.0;
-    let my = (debut.1 + fin.1) / 2.0;
-    // Normale à gauche de la corde debut → fin.
+    let mx = (depart.x().millimeters() + arrivee.x().millimeters()) / 2.0;
+    let my = (depart.y().millimeters() + arrivee.y().millimeters()) / 2.0;
+    // Normale à gauche de la corde depart → arrivee.
     let nx = -dy / corde;
     let ny = dx / corde;
-    let cx = mx + h * nx;
-    let cy = my + h * ny;
+    let centre_x = mx + h * nx;
+    let centre_y = my + h * ny;
+    let abscisse = Length::from_millimeters(centre_x);
+    let ordonnee = Length::from_millimeters(centre_y);
+    let centre = Point2::new(abscisse, ordonnee).map_err(IoError::InvalidGeometry)?;
     let rayon = r_signe.abs();
-    let alpha = (debut.1 - cy).atan2(debut.0 - cx);
-    let segments =
-        ((theta.abs().to_degrees() * SEGMENTS_ARC as f64 / 360.0).ceil() as usize).clamp(2, 64);
-    let mut points = Vec::with_capacity(segments - 1);
-    for k in 1..segments {
-        let phi = alpha + theta * k as f64 / segments as f64;
-        let x = cx + rayon * phi.cos();
-        let y = cy + rayon * phi.sin();
-        points.push(sommet(x, y, total, budgets)?);
+    if !rayon.is_finite() || rayon <= 0.0 {
+        return Err(IoError::InvalidDxf {
+            raison: format!("bulge {bulge} : rayon d'arc invalide"),
+        });
     }
-    Ok(points)
+    let alpha = (depart.y().millimeters() - centre_y).atan2(depart.x().millimeters() - centre_x);
+    Ok(Segment2::Arc {
+        centre,
+        rayon: Length::from_millimeters(rayon),
+        debut: Angle::from_radians(alpha),
+        fin: Angle::from_radians(alpha + theta),
+        sens: if theta >= 0.0 {
+            SensHoraire::Trigonometrique
+        } else {
+            SensHoraire::Horaire
+        },
+    })
 }
 
-/// Discrétise un cercle en polygone fermé à [`POINTS_CERCLE`]
-/// sommets.
-fn cercle_points(
-    cercle: &Circle,
+/// Arc natif d'un cercle ou d'un arc DXF (z ignoré) : un balayage
+/// nul dénote le cercle complet ; le centre et les points extrêmes
+/// sont validés comme sommets (garde de budget et de bornes), le
+/// rayon doit être strictement positif et fini.
+fn arc_cercle_natif(
+    centre_x: f64,
+    centre_y: f64,
+    rayon: f64,
+    debut_degres: f64,
+    fin_degres: f64,
     total: &mut usize,
     budgets: &DxfBudgets,
-) -> Result<Vec<Point2>, IoError> {
-    let mut points = Vec::with_capacity(POINTS_CERCLE);
-    for i in 0..POINTS_CERCLE {
-        let angle = 2.0 * std::f64::consts::PI * i as f64 / POINTS_CERCLE as f64;
-        let x = cercle.center.x + cercle.radius * angle.cos();
-        let y = cercle.center.y + cercle.radius * angle.sin();
-        points.push(sommet(x, y, total, budgets)?);
+) -> Result<Segment2, IoError> {
+    if !rayon.is_finite() || rayon <= 0.0 {
+        return Err(IoError::InvalidDxf {
+            raison: format!("rayon de cercle ou d'arc invalide : {rayon}"),
+        });
     }
-    Ok(points)
-}
-
-/// Discrétise un arc en polyligne ouverte à [`SEGMENTS_ARC`]
-/// segments, de l'angle de départ à l'angle de fin (degrés, sens
-/// trigonométrique).
-fn arc_points(arc: &Arc, total: &mut usize, budgets: &DxfBudgets) -> Result<Vec<Point2>, IoError> {
-    let mut span = arc.end_angle - arc.start_angle;
-    if span <= 0.0 {
-        span += 360.0;
-    }
-    let mut points = Vec::with_capacity(SEGMENTS_ARC + 1);
-    for i in 0..=SEGMENTS_ARC {
-        let degres = arc.start_angle + span * i as f64 / SEGMENTS_ARC as f64;
-        let angle = degres.to_radians();
-        let x = arc.center.x + arc.radius * angle.cos();
-        let y = arc.center.y + arc.radius * angle.sin();
-        points.push(sommet(x, y, total, budgets)?);
-    }
-    Ok(points)
+    let centre = sommet(centre_x, centre_y, total, budgets)?;
+    // Les points extrêmes bornent les coordonnées réellement
+    // importées : le corps du cercle ou de l'arc ne porte que ses
+    // extrémités, le reste est discrétisé à la lecture.
+    sommet(
+        centre_x + rayon * debut_degres.to_radians().cos(),
+        centre_y + rayon * debut_degres.to_radians().sin(),
+        total,
+        budgets,
+    )?;
+    sommet(
+        centre_x + rayon * fin_degres.to_radians().cos(),
+        centre_y + rayon * fin_degres.to_radians().sin(),
+        total,
+        budgets,
+    )?;
+    Ok(Segment2::Arc {
+        centre,
+        rayon: Length::from_millimeters(rayon),
+        debut: Angle::from_degrees(debut_degres),
+        fin: Angle::from_degrees(fin_degres),
+        sens: SensHoraire::Trigonometrique,
+    })
 }
 
 /// Discrétise une spline en polyligne : échantillonnage à
@@ -544,33 +594,85 @@ EOF
         assert!(points[1].y().millimeters().abs() < 1e-9);
     }
 
-    #[test]
-    fn lwpolyline_bulge_positif_passe_sous_la_corde() {
-        // bulge 1 = demi-cercle trigonométrique de (0,0) vers
-        // (10,0) : centre (5,0), rayon 5, l'arc passe par (5, -5).
-        let traces = import(&dxf_bulge("1.0"), &DxfBudgets::default()).expect("dxf valide");
-        assert_eq!(traces.len(), 1);
-        let points = traces[0].points();
-        // 2 sommets + 15 points intérieurs (16 segments).
-        assert_eq!(points.len(), 17);
-        let passage = points.iter().any(|p| {
-            (p.x().millimeters() - 5.0).abs() < 1e-6 && (p.y().millimeters() + 5.0).abs() < 1e-6
-        });
-        assert!(passage, "l'arc doit passer par (5, -5)");
+    /// Distance d'un point au segment [a, b] (mm).
+    fn distance_au_segment(x: f64, y: f64, a: Point2, b: Point2) -> f64 {
+        let vx = b.x().millimeters() - a.x().millimeters();
+        let vy = b.y().millimeters() - a.y().millimeters();
+        let wx = x - a.x().millimeters();
+        let wy = y - a.y().millimeters();
+        let corde2 = vx * vx + vy * vy;
+        if corde2 <= 1e-24 {
+            return (wx * wx + wy * wy).sqrt();
+        }
+        let t = ((wx * vx + wy * vy) / corde2).clamp(0.0, 1.0);
+        let dx = wx - t * vx;
+        let dy = wy - t * vy;
+        (dx * dx + dy * dy).sqrt()
     }
 
     #[test]
-    fn lwpolyline_bulge_negatif_passe_au_dessus() {
+    fn lwpolyline_bulge_positif_devient_un_arc_sous_la_corde() {
+        // bulge 1 = demi-cercle trigonométrique de (0,0) vers
+        // (10,0) : centre (5, 0), rayon 5 — l'arc natif passe par
+        // (5, -5), sa discrétisation y reste à la tolérance près.
+        let traces = import(&dxf_bulge("1.0"), &DxfBudgets::default()).expect("dxf valide");
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].segments().len(), 1, "un bulge = un arc natif");
+        match traces[0].segments()[0] {
+            Segment2::Arc {
+                centre,
+                rayon,
+                sens,
+                ..
+            } => {
+                assert_eq!(centre.x().millimeters(), 5.0);
+                assert!(centre.y().millimeters().abs() < 1e-9);
+                assert!((rayon.millimeters() - 5.0).abs() < 1e-9);
+                assert_eq!(sens, SensHoraire::Trigonometrique);
+            }
+            _ => panic!("le bulge doit devenir un arc natif"),
+        }
+        let points = traces[0].points();
+        let fleche = points
+            .windows(2)
+            .map(|paire| distance_au_segment(5.0, -5.0, paire[0], paire[1]))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            fleche <= 0.011,
+            "l'arc doit passer par (5, -5) : flèche {fleche}"
+        );
+    }
+
+    #[test]
+    fn lwpolyline_bulge_negatif_devient_un_arc_au_dessus() {
         // bulge -1 = demi-cercle horaire de (0,0) vers (10,0) :
-        // l'arc passe par (5, 5).
+        // l'arc natif passe par (5, 5).
         let traces = import(&dxf_bulge("-1.0"), &DxfBudgets::default()).expect("dxf valide");
         assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0].segments().len(), 1, "un bulge = un arc natif");
+        match traces[0].segments()[0] {
+            Segment2::Arc {
+                centre,
+                rayon,
+                sens,
+                ..
+            } => {
+                assert_eq!(centre.x().millimeters(), 5.0);
+                assert!(centre.y().millimeters().abs() < 1e-9);
+                assert!((rayon.millimeters() - 5.0).abs() < 1e-9);
+                assert_eq!(sens, SensHoraire::Horaire);
+            }
+            _ => panic!("le bulge doit devenir un arc natif"),
+        }
         let points = traces[0].points();
-        assert_eq!(points.len(), 17);
-        let passage = points.iter().any(|p| {
-            (p.x().millimeters() - 5.0).abs() < 1e-6 && (p.y().millimeters() - 5.0).abs() < 1e-6
-        });
-        assert!(passage, "l'arc doit passer par (5, 5)");
+        let fleche = points
+            .windows(2)
+            .map(|paire| distance_au_segment(5.0, 5.0, paire[0], paire[1]))
+            .fold(f64::INFINITY, f64::min);
+        assert!(
+            fleche <= 0.011,
+            "l'arc doit passer par (5, 5) : flèche {fleche}"
+        );
     }
 
     /// DXF ASCII minimal : une entité `SPLINE` (70 = 8, planaire) ;

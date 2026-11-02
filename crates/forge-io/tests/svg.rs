@@ -1,4 +1,4 @@
-//! Tests du parseur SVG : rectangles, aplatissement des courbes,
+//! Tests du parseur SVG : rectangles, courbes en segments natifs,
 //! budgets, erreurs typées, aller-retour export/import.
 
 // Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
@@ -7,7 +7,7 @@
 // fichier d'intégration : expect admis dans tout le fichier.
 #![allow(clippy::expect_used)]
 
-use forge_geom::{Path2, Point2};
+use forge_geom::{Path2, Point2, Segment2};
 use forge_io::svg::{self, SvgBudgets};
 use forge_units::Length;
 
@@ -58,15 +58,38 @@ fn reprend_apres_z_depuis_le_depart() {
     assert_eq!(ouverts[2].y().millimeters(), -7.0);
 }
 
+/// Distance d'un point à la polyligne (segment par segment, mm).
+fn distance_a_la_polyligne(x: f64, y: f64, points: &[Point2]) -> f64 {
+    let mut distance = f64::INFINITY;
+    for paire in points.windows(2) {
+        let vx = paire[1].x().millimeters() - paire[0].x().millimeters();
+        let vy = paire[1].y().millimeters() - paire[0].y().millimeters();
+        let wx = x - paire[0].x().millimeters();
+        let wy = y - paire[0].y().millimeters();
+        let corde2 = vx * vx + vy * vy;
+        let d = if corde2 <= 1e-24 {
+            (wx * wx + wy * wy).sqrt()
+        } else {
+            let t = ((wx * vx + wy * vy) / corde2).clamp(0.0, 1.0);
+            let dx = wx - t * vx;
+            let dy = wy - t * vy;
+            (dx * dx + dy * dy).sqrt()
+        };
+        distance = distance.min(d);
+    }
+    distance
+}
+
 #[test]
 fn courbe_apres_z_part_du_depart() {
     // Une courbe après `Z` part du sommet de départ du
-    // sous-tracé, pas du dernier point avant la fermeture.
+    // sous-tracé, pas du dernier point avant la fermeture —
+    // ici une Bézier quadratique native (ADR-0024).
     let source = b"<svg><path d=\"M 0 0 L 10 0 Z Q 0 5 0 10\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 2);
+    assert_eq!(traces[1].segments().len(), 1, "une Bézier quadratique");
     let points = traces[1].points();
-    assert_eq!(points.len(), 1 + svg::SEGMENTS_COURBE);
     assert_eq!(points[0].x().millimeters(), 0.0);
     assert_eq!(points[0].y().millimeters(), 0.0);
     let dernier = points.last().expect("au moins un sommet");
@@ -75,31 +98,60 @@ fn courbe_apres_z_part_du_depart() {
 }
 
 #[test]
-fn aplatit_les_courbes() {
+fn importe_une_courbe_quadratique() {
+    // Bézier quadratique `Q` : segment natif, la discrétisation à
+    // la tolérance (flèche ≤ 0,01 mm) ne garde que les sommets
+    // nécessaires — plus d'aplatissement fixe (ADR-0024).
     let source = b"<svg><path d=\"M 0 0 Q 10 10 20 0\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     assert!(!traces[0].is_closed());
-    assert_eq!(traces[0].len(), 1 + svg::SEGMENTS_COURBE);
-    let dernier = traces[0].points().last().expect("au moins un sommet");
+    assert_eq!(
+        traces[0].segments().len(),
+        1,
+        "une Bézier quadratique native"
+    );
+    match traces[0].segments()[0] {
+        Segment2::BezierQuadratique { p1, p2, .. } => {
+            assert_eq!(p1.x().millimeters(), 0.0);
+            assert_eq!(p2.x().millimeters(), 20.0);
+        }
+        _ => panic!("la courbe doit rester une Bézier quadratique"),
+    }
+    let points = traces[0].points();
+    let dernier = points.last().expect("au moins un sommet");
     assert_eq!(dernier.x().millimeters(), 20.0);
     assert_eq!(dernier.y().millimeters(), 0.0);
+    // Le point milieu exact de la courbe (t = ½) reste à la
+    // tolérance de la polyligne.
+    assert!(
+        distance_a_la_polyligne(10.0, -5.0, &points) <= 0.011,
+        "la courbe doit passer par (10, -5)"
+    );
 }
 
 #[test]
 fn importe_une_courbe_cubique() {
-    // Bézier cubique `C` (outil plume d'Inkscape) : aplatie en
-    // SEGMENTS_COURBE sommets, sommet milieu exact.
+    // Bézier cubique `C` (outil plume d'Inkscape) : segment
+    // natif, le point milieu exact de la courbe (t = ½) reste à
+    // la tolérance de la polyligne.
     let source = b"<svg><path d=\"M 0 0 C 0 10 20 10 20 0\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     assert!(!traces[0].is_closed());
-    assert_eq!(traces[0].len(), 1 + svg::SEGMENTS_COURBE);
+    assert_eq!(traces[0].segments().len(), 1, "une Bézier cubique native");
+    match traces[0].segments()[0] {
+        Segment2::BezierCubique { c1, c2, .. } => {
+            assert_eq!(c1.x().millimeters(), 0.0);
+            assert_eq!(c1.y().millimeters(), -10.0);
+            assert_eq!(c2.x().millimeters(), 20.0);
+            assert_eq!(c2.y().millimeters(), -10.0);
+        }
+        _ => panic!("la courbe doit rester une Bézier cubique"),
+    }
     let points = traces[0].points();
     assert_eq!(points[0].x().millimeters(), 0.0);
-    let milieu = points.get(svg::SEGMENTS_COURBE / 2).expect("sommet milieu");
-    assert_eq!(milieu.x().millimeters(), 10.0);
-    assert_eq!(milieu.y().millimeters(), -7.5);
+    assert!(distance_a_la_polyligne(10.0, -7.5, &points) <= 0.011);
     let dernier = points.last().expect("au moins un sommet");
     assert_eq!(dernier.x().millimeters(), 20.0);
     assert_eq!(dernier.y().millimeters(), 0.0);
@@ -108,14 +160,18 @@ fn importe_une_courbe_cubique() {
 #[test]
 fn importe_un_cercle_primitif() {
     // Cercle gardé en primitive `<circle>` (comme Inkscape) :
-    // usvg le normalise en Béziers cubiques, aplaties par
-    // l'import. Les quatre extrémités du cercle doivent être
-    // présentes (axe Y inversé : le monde monte).
+    // usvg le normalise en Béziers cubiques natives — les
+    // extrémités de Béziers sont les points cardinaux du cercle
+    // (axe Y inversé : le monde monte).
     let source = b"<svg><circle cx=\"10\" cy=\"10\" r=\"5\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     assert!(traces[0].is_closed());
-    assert!(traces[0].len() > 4, "cercle aplati : {}", traces[0].len());
+    assert!(
+        traces[0].segments().len() >= 4,
+        "cercle en Béziers : {}",
+        traces[0].segments().len()
+    );
     let points = traces[0].points();
     let trouve = |x: f64, y: f64| {
         points.iter().any(|p| {
@@ -131,17 +187,27 @@ fn importe_un_cercle_primitif() {
 #[test]
 fn importe_un_arc_svg() {
     // Arc en commande `A` (les primitives arc d'Inkscape sont
-    // stockées en commandes a/A) : converti en Béziers puis aplatit.
+    // stockées en commandes a/A) : usvg le convertit en Béziers
+    // cubiques natives — l'apex de l'arc reste à la tolérance de
+    // la polyligne discrétisée.
     let source = b"<svg><path d=\"M 0 0 A 10 10 0 0 1 20 0\"/></svg>";
     let traces = svg::import(source, &SvgBudgets::default()).expect("svg valide");
     assert_eq!(traces.len(), 1);
     assert!(!traces[0].is_closed());
-    assert!(traces[0].len() > 2, "arc aplati : {}", traces[0].len());
+    assert!(
+        !traces[0].segments().is_empty(),
+        "arc en Béziers : {}",
+        traces[0].segments().len()
+    );
     let points = traces[0].points();
-    let traverse = points.iter().any(|p| {
-        (p.x().millimeters() - 10.0).abs() < 5e-3 && (p.y().millimeters().abs() - 10.0).abs() < 5e-3
-    });
-    assert!(traverse, "l'arc doit passer par un sommet à 10 mm");
+    // L'arc (rayon 10, extrémités (0, 0) et (20, 0)) passe par un
+    // apex à 10 mm de la corde.
+    let bas = distance_a_la_polyligne(10.0, -10.0, &points);
+    let haut = distance_a_la_polyligne(10.0, 10.0, &points);
+    assert!(
+        bas <= 0.011 || haut <= 0.011,
+        "l'arc doit passer par un apex à 10 mm de la corde"
+    );
 }
 
 #[test]
@@ -246,7 +312,8 @@ fn export_puis_import() {
     assert!(!traces[0].is_closed());
     assert!(traces[1].is_closed());
     assert_eq!(traces[1].len(), 3);
-    let dernier = traces[1].points().last().expect("au moins un sommet");
+    let sommets = traces[1].points();
+    let dernier = sommets.last().expect("au moins un sommet");
     assert_eq!(dernier.y().millimeters(), 10.0);
 }
 

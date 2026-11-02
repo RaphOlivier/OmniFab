@@ -8,6 +8,10 @@ edition.workspace = true
 [dependencies]
 forge-units = { path = "../forge-units" }
 thiserror.workspace = true
+serde.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lints]
 workspace = true
