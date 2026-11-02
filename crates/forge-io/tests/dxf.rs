@@ -8,7 +8,7 @@
 // fichier d'intégration : expect admis dans tout le fichier.
 #![allow(clippy::expect_used)]
 
-use forge_geom::{Path2, Point2};
+use forge_geom::{Path2, Point2, Segment2};
 use forge_io::dxf::{self, DxfBudgets};
 use forge_units::Length;
 
@@ -56,20 +56,41 @@ fn importe_une_ligne() {
 }
 
 #[test]
-fn discretise_cercle_et_arc() {
+fn cercle_et_arc_devient_des_arcs_natifs() {
+    // Cercle et arc ne sont plus discrétisés à l'import (ADR-0024,
+    // phase B) : chacun devient un arc natif — un balayage nul
+    // dénote le cercle complet.
     let cercles = dxf::import(CERCLE, &DxfBudgets::default()).expect("dxf valide");
     assert_eq!(cercles.len(), 1);
-    assert!(cercles[0].is_closed());
-    assert_eq!(cercles[0].len(), dxf::POINTS_CERCLE);
+    assert!(cercles[0].is_closed(), "le cercle est fermé");
+    assert_eq!(cercles[0].segments().len(), 1, "un cercle = un arc");
+    match cercles[0].segments()[0] {
+        Segment2::Arc { centre, rayon, .. } => {
+            assert_eq!(centre.x().millimeters(), 1.0);
+            assert_eq!(centre.y().millimeters(), 2.0);
+            assert_eq!(rayon.millimeters(), 1.0);
+        }
+        _ => panic!("le cercle doit devenir un arc natif"),
+    }
+    // La discrétisation bornée reste sur le cercle.
+    let points = cercles[0].points();
+    assert!(points.len() > 8, "cercle discrétisé : {}", points.len());
+    for point in &points {
+        let x = point.x().millimeters() - 1.0;
+        let y = point.y().millimeters() - 2.0;
+        assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-9);
+    }
 
     let arcs = dxf::import(ARC, &DxfBudgets::default()).expect("dxf valide");
     assert_eq!(arcs.len(), 1);
     assert!(!arcs[0].is_closed());
-    assert_eq!(arcs[0].len(), dxf::SEGMENTS_ARC + 1);
-    assert_eq!(arcs[0].points()[0].x().millimeters(), 1.0);
-    assert_eq!(arcs[0].points()[0].y().millimeters(), 0.0);
-    let dernier = arcs[0].points().last().expect("au moins un sommet");
+    assert_eq!(arcs[0].segments().len(), 1, "un arc = un arc natif");
+    let points = arcs[0].points();
+    assert_eq!(points[0].x().millimeters(), 1.0);
+    assert_eq!(points[0].y().millimeters(), 0.0);
+    let dernier = points.last().expect("au moins un sommet");
     assert_eq!(dernier.y().millimeters(), 1.0);
+    assert!(dernier.x().millimeters().abs() < 1e-9);
 }
 
 #[test]

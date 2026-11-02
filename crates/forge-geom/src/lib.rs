@@ -127,13 +127,15 @@ impl Point3 {
     }
 }
 
-/// Tracé 2D : suite de sommets, ouvert ou fermé.
+/// Tracé 2D : chaîne de segments typés — lignes, arcs et Béziers
+/// (ADR-0024, phase B), jamais une polyligne. La fermeture est
+/// dérivée : un tracé fermé porte sa fermeture comme dernier
+/// segment, l'arrivée du dernier rejoignant le départ du premier
+/// à la tolérance géométrique près.
 #[derive(Debug, Clone, Default)]
 pub struct Path2 {
-    /// Sommets du tracé, dans l'ordre.
-    points: Vec<Point2>,
-    /// Un tracé fermé se referme sur son premier sommet.
-    closed: bool,
+    /// Segments enchaînés, dans l'ordre du tracé.
+    segments: Vec<Segment2>,
 }
 
 impl Path2 {
@@ -142,32 +144,85 @@ impl Path2 {
         Self::default()
     }
 
-    /// Construit un tracé depuis ses sommets.
+    /// Construit un tracé depuis ses segments enchaînés.
+    pub fn from_segments(segments: Vec<Segment2>) -> Self {
+        Self { segments }
+    }
+
+    /// Construit un tracé depuis ses sommets (compatibilité
+    /// polyligne) : chaque paire consécutive devient une
+    /// [`Segment2::Ligne`], un tracé fermé ajoute le segment de
+    /// fermeture quand l'écart est réel ; moins de deux sommets
+    /// rend un tracé vide.
     pub fn from_points(points: Vec<Point2>, closed: bool) -> Self {
-        let mut path = Self::new();
-        path.points = points;
-        path.closed = closed;
-        path
+        let mut segments: Vec<Segment2> = points
+            .windows(2)
+            .map(|paire| Segment2::Ligne {
+                p1: paire[0],
+                p2: paire[1],
+            })
+            .collect();
+        if closed
+            && let (Some(premier), Some(dernier)) = (points.first(), points.last())
+            && !points_recolles(*premier, *dernier)
+        {
+            segments.push(Segment2::Ligne {
+                p1: *dernier,
+                p2: *premier,
+            });
+        }
+        Self { segments }
     }
 
-    /// Sommets du tracé, dans l'ordre.
-    pub fn points(&self) -> &[Point2] {
-        &self.points
+    /// Segments du tracé, dans l'ordre.
+    pub fn segments(&self) -> &[Segment2] {
+        &self.segments
     }
 
-    /// Le tracé se referme sur son premier sommet.
+    /// Le tracé est fermé : l'arrivée du dernier segment rejoint
+    /// le départ du premier, à la tolérance géométrique près —
+    /// l'import pose la fermeture comme segment, le drapeau
+    /// historique devient une propriété dérivée.
     pub fn is_closed(&self) -> bool {
-        self.closed
+        segments::fermeture(&self.segments)
     }
 
-    /// Nombre de sommets.
+    /// Sommets du tracé à la discrétisation par défaut (flèche ≤
+    /// 0,01 mm), version bornée pour le rendu et l'export : un
+    /// segment au-delà des budgets y rend son approximation au
+    /// budget, jamais une erreur — les consommateurs exigeants
+    /// appellent [`Path2::discretiser`].
+    pub fn points(&self) -> Vec<Point2> {
+        segments::chaine_bornee(
+            &self.segments,
+            Length::from_millimeters(segments::TOLERANCE_DISCRETISATION_MM),
+        )
+    }
+
+    /// Discrétisation stricte à la tolérance donnée : propage les
+    /// refus des segments (OF-GEO-0004/0005) — le rendu et
+    /// l'export restent sur la version bornée [`Path2::points`].
+    pub fn discretiser(&self, tolerance: Length) -> Result<Vec<Point2>, GeomError> {
+        segments::chaine_discretisee(&self.segments, tolerance, true)
+    }
+
+    /// Nombre de sommets de la chaîne : autant que de segments sur
+    /// un tracé fermé, un de plus sur un tracé ouvert — un cercle
+    /// importé n'a qu'un sommet, son unique arc partant de lui et
+    /// y revenant.
     pub fn len(&self) -> usize {
-        self.points.len()
+        if self.segments.is_empty() {
+            0
+        } else if self.is_closed() {
+            self.segments.len()
+        } else {
+            self.segments.len() + 1
+        }
     }
 
-    /// Tracé sans sommet.
+    /// Tracé sans segment.
     pub fn is_empty(&self) -> bool {
-        self.points.is_empty()
+        self.segments.is_empty()
     }
 }
 

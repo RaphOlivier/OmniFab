@@ -10,19 +10,19 @@
 //! DTD interne est refusée avant l'analyse (audit n°3,
 //! A3-16) ; les formes de base (`rect`,
 //! `circle`, …) sont normalisées en tracés par `usvg`. Les courbes
-//! de Bézier (quadratiques et cubiques) sont aplaties en polylignes
-//! à [`SEGMENTS_COURBE`] segments par courbe.
+//! de Bézier (quadratiques et cubiques) deviennent des segments
+//! natifs — usvg a déjà converti les arcs elliptiques et les
+//! primitives de courbes en Béziers cubiques, aucun arc natif
+//! n'apparaît côté SVG ; l'ancien aplatissement fixe laisse place
+//! à la discrétisation à tolérance (ADR-0024, phase B).
 //!
 //! Sécurité (ADR-0009) : tout dépassement de [`SvgBudgets`] est une
 //! erreur typée, levée avant tout traitement ultérieur.
 
 use crate::IoError;
-use forge_geom::{Path2, Point2};
+use forge_geom::{Path2, Point2, Segment2, points_recolles};
 use forge_units::Length;
 use usvg::tiny_skia_path::PathSegment;
-
-/// Segments par courbe de Bézier à l'aplatissement.
-pub const SEGMENTS_COURBE: usize = 16;
 
 /// Taille minimale d'une dimension de la boîte exportée : un tracé
 /// plat (ligne horizontale ou verticale) produit sinon un `viewBox`
@@ -101,7 +101,8 @@ fn refuse_dtd_interne(bytes: &[u8]) -> Result<(), IoError> {
 /// résolues à 25,4 dpi — un « pixel » usvg vaut exactement 1 mm ;
 /// chaque tracé est collecté avec sa transformation absolue
 /// (usvg compose les transformations des ancêtres et du tracé), les
-/// courbes sont aplaties en polylignes, les nœuds non géométriques
+/// courbes deviennent des segments natifs (ADR-0024, phase B),
+/// les nœuds non géométriques
 /// (images, textes) sont ignorés ; l'axe Y du SVG (vers le bas)
 /// est inversé pour entrer dans le monde (Y vers le haut) ; une
 /// `viewBox` décalée est compensée — les coordonnées du contenu
@@ -290,84 +291,118 @@ fn parcourir(
 }
 
 /// Collecte les segments d'un tracé : un sous-tracé par `MoveTo`,
-/// fermé par `Close`, courbes aplaties, tout sous la transformation
-/// donnée. Après un `Close`, le point courant revient au départ du
-/// sous-tracé (sémantique SVG) : les commandes suivantes reprennent
-/// depuis ce sommet, aucun segment n'est perdu.
+/// fermé par `Close` — la fermeture est un segment explicite — et
+/// courbes gardées natives (Béziers quadratiques et cubiques ;
+/// usvg a déjà converti arcs elliptiques et primitives en Béziers
+/// cubiques, cf. ADR-0024). Après un `Close`, le point courant
+/// revient au départ du sous-tracé (sémantique SVG) : les
+/// commandes suivantes reprennent depuis ce sommet, aucun segment
+/// n'est perdu.
 fn collecte(
     donnees: &usvg::tiny_skia_path::Path,
     transformation: &usvg::Transform,
     traces: &mut Vec<Path2>,
     etat: &mut Etat,
 ) -> Result<(), IoError> {
-    let mut points: Vec<Point2> = Vec::new();
-    let mut courant_x = 0.0;
-    let mut courant_y = 0.0;
-    let mut depart_x = 0.0;
-    let mut depart_y = 0.0;
+    let mut segments: Vec<Segment2> = Vec::new();
+    let mut courant: Option<Point2> = None;
+    let mut depart: Option<Point2> = None;
     for segment in donnees.segments() {
         match segment {
             PathSegment::MoveTo(point) => {
-                termine(&mut points, false, traces, etat)?;
-                courant_x = point.x;
-                courant_y = point.y;
-                depart_x = point.x;
-                depart_y = point.y;
-                ajoute(point.x, point.y, transformation, &mut points, etat)?;
+                termine(&mut segments, traces, etat)?;
+                let cible = construit(point.x, point.y, transformation, etat)?;
+                courant = Some(cible);
+                depart = Some(cible);
             }
             PathSegment::LineTo(point) => {
-                courant_x = point.x;
-                courant_y = point.y;
-                ajoute(point.x, point.y, transformation, &mut points, etat)?;
+                let cible = construit(point.x, point.y, transformation, etat)?;
+                if let Some(origine) = courant {
+                    segments.push(Segment2::Ligne {
+                        p1: origine,
+                        p2: cible,
+                    });
+                }
+                courant = Some(cible);
             }
             PathSegment::QuadTo(controle, fin) => {
-                aplatis_quadratique(
-                    (courant_x, courant_y),
-                    (controle.x, controle.y),
-                    (fin.x, fin.y),
-                    transformation,
-                    &mut points,
-                    etat,
-                )?;
-                courant_x = fin.x;
-                courant_y = fin.y;
+                let c_controle = construit(controle.x, controle.y, transformation, etat)?;
+                let c_fin = construit(fin.x, fin.y, transformation, etat)?;
+                if let Some(origine) = courant {
+                    segments.push(Segment2::BezierQuadratique {
+                        p1: origine,
+                        controle: c_controle,
+                        p2: c_fin,
+                    });
+                }
+                courant = Some(c_fin);
             }
-            PathSegment::CubicTo(c1, c2, fin) => {
-                aplatis_cubique(
-                    (courant_x, courant_y),
-                    (c1.x, c1.y),
-                    (c2.x, c2.y),
-                    (fin.x, fin.y),
-                    transformation,
-                    &mut points,
-                    etat,
-                )?;
-                courant_x = fin.x;
-                courant_y = fin.y;
+            PathSegment::CubicTo(controle1, controle2, fin) => {
+                let c1 = construit(controle1.x, controle1.y, transformation, etat)?;
+                let c2 = construit(controle2.x, controle2.y, transformation, etat)?;
+                let c_fin = construit(fin.x, fin.y, transformation, etat)?;
+                if let Some(origine) = courant {
+                    segments.push(Segment2::BezierCubique {
+                        p1: origine,
+                        c1,
+                        c2,
+                        p2: c_fin,
+                    });
+                }
+                courant = Some(c_fin);
             }
             PathSegment::Close => {
-                termine(&mut points, true, traces, etat)?;
+                if let (Some(origine), Some(revient)) = (courant, depart)
+                    && !points_recolles(origine, revient)
+                {
+                    segments.push(Segment2::Ligne {
+                        p1: origine,
+                        p2: revient,
+                    });
+                }
+                termine(&mut segments, traces, etat)?;
                 // Sémantique SVG : après `Z`, le point courant revient au
                 // départ du sous-tracé — le sous-tracé suivant repart
                 // de ce sommet.
-                courant_x = depart_x;
-                courant_y = depart_y;
-                ajoute(depart_x, depart_y, transformation, &mut points, etat)?;
+                courant = depart;
             }
         }
     }
-    termine(&mut points, false, traces, etat)
+    termine(&mut segments, traces, etat)
 }
 
-/// Ajoute un sommet (espace transformé), sous garde de budget.
-/// L'axe Y du SVG descend : il est inversé ici — le monde monte.
-fn ajoute(
+/// Termine le sous-tracé courant : un tracé d'au moins un segment
+/// est conservé (sous garde de budget), sinon les segments sont
+/// abandonnés.
+fn termine(
+    segments: &mut Vec<Segment2>,
+    traces: &mut Vec<Path2>,
+    etat: &mut Etat,
+) -> Result<(), IoError> {
+    if segments.is_empty() {
+        return Ok(());
+    }
+    if etat.chemins >= etat.budgets.max_paths {
+        return Err(IoError::TooManyPaths {
+            found: etat.chemins as u64 + 1,
+            max: etat.budgets.max_paths as u64,
+            unite: "tracés",
+        });
+    }
+    traces.push(Path2::from_segments(std::mem::take(segments)));
+    etat.chemins += 1;
+    Ok(())
+}
+
+/// Construit un sommet ou un point de contrôle (espace transformé),
+/// sous garde de budget. L'axe Y du SVG descend : il est inversé
+/// ici — le monde monte.
+fn construit(
     x: f32,
     y: f32,
     transformation: &usvg::Transform,
-    points: &mut Vec<Point2>,
     etat: &mut Etat,
-) -> Result<(), IoError> {
+) -> Result<Point2, IoError> {
     if etat.sommets >= etat.budgets.max_vertices {
         return Err(IoError::TooManyPaths {
             found: etat.sommets as u64 + 1,
@@ -379,79 +414,8 @@ fn ajoute(
     let gx_mm = Length::from_millimeters(gx + etat.decalage.0);
     let gy_mm = Length::from_millimeters(-(gy + etat.decalage.1));
     let point = Point2::new(gx_mm, gy_mm).map_err(IoError::InvalidGeometry)?;
-    points.push(point);
     etat.sommets += 1;
-    Ok(())
-}
-
-/// Termine le sous-tracé courant : un tracé d'au moins deux sommets
-/// est conservé (sous garde de budget), sinon les points sont
-/// abandonnés.
-fn termine(
-    points: &mut Vec<Point2>,
-    ferme: bool,
-    traces: &mut Vec<Path2>,
-    etat: &mut Etat,
-) -> Result<(), IoError> {
-    if points.len() >= 2 {
-        if etat.chemins >= etat.budgets.max_paths {
-            return Err(IoError::TooManyPaths {
-                found: etat.chemins as u64 + 1,
-                max: etat.budgets.max_paths as u64,
-                unite: "tracés",
-            });
-        }
-        traces.push(Path2::from_points(std::mem::take(points), ferme));
-        etat.chemins += 1;
-    } else {
-        points.clear();
-    }
-    Ok(())
-}
-
-/// Aplatit une Bézier quadratique en [`SEGMENTS_COURBE`] sommets
-/// (le point de départ est déjà collecté).
-fn aplatis_quadratique(
-    debut: (f32, f32),
-    controle: (f32, f32),
-    fin: (f32, f32),
-    transformation: &usvg::Transform,
-    points: &mut Vec<Point2>,
-    etat: &mut Etat,
-) -> Result<(), IoError> {
-    for pas in 1..=SEGMENTS_COURBE {
-        let t = pas as f32 / SEGMENTS_COURBE as f32;
-        let u = 1.0 - t;
-        let x = u * u * debut.0 + 2.0 * u * t * controle.0 + t * t * fin.0;
-        let y = u * u * debut.1 + 2.0 * u * t * controle.1 + t * t * fin.1;
-        ajoute(x, y, transformation, points, etat)?;
-    }
-    Ok(())
-}
-
-/// Aplatit une Bézier cubique en [`SEGMENTS_COURBE`] sommets (le
-/// point de départ est déjà collecté).
-fn aplatis_cubique(
-    debut: (f32, f32),
-    c1: (f32, f32),
-    c2: (f32, f32),
-    fin: (f32, f32),
-    transformation: &usvg::Transform,
-    points: &mut Vec<Point2>,
-    etat: &mut Etat,
-) -> Result<(), IoError> {
-    for pas in 1..=SEGMENTS_COURBE {
-        let t = pas as f32 / SEGMENTS_COURBE as f32;
-        let u = 1.0 - t;
-        let a = u * u * u;
-        let b = 3.0 * u * u * t;
-        let c = 3.0 * u * t * t;
-        let d = t * t * t;
-        let x = a * debut.0 + b * c1.0 + c * c2.0 + d * fin.0;
-        let y = a * debut.1 + b * c1.1 + c * c2.1 + d * fin.1;
-        ajoute(x, y, transformation, points, etat)?;
-    }
-    Ok(())
+    Ok(point)
 }
 
 /// Applique une transformation à un point (espace SVG vers espace
