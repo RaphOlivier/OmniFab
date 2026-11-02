@@ -1839,7 +1839,7 @@ impl EsquisseProjection {
     }
 
     /// Résout le croquis donné (sémantique de
-    /// [`CroquisEtat::resoudre`]) ; le croquis inconnu est une erreur
+    /// CroquisEtat::resoudre) ; le croquis inconnu est une erreur
     /// d'identifiant typée du solveur — jamais un refus muet.
     pub fn resoudre_croquis(
         &self,
@@ -1991,7 +1991,7 @@ impl EsquisseProjection {
         self.etat(self.actif)?.raison_refus_deplacement(point, x, y)
     }
 
-    /// Résout le croquis ACTIF : cf. [`CroquisEtat::resoudre`].
+    /// Résout le croquis ACTIF : cf. CroquisEtat::resoudre.
     pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
         self.resoudre_croquis(self.actif, solveur)
     }
