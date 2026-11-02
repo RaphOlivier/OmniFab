@@ -1,4 +1,4 @@
-#[cfg(test)]
+LITTERAL_IMPL#[cfg(test)]
 mod tests {
     use super::*;
     use forge_units::{Angle, Length};

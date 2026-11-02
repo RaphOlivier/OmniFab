@@ -7,7 +7,10 @@ version.workspace = true
 edition.workspace = true
 
 [dependencies]
-# Invariant (ADR-0000) : forge-units ne dépend d'aucune autre crate.
+# Invariant (ADR-0000) : forge-units ne dépend d'aucune autre crate du
+# noyau. serde n'en est pas une : les grandeurs sérialisables restent à
+# la frontière des unités strictes (ADR-0024, phase B).
+serde.workspace = true
 
 [lints]
 workspace = true

@@ -4,7 +4,8 @@
 //! # forge-geom — géométrie minimale du noyau OmniFab
 //!
 //! (ADR-0009.) Briques géométriques du jalon 1 : tracés 2D pour le
-//! vectoriel importé (SVG et DXF, via forge-io) et maillage indexé
+//! vectoriel importé (SVG et DXF, via forge-io), segments typés 2D —
+//! lignes, arcs et Béziers (ADR-0024, phase B) — et maillage indexé
 //! pour le 3D (STL). Les unités sont strictes à la frontière
 //! (ADR-0000, verrou n°5) : toute coordonnée est une [`Length`] de
 //! forge-units — jamais de `f64` nu dans les API publiques.
@@ -22,7 +23,13 @@ mod segments;
 
 pub use error::GeomError;
 
+pub use segments::{
+    Contour2, ErreurContour, MAX_POINTS_DISCRETISATION, MAX_PROFONDEUR_SUBDIVISION, Segment2,
+    SensHoraire, TOLERANCE_DISCRETISATION_MM, contours, points_recolles,
+};
+
 use forge_units::Length;
+use serde::{Deserialize, Serialize};
 
 /// Borne commune des magnitudes du projet, en millimètres : 1e9 mm
 /// (1 000 km). Une coordonnée finie au-delà est refusée à la
@@ -30,7 +37,7 @@ use forge_units::Length;
 pub const MAGNITUDE_MAX_MM: f64 = 1e9;
 
 /// Point 2D à coordonnées finies.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct Point2 {
     /// Abscisse.
     x: Length,
@@ -69,7 +76,7 @@ impl Point2 {
 }
 
 /// Point 3D à coordonnées finies.
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
 pub struct Point3 {
     /// Abscisse.
     x: Length,

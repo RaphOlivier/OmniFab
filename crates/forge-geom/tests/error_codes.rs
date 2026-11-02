@@ -3,6 +3,7 @@
 //! deux sens.
 
 use forge_geom::GeomError;
+use forge_units::Length;
 
 const REGISTRY: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -15,6 +16,12 @@ fn toutes_les_variantes() -> Vec<GeomError> {
         GeomError::VertexOutOfBounds { index: 5, count: 3 },
         GeomError::NonFinite { axis: "x" },
         GeomError::CoordonneeHorsBornes { axis: "x" },
+        GeomError::DiscretisationImpossible { raison: "test" },
+        GeomError::BudgetDiscretisationDepasse { raison: "test" },
+        GeomError::ChainageRompu {
+            index: 1,
+            ecart: Length::from_millimeters(1.0),
+        },
     ]
 }
 

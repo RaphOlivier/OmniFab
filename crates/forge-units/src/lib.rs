@@ -14,6 +14,7 @@
 //! - une longueur est une [`Length`], un angle une [`Angle`] ;
 //! - la tolérance géométrique par défaut est [`TOLERANCE_MM`] (1e-6 mm).
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
@@ -24,7 +25,7 @@ pub const TOLERANCE_MM: f64 = 1e-6;
 pub const TOLERANCE_RAD: f64 = 1e-9;
 
 /// Longueur physique. Représentation interne : millimètres.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 pub struct Length {
     /// Valeur en millimètres.
     mm: f64,
@@ -180,7 +181,7 @@ impl fmt::Display for Length {
 }
 
 /// Angle. Représentation interne : radians.
-#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Default, Serialize, Deserialize)]
 pub struct Angle {
     /// Valeur en radians.
     rad: f64,

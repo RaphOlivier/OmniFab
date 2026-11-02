@@ -71,6 +71,9 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-GEO-0001 | Indice de sommet hors du maillage | Triangle référençant un sommet absent | Corriger le maillage source |
 | OF-GEO-0002 | Coordonnée non finie | NaN ou infini dans une coordonnée | Corriger les données d'entrée |
 | OF-GEO-0003 | Coordonnée hors de la borne de magnitude | Valeur finie au-delà de 1e9 mm | Corriger les données d'entrée |
+| OF-GEO-0004 | Discrétisation impossible | Tolérance nulle ou non finie, arc à rayon nul/négatif ou non fini | Corriger les données d'entrée |
+| OF-GEO-0005 | Budget de discrétisation dépassé | Profondeur de subdivision ou nombre de points au-delà des bornes publiques de forge-geom | Simplifier la géométrie ou desserrer la tolérance |
+| OF-GEO-0006 | Chaînage de contour rompu | Arrivée d'un segment et départ du suivant écartés de plus de la tolérance géométrique | Réordonner ou recoller les segments source |
 
 ## forge-io (IO) — import/export
 
