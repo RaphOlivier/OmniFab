@@ -98,17 +98,17 @@ ignore = [
   # (2026-10-29) ---
   { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.30 : attributs quadratiques (DoS CPU) — accessible uniquement via atspi/zbus sur XML local ; verrouille par zbus_xml 4.0.0 (2026-10-29)" },
   { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.30 : declarations de namespaces non bornees (DoS memoire) — meme surface AT-SPI locale, verrouille par zbus_xml 4.0.0 (2026-10-29)" },
-  # --- zip 2.4.2 : les 3 CVE ciblent exclusivement
-  # ZipArchive::extract()/ZipStreamReader::extract() (extraction sur
-  # disque). Code NON AFFECTE : forge-doc (seule crate a dependre de
-  # zip) n'appelle jamais extract() — lecture ciblee by_name/by_index
-  # en memoire, bornee par entree (OF-DOC-0011) et cumulée
-  # (OF-DOC-0014), ecriture via ZipWriter en memoire. Dette : monter
-  # zip en 9.x (Cargo.toml « 2 ») lors d'une passe dediee
-  # (2026-10-29) ---
-  { id = "RUSTSEC-2026-0367", reason = "zip 2.4.2 : bits SUID/SGID preserves a l'extraction — extract() jamais appele (lecture bornee en memoire) ; dette : montee zip 9.x (2026-10-29)" },
-  { id = "RUSTSEC-2026-0368", reason = "zip 2.4.2 : symlinks hors destination a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
-  { id = "RUSTSEC-2026-0369", reason = "zip 2.4.2 : permissions appliquees via symlinks a l'extraction — extract() jamais appele ; dette : montee zip 9.x (2026-10-29)" },
+  # --- zip : monte en 9.x le 2026-11-03 (mini-lot audit n°5,
+  # ordre 0 ; CVE-2026-115909 / GHSA-q7v9-x93c-xqv3, HIGH,
+  # allocation non bornee de la cible de symlink dans
+  # ZipArchive::extract_internal — fix 9.0.0 ; et
+  # GHSA-8hxf-qr8p-62x4, MEDIUM, HMAC des entrees AES sur EOF
+  # premature — meme borne). Les 3 ignores du releve 2026-10-29
+  # (RUSTSEC-2026-0367..0369 : CVE d'extraction extract(),
+  # jamais appele par forge-doc — lecture ciblee by_name/by_index
+  # en memoire, bornee par entree (OF-DOC-0011) et cumulee
+  # (OF-DOC-0014)) sont devenus inutiles et sont retires
+  # (2026-11-03) ---
   # --- version yankee du registry : arboard 3.6.1 accepte ^5.3.1, a
   # monter au prochain cargo update des dependances (l'ignore deviendra
   # « unused » de lui-meme) ---
