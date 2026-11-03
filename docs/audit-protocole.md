@@ -45,10 +45,19 @@ Chaque signalement, numéroté (`A<n>-<nn>`, n = numéro d'audit) :
 
 Signalement **sans ligne ni scénario = classé « à préciser » et retourné**. Un faux positif coûte un cycle de triage à chaque audit suivant : toujours vérifier dans les ADR avant de conclure.
 
-## 5. Traitement réservé aux signalements
+## 5. Registre de couverture et réfutation (méthode adoptée le 2026-11-03)
+
+Adoptée à partir du skill open source [security-audit-skill](https://github.com/cloudflare/security-audit-skill) de Cloudflare (MIT), alignée sur les acquis des audits n°1-4. Objectif : rendre les audits **additifs** — l'audit n+1 cible les manques du registre au lieu de re-signaler l'existant.
+
+- **Registre de couverture** (`coverage-ledger.json`, archivé avec le rapport) : liste des unités d'audit — par crate/module et par classe de risque (FFI & memory-safety, parseurs d'import, supply chain & CI, concurrence, unités & i18n, IPC local, plugins). Chaque unité porte : SHA examiné, date, verdict, preuve. Les unités déjà couvertes au même SHA ne sont pas re-chassées.
+- **Chasse isolée + critique de couverture** : chaque unité est confiée à un chasseur isolé (contexte séparé) ; en fin de passe, un critique cherche les manques du registre avant clôture.
+- **Réfutation systématique** : chaque candidat passe à un vérificateur frais qui essaie de le **réfuter** avant d'entrer au rapport. Trois verdicts d'auditeur : **confirmé** (trace source complète + scénario borné), **à valider** (fait exact non résolu, sans sévérité), **réfuté** (démenti — conservé au registre pour ne pas être re-chassé). Ces verdicts d'auditeur sont distincts des verdicts du mainteneur (§6).
+- **Revérification des corrections** : l'audit n+1 reprend le registre, revérifie les corrections des audits précédents (au lieu de les re-signaler) et cible les unités non couvertes ou dont le SHA a changé. Convergent avec §3 : la dette acceptée n'est jamais re-chassée, sauf aggravation.
+
+## 6. Traitement réservé aux signalements
 
 Engagement du mainteneur : chaque signalement recevra un verdict explicite — **corrigé** (branche courte + PR, test de régression obligatoire, rouge avant/vert après) · **dette acceptée** (ajoutée à la fiche état actuel avec date) · **refusé** (motif, généralement conflit avec un ADR). Les rapports d'audit sont archivés dans `docs/knowledge/archives/` avec leur SHA et leurs verdicts, ce qui permet aux audits suivants de vérifier les corrections plutôt que de tout re-signaler.
 
-## 6. Modèle de consigne à donner à l'auditeur IA
+## 7. Modèle de consigne à donner à l'auditeur IA
 
-> Tu audites le dépôt OmniFab au commit `<SHA>`. Lis d'abord `docs/audit-protocole.md` et applique-le à la lettre : conventions délibérées (§2), dette assumée (§3), format de rapport (§4). Périmètre de cet audit : `<crates ou thématique>`. Ne signale que ce qui est actionnable, avec fichier:ligne et scénario. Classe chaque signalement et propose un test de régression pour les bugs. N'émets pas d'opinion sur les décisions couvertes par un ADR sans avoir lu l'ADR.
+> Tu audites le dépôt OmniFab au commit `<SHA>`. Lis d'abord `docs/audit-protocole.md` et applique-le à la lettre : conventions délibérées (§2), dette assumée (§3), format de rapport (§4), registre de couverture et réfutation (§5). Périmètre de cet audit : `<crates ou thématique>`. Ne signale que ce qui est actionnable, avec fichier:ligne et scénario. Classe chaque signalement et propose un test de régression pour les bugs. N'émets pas d'opinion sur les décisions couvertes par un ADR sans avoir lu l'ADR. Termine par un registre de couverture (`coverage-ledger.json`) : unités examinées, manques identifiés, candidats réfutés — il servira de point de départ à l'audit suivant.
