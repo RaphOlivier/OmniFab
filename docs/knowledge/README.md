@@ -21,13 +21,14 @@ projet (un agent peut charger ce dossier comme contexte de travail).
 2. [`etat-actuel/KNOWLEDGE.md`](etat-actuel/KNOWLEDGE.md) — relevé d'une page :
    ce qui compile, état de la CI, dette ouverte (mis à jour à chaque lot) ;
 3. [`architecture/KNOWLEDGE.md`](architecture/KNOWLEDGE.md) — crates, six verrous
-   techniques, jalons 0-10, résumé de tous les ADR (0000 à 0027) ;
+   techniques, jalons 0-10, résumé de tous les ADR (0000 à 0035) ;
 4. [`prompt-fondateur.md`](../prompt-fondateur.md) (au `docs/` parent) — la vision
    en 15 points.
 
 **Comprendre une décision précise**
 1. La fiche du domaine concerné : `architecture/`, `conventions/`,
-   `formats/`, `machines/` ou `securite/` ;
+   `formats/`, `machines/`, `securite/` ou `veille-ecosysteme/` (écosystème
+   externe et outillage du processus) ;
 2. L'ADR complet correspondant dans [`../adr/`](../adr/) — chaque ADR
    porte les alternatives rejetées ;
 3. Le résumé de l'entrée d'archive dans [`archives/`](archives/) —
