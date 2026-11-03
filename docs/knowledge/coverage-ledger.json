@@ -1,0 +1,52 @@
+{
+  "meta": {
+    "protocole": "docs/audit-protocole.md §5 (adopté le 2026-11-03, commit 39043d5 — méthode security-audit-skill de Cloudflare)",
+    "role": "Registre de couverture des audits OmniFab : unités d'audit par crate/module et classe de risque, avec SHA, date, verdict et preuve. L'audit n+1 cible les manques du registre au lieu de re-signaler l'existant (dette acceptée = jamais re-chassée, sauf aggravation).",
+    "cree": "2026-11-03",
+    "note_creation": "Premier registre : l'audit n°5 (Claude, 2026-11-03) n'en avait pas produit — le protocole §5 venait d'être adopté le matin même. Construit à la réception depuis les §1/§7 du rapport A5 et les archives des lots. Les verdicts d'auditeur (confirmé / à valider / réfuté) sont distincts des verdicts du mainteneur (corrigé / dette acceptée / refusé, cf. rapport archivé)."
+  },
+  "audits": [
+    {
+      "n": 5,
+      "date": "2026-11-03",
+      "auditeur": "Claude (analyse statique, lecture seule grep/awk/sed — aucun cargo/rustc, aucun test exécuté)",
+      "sha_code": "c36cb15",
+      "sha_docs": "cd02d5d",
+      "rapport": "docs/knowledge/archives/2026-11-03-j0-audit5-claude.md",
+      "verdict_mainteneur": "validé en bloc par Raphaël le 2026-11-03 — 0 réfuté",
+      "signalements": ["A5-01", "A5-02", "A5-03", "A5-04", "A5-05", "A5-06", "A5-07", "A5-08"],
+      "reverifies": ["A4-16", "A4-17", "A4-18", "A4-19", "A4-20", "A4-21", "A3-02/03", "A3-14", "A3-15/16", "A3-17", "A4-07", "A4-08", "A3-08.e"]
+    }
+  ],
+  "unites_couvertes": [
+    { "id": "forge-session/cad", "classe": "parseurs d'import / robustesse du rejeu", "sha": "c36cb15", "date": "2026-11-03", "verdict": "confirmé (lecture)", "preuve": "audit 5 §1/§2/§3 : cad.rs 876 l. + tests/cad.rs 847 l. relus — A5-01/02/03/04/05", "reference": "A5-01..05" },
+    { "id": "forge-session/projection", "classe": "robustesse journal forgé", "sha": "c36cb15", "date": "2026-11-03", "verdict": "confirmé (lecture)", "preuve": "audit 5 §2 : projection.rs:55 TypesIgnores — A4-20", "reference": "A4-20" },
+    { "id": "forge-session/esquisse", "classe": "robustesse / unités", "sha": "c36cb15", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 : plages 40-80, 489-510, 1039-1060, 1600-1620 seules — le reste non lu (§7)", "reference": "A5-02 (via cad.rs)" },
+    { "id": "forge-session/command", "classe": "robustesse du rejeu", "sha": "c36cb15", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 : profondeur 840-1020 lue en partie (validation à l'écriture — A5-04)", "reference": "A5-04" },
+    { "id": "forge-cad/lib", "classe": "validation des entrées CAO avant pont OCCT", "sha": "c36cb15", "date": "2026-11-03", "verdict": "confirmé (lecture)", "preuve": "audit 5 §2 : valider_contour l.59-148, compte_instances l.507-520, lire_brep l.570-574 — A4-16/A5-06/A3-08.e", "reference": "A4-16, A5-06" },
+    { "id": "forge-geom/segments", "classe": "géométrie / tolérances", "sha": "c36cb15", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 : plages 195-260 et 380-450 seules — A4-17/A4-18/A5-07", "reference": "A4-17, A4-18" },
+    { "id": "forge-io/svg+dxf+stl", "classe": "parseurs d'import", "sha": "c36cb15", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 : en-têtes + expect seulement (svg.rs DTD, stl.rs binaire tolérant, dxf.rs epsilons)", "reference": "A3-14/15/16, A5-07" },
+    { "id": "forge-values", "classe": "bornes d'évaluation", "sha": "c36cb15", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 : constantes seules (LONGUEUR_MAX_EXPRESSION, PROFONDEUR_MAX_CHAINE, MAX_NOEUDS_AST) — logique non relue", "reference": "A3-02/03" },
+    { "id": "forge-units/lib", "classe": "unités & i18n", "sha": "c36cb15", "date": "2026-11-03", "verdict": "confirmé (existence)", "preuve": "audit 5 §2 : Length::try_millimeters rejette les non finis", "reference": "A3-17" },
+    { "id": "supply-chain/deny.toml", "classe": "supply chain & CI", "sha": "cd02d5d", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 §2 : 11 ignores datés/motivés, sans échéance automatique — A4-21", "reference": "A4-21" },
+    { "id": "ci/ci.yml", "classe": "supply chain & CI", "sha": "cd02d5d", "date": "2026-11-03", "verdict": "partiel", "preuve": "audit 5 §2 : ciblage forge-cad exclusions Windows (l.153-159) et aarch64 (l.226)", "reference": "conseil 5" },
+    { "id": "docs/knowledge/etat-actuel", "classe": "cohérence documentaire", "sha": "cd02d5d", "date": "2026-11-03", "verdict": "confirmé", "preuve": "audit 5 §5 : ligne Version ~91 000 car., 55 entrées empilées — A5-08 (corrigé à la réception, fiche v74)", "reference": "A5-08" },
+    { "id": "inventaire/workspace", "classe": "périmètre", "sha": "c36cb15", "date": "2026-11-03", "verdict": "couvert", "preuve": "audit 5 §1 : 95 fichiers .rs, 32 666 l., 13 membres ; expect 26/9-10 (méthode awk, à recompter clippy) ; unwrap 0 ; unsafe forge-gcs/native.rs seul", "reference": "§1" }
+  ],
+  "unites_non_couvertes": [
+    { "id": "apps/omnifab-desktop/app.rs", "classe": "UI / robustesse", "note": "3 501 lignes non relues (conseil 7 : dette de découpage à planifier)" },
+    { "id": "apps/omnifab-desktop/atelier_esquisse.rs", "classe": "UI esquisse", "note": "non lu (hors compte)" },
+    { "id": "apps/omnifab-desktop/ui/*", "classe": "UI", "note": "non lu" },
+    { "id": "apps/omnifab-desktop/travail.rs", "classe": "robustesse import / budget octets", "note": "sauf l.486 (A4-19 signalé) — reste non lu" },
+    { "id": "forge-render/*", "classe": "rendu / budgets par frame", "note": "non lu (conseil 8 non évalué)" },
+    { "id": "forge-doc/*", "classe": "conteneur ZIP / IPC local", "note": "hors en-tête non lu" },
+    { "id": "forge-gcs/*", "classe": "FFI & memory-safety", "note": "non lu au n°5 (shim C++ non auditable : sous-module absent du zip)" },
+    { "id": "forge-io/bornes-inter-parseurs", "classe": "parseurs d'import", "note": "bornes octets/entités/profondeur/magnitude non comparées entre parseurs" },
+    { "id": "ci/android.yml + workflows restants", "classe": "supply chain & CI", "note": "non relus (conseils 12-14 non évalués)" },
+    { "id": "adr/ADR-0022 + ADR-0024", "classe": "cohérence documentaire", "note": "non relus par l'auditeur" },
+    { "id": "fuzz/proptest", "classe": "méthode", "note": "présence de proptest/cargo-fuzz dans les Cargo.toml non vérifiée (conseil 2)" },
+    { "id": "execution", "classe": "méthode", "note": "aucun test exécuté au n°5 — aucun signalement reproduit par exécution" }
+  ],
+  "candidats_refutes": [],
+  "regles": "Chaque unité porte : SHA examiné, date, verdict, preuve. Revérification : l'audit n+1 reprend ce registre, revérifie les corrections des audits précédents et cible les unités non couvertes ou dont le SHA a changé. Les candidats réfutés sont conservés pour ne pas être re-chassés."
+}
