@@ -166,3 +166,4 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 ---
 
 > 🗺️ Cette page est maintenue en même temps que la structure du dépôt : tout nouveau document, crate ou workflow doit y figurer. Version anglaise : [`en/sommaire.md`](en/sommaire.md) (le français fait foi).
+
