@@ -5,7 +5,7 @@
 //! refusée côté OmniFab AVANT le pont cxx — jamais d'entrée brute
 //! confiée au noyau (convention « entrées bornées », v12).
 
-use forge_cad::{CadBudgets, Solide, brep};
+use forge_cad::{CadBudgets, Solide, brep, step};
 use forge_units::Length;
 use opencascade::primitives::Shape;
 
@@ -249,4 +249,41 @@ fn prisme_accepte_contour_concave() {
     ];
     let prisme = Solide::prisme(&en_l, mm(5.0));
     assert!(prisme.is_ok(), "concave sain : {prisme:?}");
+}
+
+/// Dette A3-08.e (réglée au lot 2 de la phase B) : `formes_max`
+/// devient un budget RÉEL — le nombre d'en-têtes d'instances
+/// « #N = » du fichier STEP majore le nombre de sous-formes que le
+/// lecteur pourra construire ; le dépassement est refusé AVANT le
+/// premier octet confié au noyau (OF-CAD-0004).
+#[test]
+fn step_instances_au_dela_du_budget_refusees_avant_occt() {
+    let mut texte = String::from("ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\n");
+    for i in 0..12u32 {
+        texte.push_str(&format!("#{i} = CARTESIAN_POINT('',(0.,0.,0.));\n"));
+    }
+    texte.push_str("ENDSEC;\nEND-ISO-10303-21;\n");
+    let budgets = CadBudgets {
+        octets_max: 1024 * 1024,
+        formes_max: 5,
+    };
+    let erreur = step::importer(texte.as_bytes(), &budgets)
+        .unwrap_err()
+        .code();
+    assert_eq!(erreur, "OF-CAD-0004");
+}
+
+/// Garde-fou : un fichier sans aucune instance déclarée n'est pas
+/// refusé par le budget de formes — un texte non STEP échoue au
+/// lecteur (OF-CAD-0003), pas au garde-fou d'instances.
+#[test]
+fn step_texte_sans_instance_pas_refuse_par_le_budget() {
+    let budgets = CadBudgets {
+        octets_max: 1024 * 1024,
+        formes_max: 5,
+    };
+    let erreur = step::importer(b"n'est pas du STEP", &budgets)
+        .unwrap_err()
+        .code();
+    assert_eq!(erreur, "OF-CAD-0003");
 }

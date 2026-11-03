@@ -529,7 +529,19 @@ fn journal_v1_des_liaisons_migre_en_v2() {
     assert_eq!(events[0].schema_version, 2, "input migré");
     assert_eq!(events[0].data["unit"], serde_json::Value::Null);
     assert_eq!(events[1].schema_version, 2, "expression migrée");
-    assert_eq!(events[4].schema_version, 2, "contrainte migrée");
+    // Lot 2 : le champ `croquis` porte entités et contraintes en v3 ;
+    // un journal v1 migre d'un bond vers la version courante, avec le
+    // croquis implicite 0 (PR #605).
+    assert_eq!(events[2].schema_version, 3, "entité migrée");
+    assert_eq!(
+        events[2].data["croquis"], 0,
+        "croquis implicite de l'entité migrée"
+    );
+    assert_eq!(events[4].schema_version, 3, "contrainte migrée");
+    assert_eq!(
+        events[4].data["croquis"], 0,
+        "croquis implicite de la contrainte migrée"
+    );
     assert_eq!(events[4].data["valeur"]["type"], "fixe");
     assert_eq!(events[4].data["valeur"]["mm"], 25.0);
     let mut session = Session::from_document("tests", relu).expect("rejeu");

@@ -2,11 +2,15 @@
 //! entités, contraintes et graines de position au journal, positions
 //! résolues comme état dérivé jamais sérialisé.
 //!
-//! - **journal** : quatre types d'événements (`sketch.entity.added`,
-//!   `sketch.constraint.added`, `sketch.constraint.updated`,
-//!   `sketch.point.moved`), identifiants
+//! - **journal** : cinq types d'événements (`sketch.created`,
+//!   `sketch.entity.added`, `sketch.constraint.added`,
+//!   `sketch.constraint.updated`, `sketch.point.moved`), identifiants
 //!   séquentiels émis par la commande — l'ordre d'ajout est figé au
-//!   journal et fait foi pour la reproductibilité du rejeu ;
+//!   journal et fait foi pour la reproductibilité du rejeu. Depuis le
+//!   lot 2 de la phase B (ADR-0024 §7), les croquis sont nommés : la
+//!   création devient un événement, et entités, contraintes et
+//!   déplacements portent leur croquis — le champ absent des anciens
+//!   journaux y est migré à 0 (croquis implicite historique) ;
 //! - **graines** : positions de départ des points, posées par les
 //!   glissements (`MovePoint`) — jamais la vérité : la vérité =
 //!   entités + contraintes + dernières graines, toutes au journal ;
@@ -18,9 +22,10 @@
 //!   sérialisée.
 
 use crate::SessionError;
+use crate::cad::PlanCroquis;
 use crate::command::{
-    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_ENTITY_ADDED,
-    EVENT_SKETCH_POINT_MOVED,
+    EVENT_SKETCH_CONSTRAINT_ADDED, EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_CREATED,
+    EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
 };
 use crate::projection::{
     Projection, TypesIgnores, champ_entier, champ_nombre, champ_str, verifie_schema,
@@ -37,27 +42,35 @@ use std::collections::BTreeMap;
 /// (ADR-0020) donne à l'arc un balayage signé — `angle_fin` peut
 /// précéder `angle_debut`, le sens de l'arc suit le geste —, la v1
 /// reste lisible (balayage trigonométrique) pour les journaux non
-/// migrés.
-pub(crate) const VERSION_SCHEMA_ENTITE: u32 = 2;
+/// migrés ; la v3 (ADR-0024 §7, lot 2) pose le champ `croquis` —
+/// l'entité vit dans le croquis visé par la commande.
+pub(crate) const VERSION_SCHEMA_ENTITE: u32 = 3;
 
-/// Versions acceptées à la relecture d'une entité (ADR-0020) : les
-/// journaux v1 non migrés rejouent, le registre aligne leurs arcs en
-/// v2.
-const VERSIONS_ENTITE: &[u32] = &[1, VERSION_SCHEMA_ENTITE];
+/// Versions acceptées à la relecture d'une entité (ADR-0020,
+/// ADR-0024 §7) : les journaux v1 et v2 non migrés rejouent, le
+/// registre aligne leurs arcs en v2 puis pose le croquis implicite.
+const VERSIONS_ENTITE: &[u32] = &[1, 2, VERSION_SCHEMA_ENTITE];
 
-/// Version de schéma de `sketch.point.moved` (ADR-0018) : non
-/// concerné par le balayage signé des arcs (ADR-0020).
-const VERSION_SCHEMA_DEPLACEMENT: u32 = 1;
+/// Version de schéma courante de `sketch.point.moved` : la v2
+/// (ADR-0024 §7, lot 2) pose le champ `croquis`, la v1 reste lisible
+/// pour les journaux non migrés.
+pub(crate) const VERSION_SCHEMA_DEPLACEMENT: u32 = 2;
+
+/// Versions acceptées à la relecture d'un déplacement : le registre
+/// aligne les journaux v1 en posant le croquis implicite.
+const VERSIONS_DEPLACEMENT: &[u32] = &[1, VERSION_SCHEMA_DEPLACEMENT];
 
 /// Version de schéma courante de `sketch.constraint.added` : la v2
 /// (ADR-0019) encode la cote de `Distance` comme objet typé — fixe
 /// ou expression pilotée —, la v1 reste lisible (nombre nu) pour les
-/// journaux non migrés.
-const VERSION_SCHEMA_CONTRAINTE: u32 = 2;
+/// journaux non migrés ; la v3 (ADR-0024 §7, lot 2) pose le champ
+/// `croquis`.
+pub(crate) const VERSION_SCHEMA_CONTRAINTE: u32 = 3;
 
-/// Versions acceptées à la relecture d'une contrainte (ADR-0019 §1) :
-/// les journaux v1 non migrés rejouent, le registre les aligne en v2.
-const VERSIONS_CONTRAINTE: &[u32] = &[1, VERSION_SCHEMA_CONTRAINTE];
+/// Versions acceptées à la relecture d'une contrainte (ADR-0019 §1,
+/// ADR-0024 §7) : les journaux v1 et v2 non migrés rejouent, le
+/// registre les aligne en v2 puis pose le croquis implicite.
+const VERSIONS_CONTRAINTE: &[u32] = &[1, 2, VERSION_SCHEMA_CONTRAINTE];
 
 /// Seuil de coincidence de deux graines d'une même passe (re-test
 /// du 2026-10-23) : en dessous, le gradient d'une cote de distance
@@ -75,10 +88,20 @@ const ECART_GRAINES_CONFONDUES_MM: f64 = 1e-3;
 /// au-delà, la coordonnée est refusée (A4-13b, audit n°4).
 const BORNE_COORDONNEE_MM: f64 = 1e9;
 
-/// Version de schéma de `sketch.constraint.updated` : type nouveau de
-/// la phase E, né en v1 — son champ `valeur` suit le schéma des
-/// contraintes (objet typé en pratique, jamais un nombre nu émis).
-const VERSION_SCHEMA_MISE_A_JOUR: u32 = 1;
+/// Version de schéma courante de `sketch.constraint.updated` : la v2
+/// (ADR-0024 §7, lot 2) pose le champ `croquis`, la v1 reste lisible
+/// pour les journaux non migrés — le type est né en v1 (phase E),
+/// son champ `valeur` suit le schéma des contraintes.
+pub(crate) const VERSION_SCHEMA_MISE_A_JOUR: u32 = 2;
+
+/// Versions acceptées à la relecture d'une mise à jour de contrainte
+/// (ADR-0024 §7) : le registre aligne les journaux v1 en posant le
+/// croquis implicite.
+const VERSIONS_MISE_A_JOUR: &[u32] = &[1, VERSION_SCHEMA_MISE_A_JOUR];
+
+/// Version de schéma courante de `sketch.created` (ADR-0024 §7,
+/// lot 2) : né en v1 — `nom` unique et `plan` typé.
+pub(crate) const VERSION_SCHEMA_CROQUIS: u32 = 1;
 
 /// Genre d'une entité du croquis (sélection et affichage).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -259,24 +282,28 @@ pub enum ContrainteEsquisse {
 }
 
 /// Sérialise une entité pour l'événement `sketch.entity.added` :
-/// schéma plat v1 — `genre`, `id`, puis les champs de l'entité
-/// (coordonnées en millimètres, angles en radians).
-pub(crate) fn entite_en_json(id: u32, entite: &EntiteEsquisse) -> serde_json::Value {
+/// schéma plat v3 — `genre`, `croquis`, `id`, puis les champs de
+/// l'entité (coordonnées en millimètres, angles en radians) ; le
+/// champ `croquis` (ADR-0024 §7, lot 2) porte le croquis visé.
+pub(crate) fn entite_en_json(croquis: u32, id: u32, entite: &EntiteEsquisse) -> serde_json::Value {
     match entite {
         EntiteEsquisse::Point { x, y } => serde_json::json!({
             "genre": "point",
+            "croquis": croquis,
             "id": id,
             "x": x.millimeters(),
             "y": y.millimeters(),
         }),
         EntiteEsquisse::Ligne { p1, p2 } => serde_json::json!({
             "genre": "ligne",
+            "croquis": croquis,
             "id": id,
             "p1": p1,
             "p2": p2,
         }),
         EntiteEsquisse::Cercle { centre, rayon } => serde_json::json!({
             "genre": "cercle",
+            "croquis": croquis,
             "id": id,
             "centre": centre,
             "rayon": rayon.millimeters(),
@@ -290,6 +317,7 @@ pub(crate) fn entite_en_json(id: u32, entite: &EntiteEsquisse) -> serde_json::Va
             angle_fin,
         } => serde_json::json!({
             "genre": "arc",
+            "croquis": croquis,
             "id": id,
             "centre": centre,
             "debut": debut,
@@ -302,30 +330,38 @@ pub(crate) fn entite_en_json(id: u32, entite: &EntiteEsquisse) -> serde_json::Va
 }
 
 /// Sérialise une contrainte pour les événements `sketch.constraint.added`
-/// et `sketch.constraint.updated` : schéma plat — `genre`, `id`, puis
-/// les champs de la contrainte (cotes en millimètres, angles en
-/// radians) ; la cote de `Distance` est un objet typé depuis la v2
-/// (ADR-0019).
-pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> serde_json::Value {
+/// et `sketch.constraint.updated` : schéma plat — `genre`, `croquis`,
+/// `id`, puis les champs de la contrainte (cotes en millimètres, angles
+/// en radians) ; la cote de `Distance` est un objet typé depuis la v2
+/// (ADR-0019), le champ `croquis` arrive en v3 (ADR-0024 §7, lot 2).
+pub(crate) fn contrainte_en_json(
+    croquis: u32,
+    id: u32,
+    contrainte: &ContrainteEsquisse,
+) -> serde_json::Value {
     match contrainte {
         ContrainteEsquisse::Coincidence { p1, p2 } => serde_json::json!({
             "genre": "coincidence",
+            "croquis": croquis,
             "id": id,
             "p1": p1,
             "p2": p2,
         }),
         ContrainteEsquisse::Horizontale { ligne } => serde_json::json!({
             "genre": "horizontale",
+            "croquis": croquis,
             "id": id,
             "ligne": ligne,
         }),
         ContrainteEsquisse::Verticale { ligne } => serde_json::json!({
             "genre": "verticale",
+            "croquis": croquis,
             "id": id,
             "ligne": ligne,
         }),
         ContrainteEsquisse::Distance { p1, p2, valeur } => serde_json::json!({
             "genre": "distance",
+            "croquis": croquis,
             "id": id,
             "p1": p1,
             "p2": p2,
@@ -337,6 +373,7 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
             valeur,
         } => serde_json::json!({
             "genre": "angle",
+            "croquis": croquis,
             "id": id,
             "ligne1": ligne1,
             "ligne2": ligne2,
@@ -344,42 +381,49 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
         }),
         ContrainteEsquisse::MemeLongueur { ligne1, ligne2 } => serde_json::json!({
             "genre": "meme-longueur",
+            "croquis": croquis,
             "id": id,
             "ligne1": ligne1,
             "ligne2": ligne2,
         }),
         ContrainteEsquisse::PointSurLigne { point, ligne } => serde_json::json!({
             "genre": "point-sur-ligne",
+            "croquis": croquis,
             "id": id,
             "point": point,
             "ligne": ligne,
         }),
         ContrainteEsquisse::Paralleles { ligne1, ligne2 } => serde_json::json!({
             "genre": "paralleles",
+            "croquis": croquis,
             "id": id,
             "ligne1": ligne1,
             "ligne2": ligne2,
         }),
         ContrainteEsquisse::Perpendiculaires { ligne1, ligne2 } => serde_json::json!({
             "genre": "perpendiculaires",
+            "croquis": croquis,
             "id": id,
             "ligne1": ligne1,
             "ligne2": ligne2,
         }),
         ContrainteEsquisse::RayonCercle { cercle, valeur } => serde_json::json!({
             "genre": "rayon-cercle",
+            "croquis": croquis,
             "id": id,
             "cercle": cercle,
             "valeur": valeur.millimeters(),
         }),
         ContrainteEsquisse::PointSurCercle { point, cercle } => serde_json::json!({
             "genre": "point-sur-cercle",
+            "croquis": croquis,
             "id": id,
             "point": point,
             "cercle": cercle,
         }),
         ContrainteEsquisse::PointFixe { point } => serde_json::json!({
             "genre": "point-fixe",
+            "croquis": croquis,
             "id": id,
             "point": point,
         }),
@@ -389,7 +433,7 @@ pub(crate) fn contrainte_en_json(id: u32, contrainte: &ContrainteEsquisse) -> se
 /// Sérialise une cote de distance (schéma v2, ADR-0019) : fixe
 /// (`{"type": "fixe", "mm": …}`) ou expression pilotée
 /// (`{"type": "expression", "texte": …, "alias": …}`).
-fn valeur_cote_en_json(valeur: &ValeurCote) -> serde_json::Value {
+pub(crate) fn valeur_cote_en_json(valeur: &ValeurCote) -> serde_json::Value {
     match valeur {
         ValeurCote::Fixe { mm } => serde_json::json!({
             "type": "fixe",
@@ -442,7 +486,7 @@ fn valeur_cote_de_journal(event: &NewEvent) -> Result<ValeurCote, SessionError> 
 }
 
 /// Lit un champ nombre d'un objet cote typé (schéma v2).
-fn nombre_cote(
+pub(crate) fn nombre_cote(
     event: &NewEvent,
     objet: &serde_json::Map<String, serde_json::Value>,
     champ: &str,
@@ -458,7 +502,7 @@ fn nombre_cote(
 
 /// Lit un champ texte d'un objet cote typé (schéma v2) : l'emprunt vit
 /// sur l'objet, pas sur l'événement.
-fn texte_cote<'a>(
+pub(crate) fn texte_cote<'a>(
     event: &NewEvent,
     objet: &'a serde_json::Map<String, serde_json::Value>,
     champ: &str,
@@ -581,7 +625,7 @@ fn contrainte_de_journal(event: &NewEvent) -> Result<(u32, ContrainteEsquisse), 
 
 /// Lit un champ identifiant (entier non négatif tenant dans un `u32`)
 /// du schéma v1.
-fn champ_id(event: &NewEvent, champ: &str) -> Result<u32, SessionError> {
+pub(crate) fn champ_id(event: &NewEvent, champ: &str) -> Result<u32, SessionError> {
     let valeur = champ_entier(event, champ)?;
     u32::try_from(valeur).map_err(|_| SessionError::InvalidEventData {
         event_type: event.event_type.clone(),
@@ -766,12 +810,12 @@ impl PasseDeResolution<'_> {
     }
 }
 
-/// Projection du croquis contraint (ADR-0018) : entités, contraintes
-/// et graines de position rejouées depuis le journal ; les positions
-/// résolues sont un état dérivé, calculé à la demande via
-/// [`EsquisseProjection::resoudre`] et jamais sérialisé.
+/// État d'UN croquis nommé ou implicite (ADR-0024 §7, lot 2) :
+/// entités, contraintes et graines — le même état qu'avant le lot 2,
+/// porté par croquis ; les identifiants y sont séquentiels PAR
+/// CROQUIS, l'ordre d'ajout au journal fait foi.
 #[derive(Debug, Clone, Default)]
-pub struct EsquisseProjection {
+struct CroquisEtat {
     /// Entités du croquis, dans l'ordre d'ajout (l'identifiant est
     /// l'indice d'ajout, ADR-0018 D1).
     entites: Vec<(u32, EntiteEsquisse)>,
@@ -789,8 +833,6 @@ pub struct EsquisseProjection {
     /// avec la graine courante, elle donne le vecteur du dernier
     /// geste — un croquis rigide en translation le suit en entier.
     graine_avant_dernier: Option<(Length, Length)>,
-    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
-    unknown: TypesIgnores,
     /// Ancrages capturés à la pose (ADR-0021 D2, révisée le
     /// 2026-10-23) : identifiant du point ancré → position affichée
     /// au moment de la pose, portée au journal par le
@@ -822,17 +864,42 @@ pub struct EsquisseProjection {
     /// la branche miroir la plus proche de ces graines périmées.
     /// Tout événement de croquis appliqué efface la fraîcheur.
     pose_ancrage_fraiche: Option<(u32, (Length, Length))>,
+}
+
+/// Projection du croquis contraint (ADR-0018, croquis nommés au lot 2
+/// de la phase B, ADR-0024 §7) : entités, contraintes et graines de
+/// position rejouées depuis le journal, par croquis — le croquis 0
+/// implicite historique préexiste, sans nom ; `sketch.created` en
+/// ajoute un nommé qui devient l'actif. Les positions résolues sont
+/// un état dérivé, calculé à la demande via
+/// [`EsquisseProjection::resoudre`] et jamais sérialisé.
+#[derive(Debug, Clone)]
+pub struct EsquisseProjection {
+    /// États des croquis, par identifiant — le croquis 0 implicite
+    /// historique est semé à la création.
+    croquis: BTreeMap<u32, CroquisEtat>,
+    /// Croquis actif : cible des commandes d'esquisse, devient le
+    /// dernier croquis créé.
+    actif: u32,
+    /// Noms des croquis créés (le croquis implicite 0 n'en a pas).
+    noms: BTreeMap<u32, String>,
+    /// Plans des croquis (ADR-0024 §7, lot 2) — `sketch.created`
+    /// journalise le plan, seul « xy » est supporté.
+    plans: BTreeMap<u32, PlanCroquis>,
+    /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
+    unknown: TypesIgnores,
     /// Numéro d'édition : croît à chaque événement appliqué, jamais
     /// remis à zéro (clé de cache monotone pour l'application).
     edition: u64,
 }
 
-impl EsquisseProjection {
-    /// Nouvelle projection vide.
-    pub fn new() -> Self {
-        Self::default()
+impl Default for EsquisseProjection {
+    fn default() -> Self {
+        Self::new()
     }
+}
 
+impl CroquisEtat {
     /// Entités du croquis, dans l'ordre d'ajout au journal.
     pub fn entites(&self) -> &[(u32, EntiteEsquisse)] {
         &self.entites
@@ -905,11 +972,11 @@ impl EsquisseProjection {
             .collect()
     }
 
-    /// Contrainte portant la cote pilotée de l'alias donné, avec son
-    /// identifiant, ou `None` si aucune cote ne porte cet alias
-    /// (ADR-0019) : la substitution d'alias réécrit la contrainte à
-    /// identifiant conservé.
-    pub fn contrainte_de_cote(&self, alias: &str) -> Option<(u32, ContrainteEsquisse)> {
+    /// Contrainte portant la cote pilotée de l'alias donné DANS CE
+    /// croquis, avec son identifiant, ou `None` si aucune cote n'y
+    /// porte cet alias (ADR-0019) : la substitution d'alias réécrit
+    /// la contrainte à identifiant conservé.
+    pub fn contrainte_de_cote_dans(&self, alias: &str) -> Option<(u32, ContrainteEsquisse)> {
         self.contraintes
             .iter()
             .find(|(_, contrainte)| {
@@ -937,18 +1004,6 @@ impl EsquisseProjection {
                 *valeur = ValeurCote::Fixe { mm };
             }
         }
-    }
-
-    /// Numéro d'édition du croquis : croît à chaque événement appliqué
-    /// et n'est jamais remis à zéro — deux contenus différents du
-    /// croquis portent toujours des éditions différentes.
-    pub fn edition(&self) -> u64 {
-        self.edition
-    }
-
-    /// Types d'événements ignorés par cette projection.
-    pub fn unknown_types(&self) -> &[String] {
-        self.unknown.retenus()
     }
 
     /// Raison du refus d'une entité au plan (ADR-0018 D2), ou `None`
@@ -1228,33 +1283,6 @@ impl EsquisseProjection {
         } else {
             None
         }
-    }
-
-    /// Aperçu de glissement (re-test du 2026-10-23) : une
-    /// projection où la position visée devient la graine du point
-    /// pour une résolution d'affichage SEULEMENT — rien au
-    /// journal. La sémantique est exactement celle du relâchement
-    /// (`MovePoint` puis [`EsquisseProjection::resoudre`]) :
-    /// suivi du geste d'un croquis rigide, ancrages respectés,
-    /// repli sur la passe de base. La forme liée suit le point
-    /// saisi PENDANT le glissement au lieu d'attendre le
-    /// relâchement. `None` si le point n'existe pas.
-    pub fn apercu_de_glissement(
-        &self,
-        point: u32,
-        x: Length,
-        y: Length,
-    ) -> Option<EsquisseProjection> {
-        let avant = self.position_graine(point)?;
-        let mut apercu = self.clone();
-        apercu.graine_avant_dernier = Some(avant);
-        apercu.graines.insert(point, (x, y));
-        apercu.dernier_deplace = Some(point);
-        // L'aperçu est un geste à lui tout seul : sa résolution suit
-        // le comportement ordinaire, pas la fraîcheur de pose d'un
-        // ancrage (re-test du 24-10, cf. `pose_ancrage_fraiche`).
-        apercu.pose_ancrage_fraiche = None;
-        Some(apercu)
     }
 
     /// Graine d'avant geste du point déplacé : le point de départ
@@ -1748,6 +1776,255 @@ impl EsquisseProjection {
     }
 }
 
+impl EsquisseProjection {
+    /// Nouvelle projection : le croquis 0 implicite historique, actif,
+    /// sans entité — l'état d'avant les croquis nommés (ADR-0024 §7).
+    pub fn new() -> Self {
+        Self {
+            croquis: BTreeMap::from([(0, CroquisEtat::default())]),
+            actif: 0,
+            noms: BTreeMap::new(),
+            plans: BTreeMap::new(),
+            unknown: TypesIgnores::default(),
+            edition: 0,
+        }
+    }
+
+    /// Croquis actif : cible des commandes d'esquisse — le dernier
+    /// croquis créé, le croquis implicite 0 tant qu'aucun n'existe.
+    pub fn croquis_actif(&self) -> u32 {
+        self.actif
+    }
+
+    /// Le croquis donné existe-t-il (implicite ou nommé) ?
+    pub fn croquis_existe(&self, croquis: u32) -> bool {
+        self.croquis.contains_key(&croquis)
+    }
+
+    /// Identifiant du croquis portant le nom donné, ou `None` — le
+    /// croquis implicite 0 n'a pas de nom (ADR-0024 §7).
+    pub fn croquis_de_nom(&self, nom: &str) -> Option<u32> {
+        self.noms
+            .iter()
+            .find(|(_, existant)| existant.as_str() == nom)
+            .map(|(id, _)| *id)
+    }
+
+    /// Nom du croquis donné, ou `None` s'il est inconnu ou implicite.
+    pub fn nom_du_croquis(&self, croquis: u32) -> Option<&str> {
+        self.noms.get(&croquis).map(String::as_str)
+    }
+
+    /// Plan du croquis donné (ADR-0024 §7), ou `None` s'il est
+    /// inconnu — le croquis implicite 0 n'en journalise pas.
+    pub fn plan_du_croquis(&self, croquis: u32) -> Option<&PlanCroquis> {
+        self.plans.get(&croquis)
+    }
+
+    /// État du croquis donné, ou `None` s'il est inconnu.
+    fn etat(&self, croquis: u32) -> Option<&CroquisEtat> {
+        self.croquis.get(&croquis)
+    }
+
+    /// Entités du croquis donné, dans l'ordre d'ajout au journal, ou
+    /// `None` s'il est inconnu.
+    pub fn entites_du_croquis(&self, croquis: u32) -> Option<&[(u32, EntiteEsquisse)]> {
+        self.etat(croquis).map(CroquisEtat::entites)
+    }
+
+    /// Contraintes du croquis donné, dans l'ordre d'ajout au journal,
+    /// ou `None` s'il est inconnu.
+    pub fn contraintes_du_croquis(&self, croquis: u32) -> Option<&[(u32, ContrainteEsquisse)]> {
+        self.etat(croquis).map(CroquisEtat::contraintes)
+    }
+
+    /// Résout le croquis donné (sémantique de
+    /// CroquisEtat::resoudre) ; le croquis inconnu est une erreur
+    /// d'identifiant typée du solveur — jamais un refus muet.
+    pub fn resoudre_croquis(
+        &self,
+        croquis: u32,
+        solveur: &mut dyn Solveur2D,
+    ) -> Result<CroquisResolu, GcsError> {
+        let Some(etat) = self.etat(croquis) else {
+            return Err(GcsError::IdInconnu {
+                contexte: format!("le croquis {croquis} n'existe pas"),
+            });
+        };
+        etat.resoudre(solveur)
+    }
+
+    /// Position de départ d'un point DU croquis donné (graine ou
+    /// origine de l'entité, ADR-0018 D7), ou `None` si le point n'y
+    /// est pas.
+    pub fn position_graine_du_croquis(&self, croquis: u32, point: u32) -> Option<(Length, Length)> {
+        self.etat(croquis)?.position_graine(point)
+    }
+
+    /// Alias des cotes pilotées DU croquis donné, dans l'ordre
+    /// d'ajout (ADR-0019), ou `None` s'il est inconnu.
+    pub fn alias_des_cotes_du_croquis(&self, croquis: u32) -> Option<Vec<String>> {
+        self.etat(croquis).map(CroquisEtat::alias_des_cotes)
+    }
+
+    /// Entités du croquis actif, dans l'ordre d'ajout au journal.
+    pub fn entites(&self) -> &[(u32, EntiteEsquisse)] {
+        self.etat(self.actif)
+            .map(CroquisEtat::entites)
+            .unwrap_or_default()
+    }
+
+    /// Contraintes du croquis actif, dans l'ordre d'ajout au journal.
+    pub fn contraintes(&self) -> &[(u32, ContrainteEsquisse)] {
+        self.etat(self.actif)
+            .map(CroquisEtat::contraintes)
+            .unwrap_or_default()
+    }
+
+    /// Un point du croquis actif porte-t-il un ancrage `PointFixe`
+    /// (ADR-0021 D3) ?
+    pub fn point_ancre(&self, id: u32) -> bool {
+        self.etat(self.actif)
+            .is_some_and(|etat| etat.point_ancre(id))
+    }
+
+    /// Genre d'une entité du croquis actif, ou `None` si
+    /// l'identifiant y est inconnu.
+    pub fn genre_entite(&self, id: u32) -> Option<GenreEntite> {
+        self.etat(self.actif)?.genre_entite(id)
+    }
+
+    /// Position de départ d'un point du croquis actif (ADR-0018 D7) :
+    /// la dernière graine posée par un déplacement `MovePoint`, les
+    /// coordonnées d'origine de l'entité sinon. `None` si
+    /// l'identifiant n'est pas un point du croquis actif.
+    pub fn position_graine(&self, id: u32) -> Option<(Length, Length)> {
+        self.etat(self.actif)?.position_graine(id)
+    }
+
+    /// Prochain identifiant d'entité du croquis actif (séquentiel :
+    /// l'ordre d'ajout au journal fait foi, ADR-0018 D1).
+    pub fn prochaine_id_entite(&self) -> u32 {
+        self.etat(self.actif)
+            .map(CroquisEtat::prochaine_id_entite)
+            .unwrap_or_default()
+    }
+
+    /// Prochain identifiant de contrainte du croquis actif.
+    pub fn prochaine_id_contrainte(&self) -> u32 {
+        self.etat(self.actif)
+            .map(CroquisEtat::prochaine_id_contrainte)
+            .unwrap_or_default()
+    }
+
+    /// Alias des cotes pilotées de TOUS les croquis, dans l'ordre des
+    /// croquis puis d'ajout (ADR-0019) : la résolution par la session
+    /// les fige toutes avant de résoudre.
+    pub fn alias_des_cotes(&self) -> Vec<String> {
+        self.croquis
+            .values()
+            .flat_map(CroquisEtat::alias_des_cotes)
+            .collect()
+    }
+
+    /// Contrainte portant la cote pilotée de l'alias donné, tous
+    /// croquis, avec son identifiant, ou `None` (ADR-0019) : la
+    /// substitution d'alias réécrit la contrainte à identifiant
+    /// conservé.
+    pub fn contrainte_de_cote(&self, alias: &str) -> Option<(u32, ContrainteEsquisse)> {
+        self.contrainte_de_cote_situation(alias)
+            .map(|(_, id, contrainte)| (id, contrainte))
+    }
+
+    /// Contrainte portant la cote pilotée de l'alias donné, avec son
+    /// croquis ET son identifiant, ou `None` (ADR-0019, ADR-0024 §7) :
+    /// le journal de contrainte porte le croquis depuis le lot 2.
+    pub fn contrainte_de_cote_situation(
+        &self,
+        alias: &str,
+    ) -> Option<(u32, u32, ContrainteEsquisse)> {
+        self.croquis.iter().find_map(|(croquis, etat)| {
+            etat.contrainte_de_cote_dans(alias)
+                .map(|(id, contrainte)| (*croquis, id, contrainte))
+        })
+    }
+
+    /// Fige une cote pilotée, tous croquis : son expression devient
+    /// la longueur donnée, évaluée par le moteur de liaisons côté
+    /// session — la résolution ne voit jamais une expression
+    /// (frontière forge-values → forge-gcs, ADR-0019).
+    pub fn figer_cote(&mut self, alias: &str, mm: Length) {
+        for etat in self.croquis.values_mut() {
+            etat.figer_cote(alias, mm);
+        }
+    }
+
+    /// Numéro d'édition : croît à chaque événement de croquis appliqué
+    /// et n'est jamais remis à zéro — deux contenus différents du
+    /// croquis portent toujours des éditions différentes.
+    pub fn edition(&self) -> u64 {
+        self.edition
+    }
+
+    /// Types d'événements ignorés par cette projection.
+    pub fn unknown_types(&self) -> &[String] {
+        self.unknown.retenus()
+    }
+
+    /// Raison du refus d'une entité au croquis actif (ADR-0018 D2),
+    /// ou `None` si elle est valide contre l'état courant.
+    pub fn raison_refus_entite(&self, entite: &EntiteEsquisse) -> Option<String> {
+        self.etat(self.actif)?.raison_refus_entite(entite)
+    }
+
+    /// Raison du refus d'une contrainte au croquis actif
+    /// (ADR-0018 D2), ou `None` si elle est valide contre l'état
+    /// courant.
+    pub fn raison_refus_contrainte(&self, contrainte: &ContrainteEsquisse) -> Option<String> {
+        self.etat(self.actif)?.raison_refus_contrainte(contrainte)
+    }
+
+    /// Raison du refus d'un déplacement de point au croquis actif
+    /// (ADR-0018 D2), ou `None` si le point existe et les
+    /// coordonnées sont finies.
+    pub fn raison_refus_deplacement(&self, point: u32, x: Length, y: Length) -> Option<String> {
+        self.etat(self.actif)?.raison_refus_deplacement(point, x, y)
+    }
+
+    /// Résout le croquis ACTIF : cf. CroquisEtat::resoudre.
+    pub fn resoudre(&self, solveur: &mut dyn Solveur2D) -> Result<CroquisResolu, GcsError> {
+        self.resoudre_croquis(self.actif, solveur)
+    }
+
+    /// Aperçu de glissement (re-test du 2026-10-23) : une projection
+    /// où la position visée devient la graine du point du croquis
+    /// actif pour une résolution d'affichage SEULEMENT — rien au
+    /// journal. La sémantique est exactement celle du relâchement
+    /// (`MovePoint` puis [`EsquisseProjection::resoudre`]) :
+    /// suivi du geste d'un croquis rigide, ancrages respectés,
+    /// repli sur la passe de base. La forme liée suit le point
+    /// saisi PENDANT le glissement au lieu d'attendre le
+    /// relâchement. `None` si le point n'existe pas.
+    pub fn apercu_de_glissement(
+        &self,
+        point: u32,
+        x: Length,
+        y: Length,
+    ) -> Option<EsquisseProjection> {
+        let avant = self.position_graine(point)?;
+        let mut apercu = self.clone();
+        let etat = apercu.croquis.get_mut(&apercu.actif)?;
+        etat.graine_avant_dernier = Some(avant);
+        etat.graines.insert(point, (x, y));
+        etat.dernier_deplace = Some(point);
+        // L'aperçu est un geste à lui tout seul : sa résolution suit
+        // le comportement ordinaire, pas la fraîcheur de pose d'un
+        // ancrage (re-test du 24-10, cf. `pose_ancrage_fraiche`).
+        etat.pose_ancrage_fraiche = None;
+        Some(apercu)
+    }
+}
+
 /// Traduit une contrainte du croquis vers le solveur et l’ajoute
 /// (ADR-0018 D1 : les onze genres du trait plus l’ancrage
 /// `PointFixe`). Renvoie le tag solveur de la contrainte posée ;
@@ -1864,15 +2141,12 @@ impl Projection for EsquisseProjection {
     }
 
     fn reset(&mut self) {
-        self.entites.clear();
-        self.contraintes.clear();
-        self.graines.clear();
-        self.dernier_deplace = None;
-        self.graine_avant_dernier = None;
+        self.croquis.clear();
+        self.croquis.insert(0, CroquisEtat::default());
+        self.actif = 0;
+        self.noms.clear();
+        self.plans.clear();
         self.unknown.clear();
-        self.ancrages_captures.clear();
-        self.capture_en_attente = None;
-        self.pose_ancrage_fraiche = None;
         // `edition` n'est jamais remis à zéro : clé de cache monotone —
         // deux contenus différents du croquis portent des éditions
         // différentes, même après un rejeu complet.
@@ -1881,43 +2155,84 @@ impl Projection for EsquisseProjection {
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
         // Capture d'ancrage (ADR-0021 D2, révisée) : le déplacement
         // posé par l'événement précédent ne survit qu'à la contrainte
-        // `PointFixe` du même point qui le suit immédiatement — tout
-        // autre événement l'abandonne.
-        let capture = self.capture_en_attente.take();
-        // La fraîcheur de pose (re-test du 24-10, cf.
-        // `pose_ancrage_fraiche`) ne survit à aucun événement de
-        // croquis : seule la pose d'un ancrage capturé la pose.
-        let _pose_fraiche = self.pose_ancrage_fraiche.take();
+        // `PointFixe` du même point du même croquis qui le suit
+        // immédiatement — tout autre événement l'abandonne, croquis
+        // par croquis.
+        let mut captures: BTreeMap<u32, CaptureAncrage> = BTreeMap::new();
+        for (id, etat) in &mut self.croquis {
+            if let Some(capture) = etat.capture_en_attente.take() {
+                captures.insert(*id, capture);
+            }
+            // La fraîcheur de pose (re-test du 24-10, cf.
+            // `pose_ancrage_fraiche`) ne survit à aucun événement de
+            // croquis : seule la pose d'un ancrage capturé la pose.
+            etat.pose_ancrage_fraiche = None;
+        }
         match event.event_type.as_str() {
+            EVENT_SKETCH_CREATED => {
+                verifie_schema(event, VERSION_SCHEMA_CROQUIS)?;
+                let nom = champ_str(event, "nom")?;
+                let plan = plan_de_journal(event)?;
+                if self.noms.values().any(|existant| existant == nom) {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("le nom de croquis « {nom} » est déjà pris"),
+                    });
+                }
+                // Identifiant séquentiel : l'ordre de création au
+                // journal fait foi — le croquis 0 implicite préexiste,
+                // le premier croquis nommé est donc le 1.
+                let id = self.croquis.len() as u32;
+                self.croquis.insert(id, CroquisEtat::default());
+                self.noms.insert(id, nom.to_string());
+                self.plans.insert(id, plan);
+                self.actif = id;
+                self.edition += 1;
+                Ok(())
+            }
             EVENT_SKETCH_ENTITY_ADDED => {
                 verifie_schema_parmi(event, VERSIONS_ENTITE)?;
+                let croquis = champ_croquis(event)?;
                 let (id, entite) = entite_de_journal(event)?;
-                if id != self.entites.len() as u32 {
+                let Some(etat) = self.croquis.get_mut(&croquis) else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("le croquis {croquis} n'existe pas"),
+                    });
+                };
+                if id != etat.entites.len() as u32 {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason: format!("identifiant d'entité {id} non séquentiel"),
                     });
                 }
-                if let Some(reason) = self.raison_refus_entite(&entite) {
+                if let Some(reason) = etat.raison_refus_entite(&entite) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
                     });
                 }
-                self.entites.push((id, entite));
+                etat.entites.push((id, entite));
                 self.edition += 1;
                 Ok(())
             }
             EVENT_SKETCH_CONSTRAINT_ADDED => {
                 verifie_schema_parmi(event, VERSIONS_CONTRAINTE)?;
+                let croquis = champ_croquis(event)?;
                 let (id, contrainte) = contrainte_de_journal(event)?;
-                if id != self.contraintes.len() as u32 {
+                let Some(etat) = self.croquis.get_mut(&croquis) else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("le croquis {croquis} n'existe pas"),
+                    });
+                };
+                if id != etat.contraintes.len() as u32 {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason: format!("identifiant de contrainte {id} non séquentiel"),
                     });
                 }
-                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
+                if let Some(reason) = etat.raison_refus_contrainte(&contrainte) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -1925,39 +2240,46 @@ impl Projection for EsquisseProjection {
                 }
                 // Capture d'ancrage (ADR-0021 D2, révisée) : le
                 // `PointFixe` du point déplacé à l'événement précédent
-                // fige la position affichée au moment de la pose — et
-                // rend ses droits à l'état de geste d'avant le
-                // déplacement capturé : l'ancrage n'est pas un
-                // geste, la passe épinglée du dernier vrai geste
+                // DU MÊME CROQUIS fige la position affichée au moment
+                // de la pose — et rend ses droits à l'état de geste
+                // d'avant le déplacement capturé : l'ancrage n'est pas
+                // un geste, la passe épinglée du dernier vrai geste
                 // continue de tenir l'affichage (re-test du 24-10 :
                 // la forme sautait à la pose du point fixé).
                 if let ContrainteEsquisse::PointFixe { point } = &contrainte
-                    && let Some(capture) = &capture
+                    && let Some(capture) = captures.get(&croquis)
                     && capture.point == *point
                 {
-                    self.dernier_deplace = capture.dernier_deplace;
-                    self.graine_avant_dernier = capture.graine_avant_dernier;
-                    self.ancrages_captures.insert(*point, capture.position);
-                    self.pose_ancrage_fraiche = Some((*point, capture.position));
+                    etat.dernier_deplace = capture.dernier_deplace;
+                    etat.graine_avant_dernier = capture.graine_avant_dernier;
+                    etat.ancrages_captures.insert(*point, capture.position);
+                    etat.pose_ancrage_fraiche = Some((*point, capture.position));
                 }
-                self.contraintes.push((id, contrainte));
+                etat.contraintes.push((id, contrainte));
                 self.edition += 1;
                 Ok(())
             }
             EVENT_SKETCH_CONSTRAINT_UPDATED => {
-                verifie_schema(event, VERSION_SCHEMA_MISE_A_JOUR)?;
+                verifie_schema_parmi(event, VERSIONS_MISE_A_JOUR)?;
+                let croquis = champ_croquis(event)?;
                 let (id, contrainte) = contrainte_de_journal(event)?;
-                let Some(position) = self
+                let Some(etat) = self.croquis.get_mut(&croquis) else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("le croquis {croquis} n'existe pas"),
+                    });
+                };
+                let Some(position) = etat
                     .contraintes
                     .iter()
                     .position(|(identifiant, _)| *identifiant == id)
                 else {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
-                        reason: format!("contrainte {id} inconnue au croquis"),
+                        reason: format!("contrainte {id} inconnue au croquis {croquis}"),
                     });
                 };
-                if let Some(reason) = self.raison_refus_contrainte(&contrainte) {
+                if let Some(reason) = etat.raison_refus_contrainte(&contrainte) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -1965,16 +2287,23 @@ impl Projection for EsquisseProjection {
                 }
                 // Identifiant conservé : seule la contrainte change,
                 // l'ordre d'ajout au journal fait foi (ADR-0019 §1).
-                self.contraintes[position].1 = contrainte;
+                etat.contraintes[position].1 = contrainte;
                 self.edition += 1;
                 Ok(())
             }
             EVENT_SKETCH_POINT_MOVED => {
-                verifie_schema(event, VERSION_SCHEMA_DEPLACEMENT)?;
+                verifie_schema_parmi(event, VERSIONS_DEPLACEMENT)?;
+                let croquis = champ_croquis(event)?;
                 let point = champ_id(event, "point")?;
                 let x = Length::from_millimeters(champ_nombre(event, "x")?);
                 let y = Length::from_millimeters(champ_nombre(event, "y")?);
-                if let Some(reason) = self.raison_refus_deplacement(point, x, y) {
+                let Some(etat) = self.croquis.get_mut(&croquis) else {
+                    return Err(SessionError::InvalidEventData {
+                        event_type: event.event_type.clone(),
+                        reason: format!("le croquis {croquis} n'existe pas"),
+                    });
+                };
+                if let Some(reason) = etat.raison_refus_deplacement(point, x, y) {
                     return Err(SessionError::InvalidEventData {
                         event_type: event.event_type.clone(),
                         reason,
@@ -1988,13 +2317,13 @@ impl Projection for EsquisseProjection {
                 let capture = CaptureAncrage {
                     point,
                     position: (x, y),
-                    dernier_deplace: self.dernier_deplace,
-                    graine_avant_dernier: self.graine_avant_dernier,
+                    dernier_deplace: etat.dernier_deplace,
+                    graine_avant_dernier: etat.graine_avant_dernier,
                 };
-                self.graine_avant_dernier = self.position_graine(point);
-                self.graines.insert(point, (x, y));
-                self.dernier_deplace = Some(point);
-                self.capture_en_attente = Some(capture);
+                etat.graine_avant_dernier = etat.position_graine(point);
+                etat.graines.insert(point, (x, y));
+                etat.dernier_deplace = Some(point);
+                etat.capture_en_attente = Some(capture);
                 self.edition += 1;
                 Ok(())
             }
@@ -2007,11 +2336,45 @@ impl Projection for EsquisseProjection {
 
     fn types_connus(&self) -> &'static [&'static str] {
         &[
+            EVENT_SKETCH_CREATED,
             EVENT_SKETCH_ENTITY_ADDED,
             EVENT_SKETCH_CONSTRAINT_ADDED,
             EVENT_SKETCH_CONSTRAINT_UPDATED,
             EVENT_SKETCH_POINT_MOVED,
         ]
+    }
+}
+
+/// Croquis visé par un événement d'esquisse : le champ `croquis`
+/// (ADR-0024 §7, lot 2) — absent des journaux d'avant le lot 2 comme
+/// des événements migrés vers le croquis implicite — vise le croquis
+/// 0 historique, jamais un refus.
+fn champ_croquis(event: &NewEvent) -> Result<u32, SessionError> {
+    if event.data.get("croquis").is_none() {
+        return Ok(0);
+    }
+    champ_id(event, "croquis")
+}
+
+/// Relit le plan d'un croquis depuis `sketch.created` (ADR-0024 §7) :
+/// seul « xy » est supporté — un genre inconnu d'un journal plus
+/// récent est retenu tel quel, jamais deviné, jamais refusé.
+fn plan_de_journal(event: &NewEvent) -> Result<PlanCroquis, SessionError> {
+    let Some(serde_json::Value::Object(plan)) = event.data.get("plan") else {
+        return Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « plan » (objet) absent".to_string(),
+        });
+    };
+    match plan.get("type").and_then(serde_json::Value::as_str) {
+        Some("xy") => Ok(PlanCroquis::Xy),
+        Some(genre) => Ok(PlanCroquis::Inconnu {
+            genre: genre.to_string(),
+        }),
+        None => Err(SessionError::InvalidEventData {
+            event_type: event.event_type.clone(),
+            reason: "champ « type » absent du plan".to_string(),
+        }),
     }
 }
 

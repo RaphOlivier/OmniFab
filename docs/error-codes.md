@@ -26,7 +26,7 @@ Réservés : `UNT` (forge-units), `CAM`, `GCO`, `LNK`, `PNT` —
 | OF-VAL-0005 | Valeur inconnue | Lecture d'un nom absent du graphe | Vérifier le nom demandé |
 | OF-VAL-0006 | Valeur d'entrée non finie | Écriture d'un NaN ou d'un infini par set_input | Corriger la valeur d'entrée |
 | OF-VAL-0007 | Incohérence d'unités à la définition | Expression ou entrée déclarée d'une unité incompatible avec ses références (ex. `deg` lisant du `mm`) | Corriger l'unité déclarée |
-| OF-VAL-0008 | Alias réservé | Création sous un préfixe système (`esquisse.`, tableaux) ou écrasement d'un nœud d'une autre origine | Choisir un autre nom |
+| OF-VAL-0008 | Alias réservé | Création sous un préfixe système (`esquisse.`, `cad.`, tableaux) ou écrasement d'un nœud d'une autre origine | Choisir un autre nom |
 | OF-VAL-0009 | Alias référencé | Suppression `Simple` demandée alors que des formules ou cotes lisent encore cet alias | Utiliser Cascade ou Remplacer, ou corriger d'abord les références |
 | OF-VAL-0011 | Chaîne de dépendances trop profonde | Le coût d'évaluation (profondeur d'AST plus sauts de dépendances) dépasse la borne de 1 024 | Restructurer les formules intermédiaires |
 
@@ -114,7 +114,8 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-CAD-0001 | Échec d'une opération OCCT | Construction, booléen, tessellation ou écriture refusés par le noyau CAO | Simplifier la géométrie ou vérifier l'installation OCCT (liaison dynamique, version >= 7.8) |
 | OF-CAD-0002 | Forme nulle, invalide ou entrée invalide | Dimensions non finies ou <= 0, contour dégénéré, booléen sans résultat, ou import non solide | Corriger la géométrie ou les entrées source |
 | OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
-| OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets ou de formes du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
+| OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets, de formes ou d'instances déclarées du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
+| OF-CAD-0005 | Feature en échec à la reconstruction | Le moteur CAO refuse l'extrusion ou le booléen d'une feature : contour impropre ou absent, profondeur qui n'évalue pas, soustraction sans corps courant | Corriger le croquis, la profondeur ou l'ordre des features |
 
 ## omnifab-desktop (WORK) — fil de travail de l'interface
 

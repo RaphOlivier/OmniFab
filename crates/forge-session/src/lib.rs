@@ -31,17 +31,24 @@
 //!   l'enregistrement (ADR-0016 C3) — et les blobs orphelins du
 //!   préfixe appliqué ne figurent pas dans le fichier.
 
+mod cad;
 mod command;
 mod error;
 mod esquisse;
 mod projection;
 
+pub use cad::{
+    BoiteEnglobante, CadProjection, CorpsCad, CouleurFeature, ErreurMoteurCad, EtatFeature,
+    FACTEUR_ATRAVERS, FeatureCad, ModeExtrusion, MoteurCad, PlanCroquis, ProfondeurCad,
+    ProfondeurFeature,
+};
 pub use command::{
-    AddConstraint, AddEntity, AncrerPoint, Command, CommandPlan, EVENT_ALIAS_REMOVED,
-    EVENT_EXPRESSION_SET, EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED,
-    EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_ENTITY_ADDED, EVENT_SKETCH_POINT_MOVED,
-    EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint, RemoveAlias, SetExpression,
-    SetInput,
+    AddConstraint, AddEntity, AddFeature, AncrerPoint, Command, CommandPlan, CreateSketch,
+    EVENT_ALIAS_REMOVED, EVENT_EXPRESSION_SET, EVENT_FEATURE_ADDED, EVENT_FEATURE_UPDATED,
+    EVENT_INPUT_SET, EVENT_MESH_IMPORTED, EVENT_SKETCH_CONSTRAINT_ADDED,
+    EVENT_SKETCH_CONSTRAINT_UPDATED, EVENT_SKETCH_CREATED, EVENT_SKETCH_ENTITY_ADDED,
+    EVENT_SKETCH_POINT_MOVED, EVENT_TRACES_IMPORTED, ImportMesh, ImportTraces, MovePoint,
+    RemoveAlias, SetExpression, SetInput, UpdateFeature,
 };
 pub use error::SessionError;
 pub use esquisse::{
@@ -53,8 +60,11 @@ pub use projection::{
 };
 
 use forge_doc::{DocError, Document, Event, MigrationRegistry, NewEvent};
+use forge_gcs::Solveur2D;
+use forge_geom::Contour2;
 use forge_units::Length;
 use forge_values::ValueGraph;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Registre de migrations courant de la session (ADR-0016 A3) : les
 /// types d'événement connus, déclarés à leur version courante — les
@@ -63,11 +73,15 @@ use forge_values::ValueGraph;
 /// l'entité migre son arc vers le balayage signé (ADR-0020),
 /// `value.alias_removed` et `sketch.constraint.updated` naissent
 /// en v1 (ADR-0019) ; le maillage importé migre du v1 au v2
-/// (ADR-0017). À passer à l'ouverture d'un projet
-/// (Document::from_bytes_with, Document::open_from_path_with,
-/// feature native) : un journal écrit par une version plus récente
-/// est refusé par SchemaTooNew (ADR-0001) au lieu d'être lu comme
-/// du v1.
+/// (ADR-0017). Le lot 2 de la phase B (ADR-0024 §7) pose le champ
+/// `croquis` des événements d'esquisse — entité v3, contrainte v3,
+/// mise à jour v2, déplacement v2 : les anciens journaux migrent vers
+/// le croquis implicite 0 — et déclare `sketch.created`,
+/// `cad.feature.added` et `cad.feature.updated`, nés en v1. À passer
+/// à l'ouverture d'un projet (Document::from_bytes_with,
+/// Document::open_from_path_with, feature native) : un journal écrit
+/// par une version plus récente est refusé par SchemaTooNew
+/// (ADR-0001) au lieu d'être lu comme du v1.
 pub fn registre_migrations_courant() -> MigrationRegistry {
     let mut registre = MigrationRegistry::new();
     registre.declare(EVENT_INPUT_SET, 2);
@@ -78,13 +92,34 @@ pub fn registre_migrations_courant() -> MigrationRegistry {
     registre.declare(EVENT_TRACES_IMPORTED, 1);
     registre.declare(EVENT_MESH_IMPORTED, 2);
     registre.register(EVENT_MESH_IMPORTED, 1, migre_mesh_v1_v2);
-    registre.declare(EVENT_SKETCH_ENTITY_ADDED, 2);
+    registre.declare(EVENT_SKETCH_ENTITY_ADDED, 3);
     registre.register(EVENT_SKETCH_ENTITY_ADDED, 1, migre_entite_v1_v2);
-    registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 2);
+    registre.register(EVENT_SKETCH_ENTITY_ADDED, 2, migre_croquis_implicite);
+    registre.declare(EVENT_SKETCH_CONSTRAINT_ADDED, 3);
     registre.register(EVENT_SKETCH_CONSTRAINT_ADDED, 1, migre_contrainte_v2);
-    registre.declare(EVENT_SKETCH_CONSTRAINT_UPDATED, 1);
-    registre.declare(EVENT_SKETCH_POINT_MOVED, 1);
+    registre.register(EVENT_SKETCH_CONSTRAINT_ADDED, 2, migre_croquis_implicite);
+    registre.declare(EVENT_SKETCH_CONSTRAINT_UPDATED, 2);
+    registre.register(EVENT_SKETCH_CONSTRAINT_UPDATED, 1, migre_croquis_implicite);
+    registre.declare(EVENT_SKETCH_POINT_MOVED, 2);
+    registre.register(EVENT_SKETCH_POINT_MOVED, 1, migre_croquis_implicite);
+    registre.declare(EVENT_SKETCH_CREATED, 1);
+    registre.declare(EVENT_FEATURE_ADDED, 1);
+    registre.declare(EVENT_FEATURE_UPDATED, 1);
     registre
+}
+
+/// Migration vers le schéma du lot 2 (ADR-0024 §7) : le champ
+/// `croquis` des événements d'esquisse est posé à 0 — les journaux
+/// d'avant les croquis nommés vivaient sur le croquis implicite
+/// historique, le rejeu les y porte sans changement de comportement.
+fn migre_croquis_implicite(donnees: &serde_json::Value) -> Result<serde_json::Value, DocError> {
+    let mut donnees = donnees.clone();
+    if donnees.get("croquis").is_none()
+        && let Some(objet) = donnees.as_object_mut()
+    {
+        objet.insert("croquis".to_string(), serde_json::json!(0));
+    }
+    Ok(donnees)
 }
 
 /// Migration `sketch.entity.added` v1 → v2 (ADR-0020) : l'arc v1
@@ -166,6 +201,9 @@ pub struct Session {
     geom: GeomProjection,
     /// Projection du croquis contraint (ADR-0018, phase D).
     esquisse: EsquisseProjection,
+    /// Projection du domaine CAO : features d'extrusion et corps
+    /// dérivés (ADR-0024 D4, phase B lot 2).
+    cad: CadProjection,
     /// Projections des domaines futurs, enregistrées.
     projections: Vec<Box<dyn Projection>>,
     /// Nombre d'événements appliqués aux projections ; les événements
@@ -177,7 +215,7 @@ pub struct Session {
 
 impl Session {
     /// Session vide, avec les projections des liaisons, de la
-    /// géométrie importée et du croquis contraint.
+    /// géométrie importée, du croquis contraint et de la CAO.
     ///
     /// `actor` identifie l'application ou la zone UI à l'origine des
     /// événements (ex. `desktop`, `android.machine`).
@@ -187,6 +225,7 @@ impl Session {
             values: ValuesProjection::new(),
             geom: GeomProjection::new(),
             esquisse: EsquisseProjection::new(),
+            cad: CadProjection::new(),
             projections: Vec::new(),
             applied: 0,
             actor: actor.to_string(),
@@ -341,6 +380,100 @@ impl Session {
         &self.esquisse
     }
 
+    /// Projection de la CAO (features d'extrusion et corps dérivé,
+    /// lecture) — l'état du moteur est un état dérivé, jamais
+    /// sérialisé (ADR-0024 D4).
+    pub fn cad(&self) -> &CadProjection {
+        &self.cad
+    }
+
+    /// Croquis figés demandés par la CAO (ADR-0024 D4) : pour chaque
+    /// croquis référencé par une feature d'extrusion, clone de la
+    /// projection d'esquisse, cotes pilotées figées par le moteur de
+    /// liaisons, résolution puis premier contour fermé extrait à la
+    /// tolérance du lot 1. Un croquis absent du journal, qui ne
+    /// résout pas ou qui n'offre pas de contour fermé est sauté — le
+    /// corps dérivé le marquera en échec plutôt que de refuser la
+    /// session entière. Le solveur reçoit les cotes figées, jamais
+    /// une expression (frontière forge-values → forge-gcs).
+    pub fn croquis_figes_pour_cad(
+        &mut self,
+        solveur: &mut dyn Solveur2D,
+    ) -> BTreeMap<u32, Contour2> {
+        let mut references: BTreeSet<u32> = BTreeSet::new();
+        for (_, feature) in self.cad.features() {
+            if let FeatureCad::Extrusion { croquis, .. } = feature {
+                references.insert(*croquis);
+            }
+        }
+        let mut figes = BTreeMap::new();
+        for croquis in references {
+            let Some(fige) = self.croquis_figé(croquis) else {
+                continue;
+            };
+            let Ok(resolu) = fige.resoudre_croquis(croquis, solveur) else {
+                continue;
+            };
+            let Some(entites) = fige.entites_du_croquis(croquis) else {
+                continue;
+            };
+            let positions = |point: u32| resolu.position(point);
+            let segments = crate::cad::segments_du_croquis(entites, &positions);
+            let Some(contour) = crate::cad::premier_contour_ferme(&segments) else {
+                continue;
+            };
+            figes.insert(croquis, contour);
+        }
+        figes
+    }
+
+    /// Clone de la projection d'esquisse avec les cotes du croquis
+    /// figées par le moteur de liaisons ; une cote qui n'évalue pas
+    /// ou n'évalue pas en une longueur finie et strictement positive
+    /// invalide le croquis entier (None).
+    fn croquis_figé(&mut self, croquis: u32) -> Option<EsquisseProjection> {
+        let mut fige = self.esquisse.clone();
+        for alias in fige.alias_des_cotes_du_croquis(croquis).unwrap_or_default() {
+            let millimetres = self.graph_mut().value(&alias).ok()?;
+            if !millimetres.is_finite() || millimetres <= 0.0 {
+                return None;
+            }
+            fige.figer_cote(&alias, Length::from_millimeters(millimetres));
+        }
+        Some(fige)
+    }
+
+    /// Profondeurs des features à cote pilotée (ADR-0024 D4) : pour
+    /// chaque extrusion dont la profondeur est une expression, la
+    /// valeur du nœud `cad.*` correspondant, figée en millimètres —
+    /// les cotes qui n'évaluent pas ou n'évaluent pas en une
+    /// longueur finie et strictement positive sont sautées, le corps
+    /// dérivé marquera la feature en échec (OF-CAD-0005).
+    pub fn profondeurs_pour_cad(&mut self) -> BTreeMap<u32, Length> {
+        // Emprunts séparés (E0502) : les alias sont collectés d'abord,
+        // le graphe muté ensuite.
+        let mut a_evaluer: Vec<(u32, String)> = Vec::new();
+        for (id, feature) in self.cad.features() {
+            if let FeatureCad::Extrusion {
+                profondeur: ProfondeurCad::Cote(ValeurCote::Expression { alias, .. }),
+                ..
+            } = feature
+            {
+                a_evaluer.push((*id, alias.clone()));
+            }
+        }
+        let mut profondeurs = BTreeMap::new();
+        for (id, alias) in a_evaluer {
+            if let Ok(millimetres) = self.graph_mut().value(&alias)
+                && millimetres.is_finite()
+                && millimetres > 0.0
+            {
+                profondeurs.insert(id, Length::from_millimeters(millimetres));
+            }
+        }
+        profondeurs
+    }
+
     /// Croquis prêt pour la résolution (ADR-0019) : clone de la
     /// projection, cotes pilotées figées par le moteur de liaisons —
     /// le solveur ne voit jamais une expression (frontière
@@ -368,7 +501,8 @@ impl Session {
     }
 
     /// Types d'événements « ignorés » par l'interface : inconnus de
-    /// toutes les projections (values, geom, esquisse, enregistrées) — un type
+    /// toutes les projections (values, geom, esquisse, cad,
+    /// enregistrées) — un type
     /// connu d'une seule projection n'est pas un type ignoré (ADR-0011).
     pub fn unknown_types(&self) -> Vec<String> {
         self.values
@@ -377,6 +511,7 @@ impl Session {
             .filter(|event_type| {
                 !self.geom.types_connus().contains(&event_type.as_str())
                     && !self.esquisse.types_connus().contains(&event_type.as_str())
+                    && !self.cad.types_connus().contains(&event_type.as_str())
                     && self
                         .projections
                         .iter()
@@ -449,6 +584,7 @@ impl Session {
         self.values.apply(event)?;
         self.geom.apply(event)?;
         self.esquisse.apply(event)?;
+        self.cad.apply(event)?;
         for projection in &mut self.projections {
             projection.apply(event)?;
         }
@@ -460,6 +596,7 @@ impl Session {
         self.values.reset();
         self.geom.reset();
         self.esquisse.reset();
+        self.cad.reset();
         for projection in &mut self.projections {
             projection.reset();
         }

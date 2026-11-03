@@ -52,7 +52,12 @@ fn supprime(g: &mut ValueGraph, nom: &str, mode: &ModeSuppression) -> ResultatSu
 #[test]
 fn les_prefixes_reserves_sont_refuses() {
     let mut g = ValueGraph::new();
-    for nom in ["esquisse.mien", "param.x", "doc.y"] {
+    for nom in [
+        "esquisse.mien",
+        "param.x",
+        "doc.y",
+        "cad.extrusion0.profondeur",
+    ] {
         refuse(
             g.set_input_unite(nom, 1.0, None, Origine::Utilisateur),
             "OF-VAL-0008",

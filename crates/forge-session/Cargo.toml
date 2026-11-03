@@ -20,6 +20,9 @@ forge-doc = { path = "../forge-doc" }
 # (default-features = false — le natif planegcs reste instancié par
 # l'application, frontière LGPL des ADR-0013/0018).
 forge-gcs = { path = "../forge-gcs", default-features = false }
+# Segments typés et contours (ADR-0024 D1, lot 1) : la reconstruction
+# CAO consomme les contours figés du croquis (ADR-0024 D4, lot 2).
+forge-geom = { path = "../forge-geom" }
 forge-units = { path = "../forge-units" }
 forge-values = { path = "../forge-values" }
 serde_json.workspace = true
