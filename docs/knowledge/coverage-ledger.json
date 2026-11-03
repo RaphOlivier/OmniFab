@@ -13,6 +13,7 @@
       "sha_code": "c36cb15",
       "sha_docs": "cd02d5d",
       "rapport": "docs/knowledge/archives/2026-11-03-j0-audit5-claude.md",
+    "consigne": "docs/knowledge/archives/2026-11-03-j0-consigne-audit5.md (archivée après coup le 2026-11-03 — source des A4-16..21 et des 14 conseils, écart de capitalisation soldé)",
       "verdict_mainteneur": "validé en bloc par Raphaël le 2026-11-03 — 0 réfuté",
       "signalements": ["A5-01", "A5-02", "A5-03", "A5-04", "A5-05", "A5-06", "A5-07", "A5-08"],
       "reverifies": ["A4-16", "A4-17", "A4-18", "A4-19", "A4-20", "A4-21", "A3-02/03", "A3-14", "A3-15/16", "A3-17", "A4-07", "A4-08", "A3-08.e"]
