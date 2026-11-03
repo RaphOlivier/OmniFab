@@ -76,6 +76,7 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`historique/`](knowledge/historique/KNOWLEDGE.md) | Protocole de versionnage des fiches |
 | [`historique/journal-fonctions.md`](knowledge/historique/journal-fonctions.md) | Journal append-only : une ligne par évolution de fonction (grep sur `F:<domaine>:<fonction>`) |
 | [`archives/`](knowledge/archives/KNOWLEDGE.md) | Résumés datés des discussions significatives — index ci-dessous |
+| [`coverage-ledger.json`](knowledge/coverage-ledger.json) | Registre de couverture des audits (protocole d'audit §5) : unités, SHA, verdicts, manques — point de départ de l'audit suivant |
 
 ### Archives des discussions
 
@@ -124,6 +125,8 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | [`2026-11-01-j3-decoupage-main-6-app`](knowledge/archives/2026-11-01-j3-decoupage-main-6-app.md) | J3 — découpage main.rs 6/6 : app.rs, tests du fil vers travail.rs, lanceur 53 lignes (PR #596) |
 | [`2026-11-02-j3-phaseB-lot1-segments-imports-natifs`](knowledge/archives/2026-11-02-j3-phaseB-lot1-segments-imports-natifs.md) | J3 — phase B lot 1 : segments typés, Path2 en chaîne, imports SVG/DXF natifs (PR #601) |
 | [`2026-11-03-j3-phaseB-lot2-forge-session`](knowledge/archives/2026-11-03-j3-phaseB-lot2-forge-session.md) | J3 — phase B lot 2 : forge-session — croquis nommés, features d'extrusion, alias cad., dette A3-08.e (PR #605) |
+| [`2026-11-03-j0-etude-tangency-labs`](knowledge/archives/2026-11-03-j0-etude-tangency-labs.md) | J0 — étude d'intégration Tangency Labs : B-light pour le noyau CAO, ADR-0035, matrice v9, fiche veille-écosystème (ligne ajoutée à la réception de l'audit 5 — omission de la resynchronisation du 2026-11-03) |
+| [`2026-11-03-j0-audit5-claude`](knowledge/archives/2026-11-03-j0-audit5-claude.md) | J0 — audit externe n°5 (Claude) : 8 signalements A5 + revérification A4-16..21, verdicts en bloc (0 réfuté) |
 
 ## Code
 
