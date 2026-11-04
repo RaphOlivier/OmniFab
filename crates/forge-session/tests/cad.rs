@@ -509,6 +509,44 @@ fn add_feature_refuse_profondeur_invalide() {
     assert_eq!(session.cad().features().len(), 1);
 }
 
+
+#[test]
+fn add_feature_refuse_couleur_hors_bornes() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    // A5-04 (audit n°5, ADR-0036 D2) : composantes RGBA finies ET
+    // dans 0..=1 — rouge 2.0 ou alpha négatif passaient au plan
+    // (rouge D2b)
+    for rgba in [
+        [2.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, -0.5],
+        [0.2, 0.4, 0.6, 1.5],
+    ] {
+        let avant = session.document().events().len();
+        let commande = AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+            couleur: Some(CouleurFeature {
+                rgba,
+                speculaire: 0.5,
+            }),
+        };
+        let erreur = session.execute(&commande).expect_err("couleur hors bornes");
+        assert_eq!(erreur.code(), "OF-SES-0001", "rgba {rgba:?}");
+        assert_eq!(
+            session.document().events().len(),
+            avant,
+            "rien au journal : rgba {rgba:?}"
+        );
+    }
+}
+
 #[test]
 fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
     let mut session = Session::new("tests");
@@ -886,6 +924,182 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
             solide.volume_mm3
         );
     }
+}
+
+
+#[test]
+fn rejeu_marque_en_echec_les_couleurs_hors_bornes() {
+    // A5-04 (audit n°5, ADR-0036 D2) : journal hostile — une
+    // composante RGBA hors 0..=1. Le rejeu marque la feature EN
+    // ÉCHEC OF-CAD-0005 ; le corps rendu par les features valides
+    // survit.
+    for rgba in [
+        [2.0, 0.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, -0.5],
+        [0.2, 0.4, 0.6, 1.5],
+    ] {
+        let mut document = Document::new();
+        // rectangle sur le croquis implicite 0 — entités au schéma
+        // v3 courant, même construction que le test des profondeurs
+        for (id, x, y) in [
+            (0, 0.0, 0.0),
+            (1, 40.0, 0.0),
+            (2, 40.0, 25.0),
+            (3, 0.0, 25.0),
+        ] {
+            document.append(NewEvent::new(
+                "sketch.entity.added",
+                3,
+                "tests",
+                serde_json::json!({"genre": "point", "croquis": 0, "id": id, "x": x, "y": y}),
+            ));
+        }
+        for (id, p1, p2) in [(4, 0, 1), (5, 1, 2), (6, 2, 3), (7, 3, 0)] {
+            document.append(NewEvent::new(
+                "sketch.entity.added",
+                3,
+                "tests",
+                serde_json::json!({"genre": "ligne", "croquis": 0, "id": id, "p1": p1, "p2": p2}),
+            ));
+        }
+        // feature valide (id 0, sans couleur) puis feature hostile
+        // (id 1, couleur hors bornes) : même forme que
+        // « cad.feature.added » v1
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": 0,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": 4.0}},
+                }
+            }),
+        ));
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": 1,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": 4.0}},
+                    "couleur": {"rgba": [rgba[0], rgba[1], rgba[2], rgba[3]], "speculaire": 0.5},
+                }
+            }),
+        ));
+        let mut session = Session::from_document("tests", document).expect("rejeu tolérant");
+        let mut solveur = Systeme2D::new().expect("solveur");
+        let contours = session.croquis_figes_pour_cad(&mut solveur);
+        let profondeurs = session.profondeurs_pour_cad();
+        let resultat =
+            session
+                .cad()
+                .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        assert!(
+            matches!(resultat.etats[0].1, EtatFeature::Ok),
+            "rgba {rgba:?} : la feature valide doit passer"
+        );
+        let code = resultat.etats[1]
+            .1
+            .code()
+            .unwrap_or_else(|| panic!("rgba {rgba:?} : échec typé attendu"));
+        assert_eq!(code, "OF-CAD-0005", "rgba {rgba:?}");
+        let solide = resultat
+            .corps
+            .unwrap_or_else(|| panic!("rgba {rgba:?} : le corps valide survit"));
+        assert!(
+            (solide.volume_mm3 - 4000.0).abs() < 1e-9,
+            "rgba {rgba:?} : volume attendu 4 000 mm³, obtenu {}",
+            solide.volume_mm3
+        );
+    }
+}
+
+/// Moteur dont la boîte englobante est dégénérée (diagonale 0) :
+/// l'enveloppe « à travers » résout une profondeur nulle — jamais
+/// transmise au moteur, la garde D1 la marque en échec (ADR-0036
+/// D2 : « à travers » suit D1).
+struct MoteurBoiteDegeneree;
+
+impl MoteurCad for MoteurBoiteDegeneree {
+    type Solide = ();
+
+    fn extruder(
+        &self,
+        _contour: &Contour2,
+        _mode: ModeExtrusion,
+        _profondeur: Length,
+    ) -> Result<(), ErreurMoteurCad> {
+        Ok(())
+    }
+
+    fn fusionner(&self, _base: &(), _autre: &()) -> Result<(), ErreurMoteurCad> {
+        Ok(())
+    }
+
+    fn soustraire(&self, _base: &(), _outil: &()) -> Result<(), ErreurMoteurCad> {
+        Err(echec("soustraction sans objet"))
+    }
+
+    fn tesseller(&self, _solide: &(), _tolerance: Length) -> Result<Mesh, ErreurMoteurCad> {
+        Ok(Mesh::new())
+    }
+
+    fn boite_englobante(&self, _solide: &()) -> Result<BoiteEnglobante, ErreurMoteurCad> {
+        let coin = Point3::new(mm(0.0), mm(0.0), mm(0.0)).expect("origine");
+        Ok(BoiteEnglobante { min: coin, max: coin })
+    }
+}
+
+#[test]
+fn a_travers_sur_boite_degeneree_part_en_echec() {
+    // ADR-0036 D2 : « à travers » suit D1 — une boîte dégénérée
+    // (diagonale 0) résout une profondeur nulle : EnÉchec
+    // OF-CAD-0005, jamais transmise au moteur ; le corps courant
+    // survit.
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "corps".to_string(),
+        })
+        .expect("croquis");
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+            couleur: None,
+        })
+        .expect("corps extrudé");
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::ATravers,
+            couleur: None,
+        })
+        .expect("à travers posée");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let profondeurs = session.profondeurs_pour_cad();
+    let resultat = session
+        .cad()
+        .reconstruire(&MoteurBoiteDegeneree, &contours, &profondeurs);
+    assert!(matches!(resultat.etats[0].1, EtatFeature::Ok));
+    let code = resultat.etats[1]
+        .1
+        .code()
+        .unwrap_or_else(|| panic!("boîte dégénérée : échec typé attendu"));
+    assert_eq!(code, "OF-CAD-0005");
+    let _corps = resultat.corps.expect("le corps valide survit");
 }
 
 #[test]
