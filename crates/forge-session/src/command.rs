@@ -15,6 +15,7 @@ use crate::cad::{
 use crate::esquisse::{ContrainteEsquisse, EntiteEsquisse, ValeurCote};
 use crate::{Session, SessionError};
 use forge_doc::NewEvent;
+use forge_geom::MAGNITUDE_MAX_MM;
 use forge_units::Length;
 use forge_values::ValuesError;
 use forge_values::{
@@ -883,9 +884,14 @@ fn feature_valide(
     }
     match profondeur {
         ProfondeurFeature::Fixe { mm } => {
-            if !mm.millimeters().is_finite() || mm.millimeters() <= 0.0 {
+            // ADR-0036 D1 (A5-04) : la borne haute manquait — 1e300 mm
+            // passait au plan. La garde commune refuse les profondeurs
+            // non finies, négatives et démesurées, rien au journal.
+            if !crate::cad::profondeur_valide(mm.millimeters()) {
                 return Err(SessionError::CommandRejected {
-                    reason: "la profondeur doit être finie et strictement positive".to_string(),
+                    reason: format!(
+                        "la profondeur doit être finie, strictement positive et au plus {MAGNITUDE_MAX_MM} mm"
+                    ),
                 });
             }
         }

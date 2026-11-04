@@ -875,11 +875,11 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
         let code = resultat.etats[1]
             .1
             .code()
-            .expect(&format!("profondeur {profondeur} : échec typé attendu"));
+            .unwrap_or_else(|| panic!("profondeur {profondeur} : échec typé attendu"));
         assert_eq!(code, "OF-CAD-0005", "profondeur {profondeur}");
         let solide = resultat
             .corps
-            .expect(&format!("profondeur {profondeur} : le corps valide survit"));
+            .unwrap_or_else(|| panic!("profondeur {profondeur} : le corps valide survit"));
         assert!(
             (solide.volume_mm3 - 4000.0).abs() < 1e-9,
             "profondeur {profondeur} : volume attendu 4 000 mm³, obtenu {}",

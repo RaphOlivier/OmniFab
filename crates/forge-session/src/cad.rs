@@ -25,7 +25,9 @@ use crate::esquisse::{
 };
 use crate::projection::{Projection, TypesIgnores, verifie_schema};
 use forge_doc::NewEvent;
-use forge_geom::{Contour2, Mesh, Point2, Point3, Segment2, SensHoraire, points_recolles};
+use forge_geom::{
+    Contour2, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Segment2, SensHoraire, points_recolles,
+};
 use forge_units::{Angle, Length};
 use std::collections::BTreeMap;
 
@@ -186,6 +188,17 @@ impl EtatFeature {
             Self::EnEchec { .. } => Some("OF-CAD-0005"),
         }
     }
+}
+
+/// Garde commune des profondeurs d'extrusion (ADR-0036 D1, A5-04 —
+/// audit n°5) : finie, strictement positive, bornée haute à la
+/// magnitude maximale du projet ([`MAGNITUDE_MAX_MM`], 1e9 mm).
+/// Appelée avant chaque appel moteur au rejeu — invalide : feature
+/// [`EtatFeature::EnEchec`] (OF-CAD-0005), le corps survit — et à
+/// l'écriture (`feature_valide`, refus OF-SES-0001). La garde vit
+/// à la frontière, jamais dans le moteur.
+pub(crate) fn profondeur_valide(mm: f64) -> bool {
+    mm.is_finite() && mm > 0.0 && mm <= MAGNITUDE_MAX_MM
 }
 
 /// Facteur de l'enveloppe « à travers » (ADR-0024 D4) : la profondeur
@@ -406,6 +419,17 @@ impl CadProjection {
                     Length::from_millimeters(FACTEUR_ATRAVERS * boite.diagonale())
                 }
             };
+            // ADR-0036 D1 (A5-04) : garde sur la valeur résolue —
+            // fixe, expression figée ou enveloppe « à travers ».
+            // Le rejeu d'un journal hostile ne l'extrue jamais :
+            // échec typé OF-CAD-0005, le corps courant survit.
+            let profondeur_mm = profondeur.millimeters();
+            if !profondeur_valide(profondeur_mm) {
+                etats.push(echec(format!(
+                    "la profondeur {profondeur_mm} mm doit être finie, strictement positive et au plus {MAGNITUDE_MAX_MM} mm"
+                )));
+                continue;
+            }
             let solide = match moteur.extruder(contour, *mode, profondeur) {
                 Ok(solide) => solide,
                 Err(erreur) => {
