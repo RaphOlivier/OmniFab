@@ -479,7 +479,11 @@ fn add_feature_refuse_profondeur_invalide() {
         })
         .expect("croquis");
     pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
-    for profondeur in [0.0, -4.0, f64::NAN] {
+    // A5-04 (audit n°5, ADR-0036) : bornes de la profondeur fixe —
+    // finie, strictement positive, bornée haut : 1e300 mm passait
+    // à l'écriture (rouge D1c)
+    for profondeur in [0.0, -4.0, 1e300, f64::NAN] {
+        let avant = session.document().events().len();
         let commande = AddFeature {
             croquis: 1,
             mode: ModeExtrusion::Addition,
@@ -488,6 +492,11 @@ fn add_feature_refuse_profondeur_invalide() {
         };
         let erreur = session.execute(&commande).expect_err("profondeur invalide");
         assert_eq!(erreur.code(), "OF-SES-0001", "profondeur {profondeur}");
+        assert_eq!(
+            session.document().events().len(),
+            avant,
+            "rien au journal : profondeur {profondeur}"
+        );
     }
     // « à travers », lui, n'a pas de profondeur à valider — accepté
     let commande = AddFeature {
@@ -788,6 +797,89 @@ fn rejeu_reconstruit_le_meme_corps() {
         .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
     let solide = resultat.corps.expect("corps rejoué");
     assert!((solide.volume_mm3 - 4000.0).abs() <= 1e-6);
+}
+
+#[test]
+fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
+    // A5-04 (audit n°5, ADR-0036) : journal hostile — la profondeur
+    // fixe d'une feature est nulle, négative ou colossale. Le rejeu
+    // marque la feature EN ÉCHEC OF-CAD-0005 ; le corps rendu par
+    // les features valides survit.
+    for profondeur in [0.0, -5.0, 1e300] {
+        let mut document = Document::new();
+        // rectangle sur le croquis implicite 0 — entités au schéma
+        // v3 courant, même forme que la sérialisation d'esquisse
+        for (id, x, y) in [(0, 0.0, 0.0), (1, 40.0, 0.0), (2, 40.0, 25.0), (3, 0.0, 25.0)] {
+            document.append(NewEvent::new(
+                "sketch.entity.added",
+                3,
+                "tests",
+                serde_json::json!({"genre": "point", "croquis": 0, "id": id, "x": x, "y": y}),
+            ));
+        }
+        for (id, p1, p2) in [(4, 0, 1), (5, 1, 2), (6, 2, 3), (7, 3, 0)] {
+            document.append(NewEvent::new(
+                "sketch.entity.added",
+                3,
+                "tests",
+                serde_json::json!({"genre": "ligne", "croquis": 0, "id": id, "p1": p1, "p2": p2}),
+            ));
+        }
+        // feature valide (id 0) puis feature hostile (id 1) : même
+        // forme que « cad.feature.added » v1, couleur absente
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": 0,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": 4.0}},
+                }
+            }),
+        ));
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": 1,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": profondeur}},
+                }
+            }),
+        ));
+        let session = Session::from_document("tests", document).expect("rejeu tolérant");
+        let mut solveur = Systeme2D::new().expect("solveur");
+        let contours = session.croquis_figes_pour_cad(&mut solveur);
+        let profondeurs = session.profondeurs_pour_cad();
+        let resultat = session
+            .cad()
+            .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        assert!(
+            matches!(resultat.etats[0].1, EtatFeature::Ok),
+            "profondeur {profondeur} : la feature valide doit passer"
+        );
+        let code = resultat.etats[1]
+            .1
+            .code()
+            .expect(&format!("profondeur {profondeur} : échec typé attendu"));
+        assert_eq!(code, "OF-CAD-0005", "profondeur {profondeur}");
+        let solide = resultat
+            .corps
+            .expect(&format!("profondeur {profondeur} : le corps valide survit"));
+        assert!(
+            (solide.volume_mm3 - 4000.0).abs() < 1e-9,
+            "profondeur {profondeur} : volume attendu 4 000 mm³, obtenu {}",
+            solide.volume_mm3
+        );
+    }
 }
 
 #[test]
