@@ -59,8 +59,8 @@ pub(crate) fn validate_blob_name(name: &str) -> Result<(), DocError> {
 /// Lit une entrée d'archive en bornant sa taille : une entrée qui
 /// dépasse `limit` est une erreur OF-DOC-0011, sans jamais charger le
 /// dépassement en mémoire (garde-fou « bombe ZIP »).
-fn read_bounded(
-    file: &mut zip::read::ZipFile,
+fn read_bounded<R: Read + ?Sized>(
+    file: &mut zip::read::ZipFile<'_, R>,
     entry: &str,
     limit: u64,
 ) -> Result<Vec<u8>, DocError> {
@@ -96,8 +96,8 @@ pub(crate) fn journal_digest(events: &[Event], at_seq: u64) -> String {
 }
 
 /// Comme [`read_bounded`], puis décode en UTF-8.
-fn bounded_string(
-    file: &mut zip::read::ZipFile,
+fn bounded_string<R: Read + ?Sized>(
+    file: &mut zip::read::ZipFile<'_, R>,
     entry: &str,
     limit: u64,
 ) -> Result<String, DocError> {
@@ -232,7 +232,8 @@ pub(crate) fn read(
     // plafond.
     let mut names: Vec<String> = Vec::new();
     for index in 0..archive.len() {
-        names.push(archive.by_index(index)?.name().to_string());
+        // zip 9 : `name()` est devenu faillible (décodage du nom).
+        names.push(archive.by_index(index)?.name()?.to_string());
     }
     let mut blobs = BTreeMap::new();
     let mut total_blob_bytes: u64 = 0;
