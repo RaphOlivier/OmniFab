@@ -38,7 +38,7 @@ fn toutes_les_variantes() -> Vec<DocError> {
         DocError::MissingEntry {
             path: "manifest.json".to_string(),
         },
-        DocError::Archive(zip::result::ZipError::InvalidArchive("archive")),
+        DocError::Archive(zip::result::ZipError::InvalidArchive("archive".into())),
         DocError::Serialization(serde_json::from_str::<i32>("invalide").unwrap_err()),
         DocError::Io(std::io::Error::other("test")),
         DocError::EntryTooLarge {
