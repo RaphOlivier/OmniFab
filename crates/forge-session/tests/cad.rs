@@ -860,7 +860,7 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
                 }
             }),
         ));
-        let session = Session::from_document("tests", document).expect("rejeu tolérant");
+        let mut session = Session::from_document("tests", document).expect("rejeu tolérant");
         let mut solveur = Systeme2D::new().expect("solveur");
         let contours = session.croquis_figes_pour_cad(&mut solveur);
         let profondeurs = session.profondeurs_pour_cad();
