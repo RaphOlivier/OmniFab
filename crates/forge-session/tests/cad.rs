@@ -809,7 +809,12 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
         let mut document = Document::new();
         // rectangle sur le croquis implicite 0 — entités au schéma
         // v3 courant, même forme que la sérialisation d'esquisse
-        for (id, x, y) in [(0, 0.0, 0.0), (1, 40.0, 0.0), (2, 40.0, 25.0), (3, 0.0, 25.0)] {
+        for (id, x, y) in [
+            (0, 0.0, 0.0),
+            (1, 40.0, 0.0),
+            (2, 40.0, 25.0),
+            (3, 0.0, 25.0),
+        ] {
             document.append(NewEvent::new(
                 "sketch.entity.added",
                 3,
@@ -859,9 +864,10 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
         let mut solveur = Systeme2D::new().expect("solveur");
         let contours = session.croquis_figes_pour_cad(&mut solveur);
         let profondeurs = session.profondeurs_pour_cad();
-        let resultat = session
-            .cad()
-            .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        let resultat =
+            session
+                .cad()
+                .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
         assert!(
             matches!(resultat.etats[0].1, EtatFeature::Ok),
             "profondeur {profondeur} : la feature valide doit passer"
