@@ -862,8 +862,9 @@ fn profondeur_de_commande(id: u32, profondeur: &ProfondeurFeature) -> Profondeur
 
 /// Garde commune des commandes de feature (ADR-0024 §7, lot 2) :
 /// croquis connu et pourvu d'un contour fermé aux graines du journal,
-/// profondeur valide, couleur finie — un refus ne laisse rien au
-/// journal (OF-SES-0001).
+/// profondeur valide, couleur aux composantes RGBA finies et dans
+/// 0..=1 (ADR-0036 D2) — un refus ne laisse rien au journal
+/// (OF-SES-0001).
 fn feature_valide(
     session: &Session,
     croquis: u32,
@@ -911,11 +912,14 @@ fn feature_valide(
         }
         ProfondeurFeature::ATravers => {}
     }
-    if let Some(couleur) = couleur
-        && (!couleur.rgba.iter().all(|c| c.is_finite()) || !couleur.speculaire.is_finite())
-    {
+    // ADR-0036 D2 (A5-04) : composantes RGBA finies ET dans 0..=1 —
+    // un rouge à 2.0 ou un alpha négatif passaient au plan. Même
+    // garde commune que le rejeu (`crate::cad::couleur_valide`),
+    // refus OF-SES-0001, rien au journal.
+    if let Some(couleur) = couleur && !crate::cad::couleur_valide(couleur) {
         return Err(SessionError::CommandRejected {
-            reason: "les composantes de la couleur doivent être finies".to_string(),
+            reason: "les composantes RGBA de la couleur doivent être finies et dans 0..=1"
+                .to_string(),
         });
     }
     Ok(())

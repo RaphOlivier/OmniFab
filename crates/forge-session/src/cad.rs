@@ -201,6 +201,18 @@ pub(crate) fn profondeur_valide(mm: f64) -> bool {
     mm.is_finite() && mm > 0.0 && mm <= MAGNITUDE_MAX_MM
 }
 
+/// Garde commune des couleurs d'affichage (ADR-0036 D2, A5-04 —
+/// audit n°5) : composantes RGBA finies et dans 0..=1, composante
+/// spéculaire finie. Appelée avant chaque extrusion au rejeu —
+/// invalide : feature [`EtatFeature::EnEchec`] (OF-CAD-0005), le
+/// corps survit — et à l'écriture (`feature_valide`, refus
+/// OF-SES-0001). La garde vit à la frontière, jamais dans le
+/// moteur.
+pub(crate) fn couleur_valide(couleur: &CouleurFeature) -> bool {
+    couleur.rgba.iter().all(|c| c.is_finite() && (0.0..=1.0).contains(c))
+        && couleur.speculaire.is_finite()
+}
+
 /// Facteur de l'enveloppe « à travers » (ADR-0024 D4) : la profondeur
 /// dérivée vaut ce facteur × la diagonale de la boîte du corps
 /// courant — jamais journalisée, recomputée à chaque reconstruction.
@@ -370,7 +382,7 @@ impl CadProjection {
                 croquis,
                 mode,
                 profondeur,
-                ..
+                couleur,
             } = feature
             else {
                 etats.push((
@@ -392,6 +404,16 @@ impl CadProjection {
                 etats.push(echec(format!(
                     "le contour du croquis {croquis} n'est pas fermé"
                 )));
+                continue;
+            }
+            // ADR-0036 D2 (A5-04) : garde sur la couleur d'affichage —
+            // le rejeu d'un journal hostile n'extrue jamais une
+            // couleur hors bornes : échec typé OF-CAD-0005, le corps
+            // courant survit.
+            if let Some(couleur) = couleur && !couleur_valide(couleur) {
+                etats.push(echec(
+                    "la couleur exige ses composantes RGBA finies dans 0..=1".to_string(),
+                ));
                 continue;
             }
             let profondeur = match profondeur {
