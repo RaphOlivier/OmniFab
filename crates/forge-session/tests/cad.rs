@@ -509,7 +509,6 @@ fn add_feature_refuse_profondeur_invalide() {
     assert_eq!(session.cad().features().len(), 1);
 }
 
-
 #[test]
 fn add_feature_refuse_couleur_hors_bornes() {
     let mut session = Session::new("tests");
@@ -926,7 +925,6 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
     }
 }
 
-
 #[test]
 fn rejeu_marque_en_echec_les_couleurs_hors_bornes() {
     // A5-04 (audit n°5, ADR-0036 D2) : journal hostile — une
@@ -1054,7 +1052,10 @@ impl MoteurCad for MoteurBoiteDegeneree {
 
     fn boite_englobante(&self, _solide: &()) -> Result<BoiteEnglobante, ErreurMoteurCad> {
         let coin = Point3::new(mm(0.0), mm(0.0), mm(0.0)).expect("origine");
-        Ok(BoiteEnglobante { min: coin, max: coin })
+        Ok(BoiteEnglobante {
+            min: coin,
+            max: coin,
+        })
     }
 }
 
@@ -1099,7 +1100,7 @@ fn a_travers_sur_boite_degeneree_part_en_echec() {
         .code()
         .unwrap_or_else(|| panic!("boîte dégénérée : échec typé attendu"));
     assert_eq!(code, "OF-CAD-0005");
-    let _corps = resultat.corps.expect("le corps valide survit");
+    resultat.corps.expect("le corps valide survit");
 }
 
 #[test]
