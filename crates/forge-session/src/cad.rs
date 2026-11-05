@@ -209,7 +209,10 @@ pub(crate) fn profondeur_valide(mm: f64) -> bool {
 /// OF-SES-0001). La garde vit à la frontière, jamais dans le
 /// moteur.
 pub(crate) fn couleur_valide(couleur: &CouleurFeature) -> bool {
-    couleur.rgba.iter().all(|c| c.is_finite() && (0.0..=1.0).contains(c))
+    couleur
+        .rgba
+        .iter()
+        .all(|c| c.is_finite() && (0.0..=1.0).contains(c))
         && couleur.speculaire.is_finite()
 }
 
@@ -410,7 +413,9 @@ impl CadProjection {
             // le rejeu d'un journal hostile n'extrue jamais une
             // couleur hors bornes : échec typé OF-CAD-0005, le corps
             // courant survit.
-            if let Some(couleur) = couleur && !couleur_valide(couleur) {
+            if let Some(couleur) = couleur
+                && !couleur_valide(couleur)
+            {
                 etats.push(echec(
                     "la couleur exige ses composantes RGBA finies dans 0..=1".to_string(),
                 ));

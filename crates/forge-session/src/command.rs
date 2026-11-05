@@ -916,7 +916,9 @@ fn feature_valide(
     // un rouge à 2.0 ou un alpha négatif passaient au plan. Même
     // garde commune que le rejeu (`crate::cad::couleur_valide`),
     // refus OF-SES-0001, rien au journal.
-    if let Some(couleur) = couleur && !crate::cad::couleur_valide(couleur) {
+    if let Some(couleur) = couleur
+        && !crate::cad::couleur_valide(couleur)
+    {
         return Err(SessionError::CommandRejected {
             reason: "les composantes RGBA de la couleur doivent être finies et dans 0..=1"
                 .to_string(),
