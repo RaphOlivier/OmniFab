@@ -175,7 +175,7 @@ fn orientation_exacte(a: (f64, f64), b: (f64, f64), c: (f64, f64)) -> f64 {
 /// positive ni strictement négative (collinéarité exacte du
 /// prédicat Shewchuk).
 fn est_aligne(orientation: f64) -> bool {
-    !(orientation > 0.0 || orientation < 0.0)
+    orientation != 0.0
 }
 
 /// Vrai si le point `p` — supposé aligné avec le segment — est
