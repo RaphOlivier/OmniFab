@@ -123,7 +123,11 @@ fn prisme_points_alignes_rejete() {
 /// (aire/périmètre < TOLERANCE_MM), pas en aire absolue — refus.
 #[test]
 fn prisme_refuse_triangle_quasi_plat_a_echelle_reelle() {
-    let lame = [(mm(0.0), mm(0.0)), (mm(1000.0), mm(0.0)), (mm(500.0), mm(5e-7))];
+    let lame = [
+        (mm(0.0), mm(0.0)),
+        (mm(1000.0), mm(0.0)),
+        (mm(500.0), mm(5e-7)),
+    ];
     let erreur = Solide::prisme(&lame, mm(5.0)).unwrap_err().code();
     assert_eq!(erreur, "OF-CAD-0002");
 }
@@ -135,7 +139,11 @@ fn prisme_refuse_triangle_quasi_plat_a_echelle_reelle() {
 /// passer.
 #[test]
 fn prisme_refuse_alignement_aux_grandes_coordonnees() {
-    let grand = [(mm(0.0), mm(0.0)), (mm(1_000_000.0), mm(0.0)), (mm(500_000.0), mm(1e-7))];
+    let grand = [
+        (mm(0.0), mm(0.0)),
+        (mm(1_000_000.0), mm(0.0)),
+        (mm(500_000.0), mm(1e-7)),
+    ];
     let erreur = Solide::prisme(&grand, mm(5.0)).unwrap_err().code();
     assert_eq!(erreur, "OF-CAD-0002");
 }
