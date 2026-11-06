@@ -398,10 +398,7 @@ impl Session {
     /// marquera en échec plutôt que de refuser la session entière.
     /// Le solveur reçoit les cotes figées, jamais une expression
     /// (frontière forge-values → forge-gcs).
-    pub fn croquis_figes_pour_cad(
-        &mut self,
-        solveur: &mut dyn Solveur2D,
-    ) -> BTreeMap<u32, Region> {
+    pub fn croquis_figes_pour_cad(&mut self, solveur: &mut dyn Solveur2D) -> BTreeMap<u32, Region> {
         let mut references: BTreeSet<u32> = BTreeSet::new();
         for (_, feature) in self.cad.features() {
             if let FeatureCad::Extrusion { croquis, .. } = feature {

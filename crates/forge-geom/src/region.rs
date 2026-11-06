@@ -74,8 +74,7 @@ mod tests {
 
     /// Point de test (mm).
     fn point(x: f64, y: f64) -> Point2 {
-        Point2::new(Length::from_millimeters(x), Length::from_millimeters(y))
-            .expect("point fini")
+        Point2::new(Length::from_millimeters(x), Length::from_millimeters(y)).expect("point fini")
     }
 
     /// Ligne de test entre deux points (mm).

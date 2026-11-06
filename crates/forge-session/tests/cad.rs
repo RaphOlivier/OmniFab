@@ -1413,9 +1413,11 @@ fn anneau_extrude_aire_nette_et_rejeu_deux_fois() {
         let mut solveur_rejeu = Systeme2D::new().expect("solveur");
         let regions_rejees = rejouee.croquis_figes_pour_cad(&mut solveur_rejeu);
         let profondeurs_rejees = rejouee.profondeurs_pour_cad();
-        let rejoue = rejouee
-            .cad()
-            .reconstruire(&MoteurPrismesAnalytiques, &regions_rejees, &profondeurs_rejees);
+        let rejoue = rejouee.cad().reconstruire(
+            &MoteurPrismesAnalytiques,
+            &regions_rejees,
+            &profondeurs_rejees,
+        );
         let solide = rejoue
             .corps
             .unwrap_or_else(|| panic!("rejeu {rejeu} : le corps doit survivre"));
