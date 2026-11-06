@@ -24,8 +24,9 @@ mod segments;
 pub use error::GeomError;
 
 pub use segments::{
-    Contour2, ErreurContour, MAX_POINTS_DISCRETISATION, MAX_PROFONDEUR_SUBDIVISION, Segment2,
-    SensHoraire, TOLERANCE_DISCRETISATION_MM, contours, points_recolles,
+    Contour2, ErreurContour, MAX_ENTITES_CHAINAGE, MAX_POINTS_DISCRETISATION,
+    MAX_PROFONDEUR_SUBDIVISION, Segment2, SensHoraire, TOLERANCE_DISCRETISATION_MM, contours,
+    points_recolles,
 };
 
 use forge_units::Length;
