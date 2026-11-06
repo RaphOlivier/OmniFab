@@ -18,9 +18,14 @@ fn toutes_les_variantes() -> Vec<GeomError> {
         GeomError::CoordonneeHorsBornes { axis: "x" },
         GeomError::DiscretisationImpossible { raison: "test" },
         GeomError::BudgetDiscretisationDepasse { raison: "test" },
-        GeomError::ChainageRompu {
-            index: 1,
-            ecart: Length::from_millimeters(1.0),
+        GeomError::EmbranchementContour {
+            x: Length::from_millimeters(1.0),
+            y: Length::from_millimeters(1.0),
+            degre: 4,
+        },
+        GeomError::PlafondChainageDepasse {
+            entites: 10_001,
+            plafond: 10_000,
         },
     ]
 }

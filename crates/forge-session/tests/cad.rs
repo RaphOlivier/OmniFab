@@ -3,8 +3,8 @@
 //! features d'extrusion (`cad.feature.added` / `cad.feature.updated`)
 //! et alias `cad.*` auto-nommés — la reconstruction du corps passe
 //! par un moteur CAO **injecté** ([`MoteurCad`]) : moteur de test
-//! trivial, volumes analytiques du prisme (aire du lacet de la
-//! discrétisation × profondeur).
+//! trivial, volumes analytiques du prisme (aire nette du lacet de
+//! la discrétisation — extérieur moins trous — × profondeur).
 
 // Convention expect v2 (2026-11-01, lot E) : échafaudage de test —
 // `allow-expect-in-tests` (clippy.toml) ne couvre que les fonctions
@@ -14,7 +14,7 @@
 
 use forge_doc::{Document, NewEvent};
 use forge_gcs::Systeme2D;
-use forge_geom::{Contour2, Mesh, Point2, Point3, TOLERANCE_DISCRETISATION_MM};
+use forge_geom::{Mesh, Point2, Point3, Region, TOLERANCE_DISCRETISATION_MM};
 use forge_session::{
     AddEntity, AddFeature, BoiteEnglobante, CouleurFeature, CreateSketch, EVENT_FEATURE_ADDED,
     EVENT_FEATURE_UPDATED, EVENT_SKETCH_CREATED, EVENT_SKETCH_ENTITY_ADDED,
@@ -79,6 +79,19 @@ fn pose_cercle(session: &mut Session, x: f64, y: f64, rayon: f64) {
     session.execute(&AddEntity { entite }).expect("cercle posé");
 }
 
+/// Aire du lacet (valeur absolue) d'une polyligne discrétisée.
+fn aire_du_lacet(points: &[Point2]) -> f64 {
+    let mut aire = 0.0;
+    for i in 0..points.len() {
+        let a = points[i];
+        let b = points[(i + 1) % points.len()];
+        let croix_x = a.x().millimeters() * b.y().millimeters();
+        let croix_y = b.x().millimeters() * a.y().millimeters();
+        aire += croix_x - croix_y;
+    }
+    aire.abs() / 2.0
+}
+
 /// Solide analytique du moteur trivial : volume et boîte
 /// englobante — assez pour les volumes attendus des tests, jamais
 /// pour la géométrie réelle (lot 3, noyau OCCT).
@@ -127,26 +140,29 @@ impl MoteurCad for MoteurPrismesAnalytiques {
 
     fn extruder(
         &self,
-        contour: &Contour2,
+        region: &Region,
         _mode: ModeExtrusion,
         profondeur: Length,
     ) -> Result<SolideAnalytique, ErreurMoteurCad> {
         let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
-        let points = contour
+        let points = region
+            .exterieur()
             .discretiser(tolerance)
             .map_err(|erreur| echec(&erreur.to_string()))?;
         if points.len() < 3 {
-            return Err(echec("moins de trois sommets au contour"));
+            return Err(echec("moins de trois sommets au contour extérieur"));
         }
-        let mut aire = 0.0;
-        for i in 0..points.len() {
-            let a = points[i];
-            let b = points[(i + 1) % points.len()];
-            let croix_x = a.x().millimeters() * b.y().millimeters();
-            let croix_y = b.x().millimeters() * a.y().millimeters();
-            aire += croix_x - croix_y;
+        // ADR-0037 D3 : aire nette — l'extérieur moins les trous.
+        let mut aire = aire_du_lacet(&points);
+        for trou in region.trous() {
+            let points_trou = trou
+                .discretiser(tolerance)
+                .map_err(|erreur| echec(&erreur.to_string()))?;
+            aire -= aire_du_lacet(&points_trou);
         }
-        let aire = aire.abs() / 2.0;
+        if aire <= 0.0 {
+            return Err(echec("région d'aire nette vide ou négative"));
+        }
         Ok(SolideAnalytique {
             volume_mm3: aire * profondeur.millimeters(),
             boite: boite_des_points(&points, profondeur),
@@ -409,11 +425,11 @@ fn add_feature_extrusion_rectangle_volume_analytique() {
     }
     // reconstruction : volume analytique du prisme 40×25×4
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
     let corps = session
         .cad()
-        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
     let solide = corps.corps.expect("corps reconstruit");
     assert!(
         (solide.volume_mm3 - 4000.0).abs() < 1e-9,
@@ -589,11 +605,11 @@ fn add_feature_expression_pose_alias_auto_et_undo_groupe() {
     assert_eq!(session.cad().features().len(), 1);
     // profondeur évaluée : 2 × epaisseur = 4 mm — volume analytique
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
     let corps = session
         .cad()
-        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
     let solide = corps.corps.expect("corps reconstruit");
     assert!(
         (solide.volume_mm3 - 4000.0).abs() < 1e-9,
@@ -721,11 +737,11 @@ fn poche_a_travers_perce_le_corps() {
     // diagonale de la boîte du corps courant (40×25×12) — jamais
     // journalisée : dérivée déterministe (ADR-0024 D4)
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
     let resultat = session
         .cad()
-        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
     let solide = resultat.corps.expect("corps percé");
     let diagonale = (40.0_f64 * 40.0 + 25.0 * 25.0 + 12.0 * 12.0).sqrt();
     let attendu = 40.0 * 25.0 * 12.0 - std::f64::consts::PI * 25.0 * diagonale * 1.1;
@@ -769,7 +785,7 @@ fn feature_en_echec_marquee_le_reste_du_corps_survit() {
     };
     session.execute(&poche).expect("feature posée");
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
     assert!(
         !profondeurs.contains_key(&1),
@@ -777,7 +793,7 @@ fn feature_en_echec_marquee_le_reste_du_corps_survit() {
     );
     let resultat = session
         .cad()
-        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
     // la feature 0 survit, la 1 est EN ÉCHEC typée OF-CAD-0005
     assert!(matches!(resultat.etats[0].1, EtatFeature::Ok));
     let code = resultat.etats[1].1.code().expect("échec typée");
@@ -827,11 +843,11 @@ fn rejeu_reconstruit_le_meme_corps() {
     let mut relue = Session::from_document("tests", document).expect("rejeu");
     assert_eq!(relue.cad().features().len(), 1);
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = relue.croquis_figes_pour_cad(&mut solveur);
+    let regions = relue.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = relue.profondeurs_pour_cad();
     let resultat = relue
         .cad()
-        .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
     let solide = resultat.corps.expect("corps rejoué");
     assert!((solide.volume_mm3 - 4000.0).abs() <= 1e-6);
 }
@@ -899,12 +915,12 @@ fn rejeu_marque_en_echec_les_profondeurs_hors_bornes() {
         ));
         let mut session = Session::from_document("tests", document).expect("rejeu tolérant");
         let mut solveur = Systeme2D::new().expect("solveur");
-        let contours = session.croquis_figes_pour_cad(&mut solveur);
+        let regions = session.croquis_figes_pour_cad(&mut solveur);
         let profondeurs = session.profondeurs_pour_cad();
         let resultat =
             session
                 .cad()
-                .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+                .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
         assert!(
             matches!(resultat.etats[0].1, EtatFeature::Ok),
             "profondeur {profondeur} : la feature valide doit passer"
@@ -994,12 +1010,12 @@ fn rejeu_marque_en_echec_les_couleurs_hors_bornes() {
         ));
         let mut session = Session::from_document("tests", document).expect("rejeu tolérant");
         let mut solveur = Systeme2D::new().expect("solveur");
-        let contours = session.croquis_figes_pour_cad(&mut solveur);
+        let regions = session.croquis_figes_pour_cad(&mut solveur);
         let profondeurs = session.profondeurs_pour_cad();
         let resultat =
             session
                 .cad()
-                .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+                .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
         assert!(
             matches!(resultat.etats[0].1, EtatFeature::Ok),
             "rgba {rgba:?} : la feature valide doit passer"
@@ -1093,12 +1109,12 @@ fn rejeu_deux_fois_reconstruit_les_memes_volumes() {
             .expect("journal relu et migré");
         let mut rejouee = Session::from_document("tests", relu).expect("rejeu tolérant");
         let mut solveur = Systeme2D::new().expect("solveur");
-        let contours = rejouee.croquis_figes_pour_cad(&mut solveur);
+        let regions = rejouee.croquis_figes_pour_cad(&mut solveur);
         let profondeurs = rejouee.profondeurs_pour_cad();
         let resultat =
             rejouee
                 .cad()
-                .reconstruire(&MoteurPrismesAnalytiques, &contours, &profondeurs);
+                .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
         assert!(
             matches!(resultat.etats[0].1, EtatFeature::Ok),
             "rejeu {rejeu} : la feature valide doit passer"
@@ -1136,7 +1152,7 @@ impl MoteurCad for MoteurBoiteDegeneree {
 
     fn extruder(
         &self,
-        _contour: &Contour2,
+        _region: &Region,
         _mode: ModeExtrusion,
         _profondeur: Length,
     ) -> Result<(), ErreurMoteurCad> {
@@ -1194,11 +1210,11 @@ fn a_travers_sur_boite_degeneree_part_en_echec() {
         })
         .expect("à travers posée");
     let mut solveur = Systeme2D::new().expect("solveur");
-    let contours = session.croquis_figes_pour_cad(&mut solveur);
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
     let profondeurs = session.profondeurs_pour_cad();
     let resultat = session
         .cad()
-        .reconstruire(&MoteurBoiteDegeneree, &contours, &profondeurs);
+        .reconstruire(&MoteurBoiteDegeneree, &regions, &profondeurs);
     assert!(matches!(resultat.etats[0].1, EtatFeature::Ok));
     let code = resultat.etats[1]
         .1
@@ -1262,4 +1278,157 @@ fn of_cad_0005_au_registre_central() {
         REGISTRY.contains("| OF-CAD-0005 |"),
         "le code doit figurer au registre des codes publics"
     );
+}
+
+#[test]
+fn add_feature_refuse_croquis_deux_regions_disjointes() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    // ADR-0037 D3 : une feature extrude exactement une région —
+    // deux rectangles disjoints = deux régions, refus au plan
+    pose_rectangle(&mut session, 0.0, 0.0, 10.0, 10.0);
+    for (x, y) in [(20.0, 0.0), (30.0, 0.0), (30.0, 10.0), (20.0, 10.0)] {
+        pose_point(&mut session, x, y);
+    }
+    for p1 in 8..12u32 {
+        pose_ligne(&mut session, p1, 8 + (p1 + 1) % 4);
+    }
+    let commande = AddFeature {
+        croquis: 1,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    let avant = session.document().events().len();
+    let erreur = session
+        .execute(&commande)
+        .expect_err("croquis multi-régions refusé au plan");
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert!(
+        erreur.to_string().contains("plusieurs régions"),
+        "message attendu sur les régions, obtenu : {erreur}"
+    );
+    // refus au plan : rien au journal, rien projeté
+    assert_eq!(session.document().events().len(), avant);
+    assert!(session.cad().features().is_empty(), "rien projeté");
+}
+
+#[test]
+fn update_feature_refuse_croquis_deux_regions() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    // une région unique : la feature 0 passe au plan
+    pose_rectangle(&mut session, 0.0, 0.0, 10.0, 10.0);
+    let commande = AddFeature {
+        croquis: 1,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    session.execute(&commande).expect("feature posée");
+    // le même croquis porte désormais deux régions disjointes
+    for (x, y) in [(20.0, 0.0), (30.0, 0.0), (30.0, 10.0), (20.0, 10.0)] {
+        pose_point(&mut session, x, y);
+    }
+    for p1 in 8..12u32 {
+        pose_ligne(&mut session, p1, 8 + (p1 + 1) % 4);
+    }
+    let maj = UpdateFeature {
+        id: 0,
+        croquis: 1,
+        mode: ModeExtrusion::Soustraction,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(12.0) },
+        couleur: None,
+    };
+    let avant = session.document().events().len();
+    let erreur = session
+        .execute(&maj)
+        .expect_err("mise à jour multi-régions refusée au plan");
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert!(
+        erreur.to_string().contains("plusieurs régions"),
+        "message attendu sur les régions, obtenu : {erreur}"
+    );
+    // refus non destructif : le journal est intact, la feature 0
+    // survit, inchangée
+    assert_eq!(session.document().events().len(), avant);
+    assert_eq!(session.cad().features().len(), 1);
+}
+
+#[test]
+fn anneau_extrude_aire_nette_et_rejeu_deux_fois() {
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    // ADR-0037 D3 : rectangle 40×25 percé d'un trou rectangulaire
+    // (15,7)-(25,17) — une seule région, l'aire nette vaut
+    // 1000 - 100 = 900 mm²
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    for (x, y) in [(15.0, 7.0), (25.0, 7.0), (25.0, 17.0), (15.0, 17.0)] {
+        pose_point(&mut session, x, y);
+    }
+    for p1 in 8..12u32 {
+        pose_ligne(&mut session, p1, 8 + (p1 + 1) % 4);
+    }
+    let commande = AddFeature {
+        croquis: 1,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    session.execute(&commande).expect("feature posée");
+    // reconstruction : volume analytique = aire nette × profondeur
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
+    let profondeurs = session.profondeurs_pour_cad();
+    let corps = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
+    let solide = corps.corps.expect("corps reconstruit");
+    assert!(
+        (solide.volume_mm3 - 3600.0).abs() < 1e-9,
+        "volume attendu 3 600 mm³ (extérieur moins trou), obtenu {}",
+        solide.volume_mm3
+    );
+    assert_eq!(corps.etats.len(), 1);
+    assert!(matches!(corps.etats[0].1, EtatFeature::Ok));
+    // rejeu : les mêmes octets reconstruisent deux fois le même
+    // volume — critère de sortie de l'ordre 1 (ADR-0036)
+    let octets = session.document().to_bytes().expect("conteneur sérialisé");
+    for rejeu in 0..2 {
+        let relu = Document::from_bytes_with(&octets, registre_migrations_courant())
+            .expect("journal relu et migré");
+        let mut rejouee = Session::from_document("tests", relu).expect("rejeu tolérant");
+        let mut solveur_rejeu = Systeme2D::new().expect("solveur");
+        let regions_rejees = rejouee.croquis_figes_pour_cad(&mut solveur_rejeu);
+        let profondeurs_rejees = rejouee.profondeurs_pour_cad();
+        let rejoue = rejouee.cad().reconstruire(
+            &MoteurPrismesAnalytiques,
+            &regions_rejees,
+            &profondeurs_rejees,
+        );
+        let solide = rejoue
+            .corps
+            .unwrap_or_else(|| panic!("rejeu {rejeu} : le corps doit survivre"));
+        assert!(
+            (solide.volume_mm3 - 3600.0).abs() < 1e-9,
+            "rejeu {rejeu} : volume attendu 3 600 mm³, obtenu {}",
+            solide.volume_mm3
+        );
+        assert!(
+            matches!(rejoue.etats[0].1, EtatFeature::Ok),
+            "rejeu {rejeu} : la feature doit passer"
+        );
+    }
 }

@@ -26,7 +26,7 @@ use crate::esquisse::{
 use crate::projection::{Projection, TypesIgnores, verifie_schema};
 use forge_doc::NewEvent;
 use forge_geom::{
-    Contour2, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Segment2, SensHoraire, points_recolles,
+    ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2, SensHoraire,
 };
 use forge_units::{Angle, Length};
 use std::collections::BTreeMap;
@@ -229,14 +229,17 @@ pub trait MoteurCad {
     /// Type du solide produit par le moteur.
     type Solide;
 
-    /// Extrue un contour fermé dans le plan xy du croquis, vers +z
-    /// (ADR-0024 D3), de la profondeur donnée.
+    /// Extrue la région du croquis (ADR-0037 D3) — l'extérieur
+    /// trigonométrique et ses trous horaires — dans le plan xy du
+    /// croquis, vers +z (ADR-0024 D3), de la profondeur donnée ; le
+    /// moteur analytique du lot 2 calcule l'aire nette (extérieur
+    /// moins trous), le noyau OCCT du lot 3 recevra la face à trous.
     ///
     /// # Erreurs
     /// [`ErreurMoteurCad::Echec`] (OF-CAD-0005) si le moteur refuse.
     fn extruder(
         &self,
-        contour: &Contour2,
+        region: &Region,
         mode: ModeExtrusion,
         profondeur: Length,
     ) -> Result<Self::Solide, ErreurMoteurCad>;
@@ -369,13 +372,13 @@ impl CadProjection {
     /// corps courant (jamais journalisée). La profondeur en
     /// expression se fige par la valeur du nœud
     /// `cad.extrusion{id}.profondeur` (carte `profondeurs`, échecs
-    /// sautés) ; un contour absent ou ouvert marque la feature en
-    /// échec (OF-CAD-0005) — le corps courant survit, le reste des
-    /// features continue.
+    /// sautés) ; une région absente de la carte ou non fermée
+    /// marque la feature en échec (OF-CAD-0005) — le corps courant
+    /// survit, le reste des features continue.
     pub fn reconstruire<S>(
         &self,
         moteur: &dyn MoteurCad<Solide = S>,
-        contours: &BTreeMap<u32, Contour2>,
+        regions: &BTreeMap<u32, Region>,
         profondeurs: &BTreeMap<u32, Length>,
     ) -> CorpsCad<S> {
         let mut corps: Option<S> = None;
@@ -397,15 +400,20 @@ impl CadProjection {
                 continue;
             };
             let echec = |message: String| (*id, EtatFeature::EnEchec { message });
-            let Some(contour) = contours.get(croquis) else {
+            let Some(region) = regions.get(croquis) else {
                 etats.push(echec(format!(
-                    "le croquis {croquis} n'a pas de contour fermé à extruder"
+                    "le croquis {croquis} n'offre pas exactement une région à extruder"
                 )));
                 continue;
             };
-            if !contour.is_closed() {
+            // Défense en profondeur : la région arrive fermée de
+            // forge-geom (ADR-0037 D3), la garde survit au rejeu
+            // d'un journal hostile.
+            if !region.exterieur().is_closed()
+                || region.trous().iter().any(|trou| !trou.is_closed())
+            {
                 etats.push(echec(format!(
-                    "le contour du croquis {croquis} n'est pas fermé"
+                    "la région du croquis {croquis} n'est pas fermée"
                 )));
                 continue;
             }
@@ -457,7 +465,7 @@ impl CadProjection {
                 )));
                 continue;
             }
-            let solide = match moteur.extruder(contour, *mode, profondeur) {
+            let solide = match moteur.extruder(region, *mode, profondeur) {
                 Ok(solide) => solide,
                 Err(erreur) => {
                     etats.push(echec(erreur.to_string()));
@@ -848,80 +856,15 @@ pub(crate) fn segments_du_croquis(
     segments
 }
 
-/// Inverse un segment : départ et arrivée échangés, sens de balayage
-/// retourné (le balayage nul du cercle complet y est invariant).
-fn inverse_segment(segment: Segment2) -> Segment2 {
-    match segment {
-        Segment2::Ligne { p1, p2 } => Segment2::Ligne { p1: p2, p2: p1 },
-        Segment2::Arc {
-            centre,
-            rayon,
-            debut,
-            fin,
-            sens,
-        } => Segment2::Arc {
-            centre,
-            rayon,
-            debut: fin,
-            fin: debut,
-            sens: match sens {
-                SensHoraire::Trigonometrique => SensHoraire::Horaire,
-                SensHoraire::Horaire => SensHoraire::Trigonometrique,
-            },
-        },
-        Segment2::BezierQuadratique { p1, controle, p2 } => Segment2::BezierQuadratique {
-            p1: p2,
-            controle,
-            p2: p1,
-        },
-        Segment2::BezierCubique { p1, c1, c2, p2 } => Segment2::BezierCubique {
-            p1: p2,
-            c1: c2,
-            c2: c1,
-            p2: p1,
-        },
-    }
-}
-
-/// Chaîne les segments en contours (ADR-0024 D4) : parcours glouton —
-/// chaque segment se raccorde à l'arrivée du précédent, au besoin
-/// inversé ; forge-geom recolle les extrémités et refuse un écart
-/// réel (OF-GEO-0006). Le sens de rotation des segments est préservé
-/// tel quel.
-pub(crate) fn contours_des_segments(segments: &[Segment2]) -> Vec<Contour2> {
-    let mut chaines: Vec<Vec<Segment2>> = Vec::new();
-    let mut restants: Vec<Segment2> = segments.to_vec();
-    while let Some(premier) = restants.pop() {
-        let mut chaine = vec![premier];
-        while let Some(arrivee) = chaine.last().map(Segment2::fin) {
-            let index = restants.iter().position(|segment| {
-                points_recolles(segment.debut(), arrivee) || points_recolles(segment.fin(), arrivee)
-            });
-            let Some(index) = index else {
-                break;
-            };
-            let mut segment = restants.remove(index);
-            if !points_recolles(segment.debut(), arrivee) {
-                segment = inverse_segment(segment);
-            }
-            chaine.push(segment);
-        }
-        chaines.push(chaine);
-    }
-    chaines
-        .into_iter()
-        .filter_map(|chaine| {
-            forge_geom::contours(&chaine)
-                .ok()
-                .and_then(|c| c.into_iter().next())
-        })
-        .collect()
-}
-
-/// Premier contour fermé de la chaîne de segments (ADR-0024 D4) : le
-/// corps CAO extrude une boucle fermée.
-pub(crate) fn premier_contour_ferme(segments: &[Segment2]) -> Option<Contour2> {
-    contours_des_segments(segments)
-        .into_iter()
-        .find(|contour| contour.is_closed())
+/// Régions du croquis (ADR-0037 D3) : les segments, non ordonnés,
+/// sont chaînés par le graphe d'extrémités de forge-geom (élagage
+/// des queues, refus d'embranchement OF-GEO-0008, plafond
+/// OF-GEO-0009) puis classés en régions par orientation et parité —
+/// l'extérieur trigonométrique, les trous horaires. Zéro région :
+/// aucun cycle fermé ; plusieurs régions : croquis multi-corps,
+/// refusé au plan (OF-SES-0001, ADR-0037 D3) ; les refus de
+/// discrétisation (OF-GEO-0004/0005) sont propagés.
+pub(crate) fn regions_du_croquis(segments: &[Segment2]) -> Result<Vec<Region>, ErreurContour> {
+    let cycles = forge_geom::contours(segments)?;
+    forge_geom::regions(&cycles)
 }

@@ -1,7 +1,9 @@
 //! Segments typés 2D et contours (ADR-0024, phase B lot 1) :
 //! lignes, arcs à balayage signé et Béziers — de vraies courbes,
 //! jamais des polylignes ; discrétisation pilotée par tolérance
-//! (flèche bornée), budgets publics, chaînage en contours.
+//! (flèche bornée), budgets publics, chaînage en graphe
+//! d'extrémités (ADR-0037 D2) : entrée non ordonnée, élagage des
+//! queues, refus typé au-delà du degré 2.
 //!
 //! Un arc porte son balayage en creux : de `debut` à `fin` dans le
 //! sens donné — un balayage nul (`debut` == `fin`) dénote le cercle
@@ -11,6 +13,8 @@
 //! des budgets publics, [`Segment2::discretiser`] refuse
 //! (OF-GEO-0005) et la version bornée rend l'approximation au
 //! budget — le rendu survit toujours.
+
+use std::collections::HashMap;
 
 use forge_units::{Angle, Length, TOLERANCE_MM};
 use serde::{Deserialize, Serialize};
@@ -37,6 +41,17 @@ pub enum SensHoraire {
     Trigonometrique,
     /// Sens horaire, angles décroissants.
     Horaire,
+}
+
+impl SensHoraire {
+    /// Sens de balayage opposé (ADR-0037 D2 — le chaînage retourne
+    /// les segments qui vont à contre-sens du cycle extrait).
+    pub fn inverse(self) -> Self {
+        match self {
+            Self::Trigonometrique => Self::Horaire,
+            Self::Horaire => Self::Trigonometrique,
+        }
+    }
 }
 
 /// Segment typé 2D (ADR-0024 D1) : ligne, arc à balayage signé ou
@@ -112,6 +127,40 @@ impl Segment2 {
             Self::Arc {
                 centre, rayon, fin, ..
             } => point_d_angle(*centre, rayon.millimeters(), fin.radians()).unwrap_or(*centre),
+        }
+    }
+
+    /// Segment parcouru en sens inverse : mêmes courbe et
+    /// extrémités, seul le sens de parcours change (ADR-0037 D2 —
+    /// le chaînage retourne les segments à contre-sens du cycle
+    /// extrait).
+    pub fn inverse(&self) -> Self {
+        match *self {
+            Self::Ligne { p1, p2 } => Self::Ligne { p1: p2, p2: p1 },
+            Self::Arc {
+                centre,
+                rayon,
+                debut,
+                fin,
+                sens,
+            } => Self::Arc {
+                centre,
+                rayon,
+                debut: fin,
+                fin: debut,
+                sens: sens.inverse(),
+            },
+            Self::BezierQuadratique { p1, controle, p2 } => Self::BezierQuadratique {
+                p1: p2,
+                controle,
+                p2: p1,
+            },
+            Self::BezierCubique { p1, c1, c2, p2 } => Self::BezierCubique {
+                p1: p2,
+                c1: c2,
+                c2: c1,
+                p2: p1,
+            },
         }
     }
 
@@ -333,8 +382,9 @@ pub(crate) fn fermeture(segments: &[Segment2]) -> bool {
 }
 
 /// Erreur de chaînage de contour : les refus de segments
-/// (OF-GEO-0004/0005) et le chaînage rompu (OF-GEO-0006) portent
-/// des codes stables au registre `docs/error-codes.md`.
+/// (OF-GEO-0004/0005), l'embranchement (OF-GEO-0008) et le
+/// plafond d'entités (OF-GEO-0009) portent des codes stables au
+/// registre `docs/error-codes.md`.
 pub type ErreurContour = GeomError;
 
 /// Contour 2D : chaîne de segments dont chacun part de l'arrivée
@@ -384,29 +434,148 @@ impl Contour2 {
     }
 }
 
-/// Enchaîne des segments en contours : chacun doit partir de
-/// l'arrivée du précédent, à la tolérance géométrique près — un
-/// écart réel rompt la chaîne (OF-GEO-0006). Le sens de rotation
-/// des segments est préservé tel quel ; l'entrée vide rend aucun
-/// contour.
+/// Nombre maximal d'entités soumises au chaînage (ADR-0037 D2) :
+/// au-delà, le chaînage refuse (OF-GEO-0009). Plafond public —
+/// les appelants peuvent l'afficher à l'utilisateur.
+pub const MAX_ENTITES_CHAINAGE: usize = 10_000;
+
+/// Soudure d'une extrémité au sommet recollé le plus proche, à la
+/// tolérance géométrique près — index spatial en grille au pas de
+/// la tolérance (O(n) attendu) ; sans sommet recollé, l'extrémité
+/// crée le sien. Renvoie l'indice du sommet soudé.
+fn soude(
+    extremite: Point2,
+    sommets: &mut Vec<Point2>,
+    grille: &mut HashMap<(i64, i64), Vec<usize>>,
+) -> usize {
+    let cellule = |coordonnee: f64| (coordonnee / TOLERANCE_MM).floor() as i64;
+    let (cx, cy) = (
+        cellule(extremite.x().millimeters()),
+        cellule(extremite.y().millimeters()),
+    );
+    for dx in -1..=1 {
+        for dy in -1..=1 {
+            if let Some(voisins) = grille.get(&(cx + dx, cy + dy)) {
+                for &sommet in voisins {
+                    if points_recolles(sommets[sommet], extremite) {
+                        return sommet;
+                    }
+                }
+            }
+        }
+    }
+    sommets.push(extremite);
+    let sommet = sommets.len() - 1;
+    grille.entry((cx, cy)).or_default().push(sommet);
+    sommet
+}
+
+/// Enchaîne des segments en contours par graphe d'extrémités
+/// (ADR-0037 D2) : l'entrée est **non ordonnée**. Les extrémités
+/// sont soudées à la tolérance géométrique, les queues (arêtes à
+/// extrémité libre) sont élaguées itérativement — le carré à queue
+/// rend son carré ; tout sommet réunissant plus de deux extrémités
+/// est un embranchement refusé (OF-GEO-0008), jamais tranché
+/// arbitrairement. Les composantes restantes sont des cycles
+/// fermés : un `Contour2` chacune, les segments à contre-sens
+/// retournés pour suivre le sens de parcours. Au-delà du plafond
+/// [`MAX_ENTITES_CHAINAGE`], refus typé (OF-GEO-0009) ; l'entrée
+/// vide rend aucun contour.
 pub fn contours(segments: &[Segment2]) -> Result<Vec<Contour2>, ErreurContour> {
     if segments.is_empty() {
         return Ok(Vec::new());
     }
-    for (i, paire) in segments.windows(2).enumerate() {
-        let dx = paire[1].debut().x().millimeters() - paire[0].fin().x().millimeters();
-        let dy = paire[1].debut().y().millimeters() - paire[0].fin().y().millimeters();
-        let ecart = (dx * dx + dy * dy).sqrt();
-        if ecart > TOLERANCE_MM {
-            return Err(GeomError::ChainageRompu {
-                index: i + 1,
-                ecart: Length::from_millimeters(ecart),
+    if segments.len() > MAX_ENTITES_CHAINAGE {
+        return Err(GeomError::PlafondChainageDepasse {
+            entites: segments.len(),
+            plafond: MAX_ENTITES_CHAINAGE,
+        });
+    }
+    // Soudure des extrémités : un sommet par grappe recollée, une
+    // arête orientée par segment.
+    let mut sommets: Vec<Point2> = Vec::with_capacity(segments.len() * 2);
+    let mut grille: HashMap<(i64, i64), Vec<usize>> = HashMap::new();
+    let aretes: Vec<(usize, usize)> = segments
+        .iter()
+        .map(|segment| {
+            let depart = soude(segment.debut(), &mut sommets, &mut grille);
+            let arrivee = soude(segment.fin(), &mut sommets, &mut grille);
+            (depart, arrivee)
+        })
+        .collect();
+    // Arêtes incidentes par sommet ; une boucle (extrémités soudées
+    // au même sommet) compte deux fois.
+    let mut incident: Vec<Vec<usize>> = vec![Vec::new(); sommets.len()];
+    for (arete, &(depart, arrivee)) in aretes.iter().enumerate() {
+        incident[depart].push(arete);
+        incident[arrivee].push(arete);
+    }
+    let mut degres: Vec<usize> = incident.iter().map(Vec::len).collect();
+    // Élagage itératif des queues : l'arête d'un sommet à
+    // extrémité libre disparaît, ses voisines peuvent à leur tour
+    // se retrouver libres — jusqu'à stabilisation.
+    let mut vivante = vec![true; aretes.len()];
+    let mut pile: Vec<usize> = (0..sommets.len()).filter(|&s| degres[s] == 1).collect();
+    while let Some(s) = pile.pop() {
+        if degres[s] != 1 {
+            continue;
+        }
+        let Some(&arete) = incident[s].iter().find(|a| vivante[**a]) else {
+            continue;
+        };
+        vivante[arete] = false;
+        let (depart, arrivee) = aretes[arete];
+        for sommet in [depart, arrivee] {
+            degres[sommet] -= 1;
+            if degres[sommet] == 1 {
+                pile.push(sommet);
+            }
+        }
+    }
+    // Après l'élagage, tout sommet de degré supérieur à deux est
+    // un vrai embranchement (OF-GEO-0008).
+    for (s, &degre) in degres.iter().enumerate() {
+        if degre > 2 {
+            return Err(GeomError::EmbranchementContour {
+                x: sommets[s].x(),
+                y: sommets[s].y(),
+                degre,
             });
         }
     }
-    Ok(vec![Contour2 {
-        segments: segments.to_vec(),
-    }])
+    // Les composantes restantes sont des cycles : un parcours
+    // orienté par cycle, retourner les segments à contre-sens.
+    let mut cycles = Vec::new();
+    for premiere in 0..aretes.len() {
+        if !vivante[premiere] {
+            continue;
+        }
+        let depart_initial = aretes[premiere].0;
+        let mut cycle = Vec::new();
+        let mut sommet = depart_initial;
+        let mut arete = premiere;
+        for _ in 0..aretes.len() {
+            vivante[arete] = false;
+            let segment = segments[arete];
+            let (depart, arrivee) = aretes[arete];
+            if depart == sommet {
+                cycle.push(segment);
+                sommet = arrivee;
+            } else {
+                cycle.push(segment.inverse());
+                sommet = depart;
+            }
+            if sommet == depart_initial {
+                break;
+            }
+            let Some(&suivante) = incident[sommet].iter().find(|a| vivante[**a]) else {
+                break;
+            };
+            arete = suivante;
+        }
+        cycles.push(Contour2 { segments: cycle });
+    }
+    Ok(cycles)
 }
 
 /// Chaîne discrétisée d'une suite de segments : chaque segment est
@@ -676,29 +845,22 @@ mod tests {
     }
 
     #[test]
-    fn chaine_rompue_refusee() {
-        // Un écart réel entre l'arrivée d'un segment et le départ du
-        // suivant rompt la chaîne (recollage à 1e-6 mm).
-        let rompue = [ligne(0.0, 0.0, 10.0, 0.0), ligne(12.0, 0.0, 12.0, 5.0)];
-        let erreur = contours(&rompue).expect_err("chaîne rompue");
-        assert_eq!(erreur.code(), "OF-GEO-0006");
+    fn ecart_reel_composantes_distinctes() {
+        // ADR-0037 D2 : OF-GEO-0006 est retiré — un écart n'est
+        // plus une erreur mais des composantes distinctes ; sans
+        // boucle fermée, aucun contour ne sort du chaînage.
+        let disjointes = [ligne(0.0, 0.0, 10.0, 0.0), ligne(12.0, 0.0, 12.0, 5.0)];
+        let chains = contours(&disjointes).expect("composantes distinctes");
+        assert!(chains.is_empty(), "des queues ne font pas un contour");
     }
 
     #[test]
-    fn chaine_ouverte_et_sens_preserve() {
-        // Contour ouvert : l'ordre des sommets suit l'ordre des
-        // segments, le sens de rotation est préservé tel quel.
+    fn chaine_ouverte_elaguee_sans_contour() {
+        // ADR-0037 D2 : une chaîne ouverte est une queue —
+        // élaguée itérativement, elle ne laisse aucun contour.
         let chaine = [ligne(0.0, 0.0, 10.0, 0.0), ligne(10.0, 0.0, 10.0, 10.0)];
-        let chains = contours(&chaine).expect("chaîne continue");
-        assert_eq!(chains.len(), 1);
-        let contour = &chains[0];
-        assert!(!contour.is_closed());
-        assert_eq!(contour.len(), 3, "deux segments, trois sommets");
-        let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
-        let points = contour.discretiser(tolerance).expect("discrétisation");
-        assert_eq!(points[0].x().millimeters(), 0.0);
-        assert_eq!(points[1].x().millimeters(), 10.0);
-        assert_eq!(points[2].y().millimeters(), 10.0);
+        let chains = contours(&chaine).expect("queue élaguée");
+        assert!(chains.is_empty(), "une queue ne referme pas un contour");
     }
 
     #[test]
@@ -707,6 +869,93 @@ mod tests {
         assert!(chains.is_empty());
     }
 
+    #[test]
+    fn carres_secs_en_un_sommet_refuses() {
+        // ADR-0037 D2 : deux boucles partageant un sommet — le
+        // sommet réunit quatre extrémités, embranchement refusé
+        // (OF-GEO-0008), jamais un contour fusionné « en huit ».
+        let carres = [
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 0.0, 1.0, 1.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(1.0, 1.0, 2.0, 1.0),
+            ligne(2.0, 1.0, 2.0, 2.0),
+            ligne(2.0, 2.0, 1.0, 2.0),
+            ligne(1.0, 2.0, 1.0, 1.0),
+        ];
+        let erreur = contours(&carres).expect_err("embranchement refusé");
+        assert_eq!(erreur.code(), "OF-GEO-0008");
+    }
+
+    #[test]
+    fn carre_avec_queue_rend_son_carre() {
+        // ADR-0037 D2 : la queue (extrémité libre) est élaguée
+        // avant le contrôle d'embranchement — le carré demeure.
+        let carre_queue = [
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 0.0, 1.0, 1.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(1.0, 1.0, 2.0, 1.0),
+        ];
+        let chains = contours(&carre_queue).expect("queue élaguée");
+        assert_eq!(chains.len(), 1, "un contour, jamais deux ni zéro");
+        let contour = &chains[0];
+        assert!(contour.is_closed(), "le carré se referme");
+        assert_eq!(contour.len(), 4, "quatre sommets, la queue n'en est pas un");
+    }
+
+    #[test]
+    fn plafond_d_entites_depasse_refuse() {
+        // ADR-0037 D2 : au-delà du plafond public de 10 000
+        // entités, le chaînage refuse (OF-GEO-0009).
+        let mut lame = Vec::with_capacity(10_001);
+        for i in 0..=10_000u32 {
+            let debut = f64::from(i) * 0.001;
+            lame.push(ligne(debut, 0.0, debut + 0.001, 0.0));
+        }
+        let erreur = contours(&lame).expect_err("plafond dépassé");
+        assert_eq!(erreur.code(), "OF-GEO-0009");
+    }
+
+    #[test]
+    fn entites_desordonnees_et_inversees_meme_contour() {
+        // ADR-0037 D2 : l'entrée est non ordonnée — désordre et
+        // inversions rendent le même contour, les segments à
+        // contre-sens retournés pour suivre le parcours.
+        let desordre = [
+            ligne(1.0, 1.0, 1.0, 0.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+        ];
+        let chains = contours(&desordre).expect("le graphe ignore l'ordre d'entrée");
+        assert_eq!(chains.len(), 1);
+        let contour = &chains[0];
+        assert!(contour.is_closed(), "le carré se referme");
+        assert_eq!(contour.len(), 4, "quatre sommets");
+        for paire in contour.segments().windows(2) {
+            assert!(
+                points_recolles(paire[0].fin(), paire[1].debut()),
+                "l'arrivée de chacun rejoint le départ du suivant"
+            );
+        }
+        let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
+        let points = contour.discretiser(tolerance).expect("discrétisation");
+        let coins: Vec<(f64, f64)> = points
+            .iter()
+            .map(|p| (p.x().millimeters(), p.y().millimeters()))
+            .collect();
+        for coin in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            assert!(
+                coins
+                    .iter()
+                    .any(|c| (c.0 - coin.0).abs() < 1e-9 && (c.1 - coin.1).abs() < 1e-9),
+                "coin {coin:?} absent du contour"
+            );
+        }
+    }
     #[test]
     fn segments_serialisables() {
         let segments = [

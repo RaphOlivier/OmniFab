@@ -10,7 +10,7 @@
 
 use crate::cad::{
     CouleurFeature, FeatureCad, ModeExtrusion, ProfondeurCad, ProfondeurFeature, feature_en_json,
-    premier_contour_ferme, segments_du_croquis,
+    regions_du_croquis, segments_du_croquis,
 };
 use crate::esquisse::{ContrainteEsquisse, EntiteEsquisse, ValeurCote};
 use crate::{Session, SessionError};
@@ -878,9 +878,27 @@ fn feature_valide(
         });
     };
     let positions = |point: u32| esquisse.position_graine_du_croquis(croquis, point);
-    if premier_contour_ferme(&segments_du_croquis(entites, &positions)).is_none() {
+    let regions = match regions_du_croquis(&segments_du_croquis(entites, &positions)) {
+        Ok(regions) => regions,
+        Err(erreur) => {
+            return Err(SessionError::CommandRejected {
+                reason: erreur.to_string(),
+            });
+        }
+    };
+    if regions.is_empty() {
         return Err(SessionError::CommandRejected {
             reason: format!("le croquis {croquis} n'a pas de contour fermé à extruder"),
+        });
+    }
+    if regions.len() > 1 {
+        // ADR-0037 D3 : une feature extrude exactement une région —
+        // le multi-corps reste interdit au jalon 3 (ADR-0024). Refus
+        // OF-SES-0001, rien au journal.
+        return Err(SessionError::CommandRejected {
+            reason: format!(
+                "le croquis {croquis} porte plusieurs régions — une feature extrude une seule région (multi-corps interdit au jalon 3)"
+            ),
         });
     }
     match profondeur {

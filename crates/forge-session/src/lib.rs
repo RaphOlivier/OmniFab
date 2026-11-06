@@ -61,7 +61,7 @@ pub use projection::{
 
 use forge_doc::{DocError, Document, Event, MigrationRegistry, NewEvent};
 use forge_gcs::Solveur2D;
-use forge_geom::Contour2;
+use forge_geom::Region;
 use forge_units::Length;
 use forge_values::ValueGraph;
 use std::collections::{BTreeMap, BTreeSet};
@@ -387,19 +387,18 @@ impl Session {
         &self.cad
     }
 
-    /// Croquis figés demandés par la CAO (ADR-0024 D4) : pour chaque
-    /// croquis référencé par une feature d'extrusion, clone de la
-    /// projection d'esquisse, cotes pilotées figées par le moteur de
-    /// liaisons, résolution puis premier contour fermé extrait à la
-    /// tolérance du lot 1. Un croquis absent du journal, qui ne
-    /// résout pas ou qui n'offre pas de contour fermé est sauté — le
-    /// corps dérivé le marquera en échec plutôt que de refuser la
-    /// session entière. Le solveur reçoit les cotes figées, jamais
-    /// une expression (frontière forge-values → forge-gcs).
-    pub fn croquis_figes_pour_cad(
-        &mut self,
-        solveur: &mut dyn Solveur2D,
-    ) -> BTreeMap<u32, Contour2> {
+    /// Croquis figés demandés par la CAO (ADR-0024 D4, ADR-0037 D3) :
+    /// pour chaque croquis référencé par une feature d'extrusion,
+    /// clone de la projection d'esquisse, cotes pilotées figées par
+    /// le moteur de liaisons, résolution puis région unique extraite
+    /// et classée par orientation et parité. Un croquis absent du
+    /// journal, qui ne résout pas, qui n'offre pas exactement une
+    /// région (zéro ou plusieurs — multi-corps interdit au jalon 3)
+    /// ou que forge-geom refuse est sauté — le corps dérivé le
+    /// marquera en échec plutôt que de refuser la session entière.
+    /// Le solveur reçoit les cotes figées, jamais une expression
+    /// (frontière forge-values → forge-gcs).
+    pub fn croquis_figes_pour_cad(&mut self, solveur: &mut dyn Solveur2D) -> BTreeMap<u32, Region> {
         let mut references: BTreeSet<u32> = BTreeSet::new();
         for (_, feature) in self.cad.features() {
             if let FeatureCad::Extrusion { croquis, .. } = feature {
@@ -419,10 +418,18 @@ impl Session {
             };
             let positions = |point: u32| resolu.position(point);
             let segments = crate::cad::segments_du_croquis(entites, &positions);
-            let Some(contour) = crate::cad::premier_contour_ferme(&segments) else {
+            // ADR-0037 D3 : exactement une région figée par croquis —
+            // zéro, plusieurs (multi-corps interdit au jalon 3) ou
+            // refus de forge-geom : le croquis est absent de la
+            // carte, ses features partiront en échec au rejeu
+            // (OF-CAD-0005) et le corps survit.
+            let Ok(regions) = crate::cad::regions_du_croquis(&segments) else {
                 continue;
             };
-            figes.insert(croquis, contour);
+            let [region] = regions.as_slice() else {
+                continue;
+            };
+            figes.insert(croquis, region.clone());
         }
         figes
     }

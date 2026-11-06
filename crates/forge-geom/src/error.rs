@@ -44,15 +44,28 @@ pub enum GeomError {
         /// Détail du dépassement.
         raison: &'static str,
     },
-    /// Chaînage de contour rompu : l'arrivée d'un segment et le
-    /// départ du suivant sont écartés de plus de la tolérance
-    /// géométrique (OF-GEO-0006).
-    #[error("OF-GEO-0006 : chaînage rompu au segment {index} — écart {ecart}")]
-    ChainageRompu {
-        /// Indice du segment qui ne s'enchaîne pas.
-        index: usize,
-        /// Écart mesuré entre l'arrivée et le départ.
-        ecart: Length,
+    /// Embranchement de chaînage : un sommet réunit plus de deux
+    /// extrémités de segments après l'élagage des queues
+    /// (OF-GEO-0008, ADR-0037 D2) — jamais de choix arbitraire de
+    /// boucle.
+    #[error("OF-GEO-0008 : embranchement au sommet ({x}, {y}) — {degre} extrémités, deux au plus")]
+    EmbranchementContour {
+        /// Abscisse du sommet en cause.
+        x: Length,
+        /// Ordonnée du sommet en cause.
+        y: Length,
+        /// Nombre d'extrémités réunies au sommet.
+        degre: usize,
+    },
+    /// Plafond d'entités de chaînage dépassé : plus de
+    /// `MAX_ENTITES_CHAINAGE` segments soumis au chaînage
+    /// (OF-GEO-0009, ADR-0037 D2).
+    #[error("OF-GEO-0009 : {entites} entités à chaîner — plafond public de {plafond}")]
+    PlafondChainageDepasse {
+        /// Nombre d'entités soumises au chaînage.
+        entites: usize,
+        /// Plafond public dépassé.
+        plafond: usize,
     },
 }
 
@@ -67,7 +80,8 @@ impl GeomError {
             Self::CoordonneeHorsBornes { .. } => "OF-GEO-0003",
             Self::DiscretisationImpossible { .. } => "OF-GEO-0004",
             Self::BudgetDiscretisationDepasse { .. } => "OF-GEO-0005",
-            Self::ChainageRompu { .. } => "OF-GEO-0006",
+            Self::EmbranchementContour { .. } => "OF-GEO-0008",
+            Self::PlafondChainageDepasse { .. } => "OF-GEO-0009",
         }
     }
 }
