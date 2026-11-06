@@ -24,7 +24,9 @@
 //! hors du périmètre D3.
 
 use crate::error::GeomError;
-use crate::segments::Contour2;
+use crate::segments::{Contour2, Segment2};
+use crate::{Point2, TOLERANCE_DISCRETISATION_MM, contours};
+use forge_units::Length;
 
 /// Région 2D (ADR-0037 D3) : un contour extérieur et ses trous.
 /// L'extérieur est orienté trigonométriquement (aire signée
@@ -61,8 +63,153 @@ impl Region {
 /// région ; les refus de discrétisation (OF-GEO-0004/0005) sont
 /// propagés.
 pub fn regions(cycles: &[Contour2]) -> Result<Vec<Region>, GeomError> {
-    let _ = cycles;
-    Ok(Vec::new())
+    // Discrétisation commune : le lacet et le ray-cast jugent sur
+    // les mêmes polylignes, à la tolérance du crate — les refus
+    // de discrétisation (OF-GEO-0004/0005) sont propagés.
+    let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
+    let polylignes: Vec<Vec<Point2>> = cycles
+        .iter()
+        .map(|cycle| cycle.discretiser(tolerance))
+        .collect::<Result<_, _>>()?;
+    let mut aires = vec![0.0_f64; cycles.len()];
+    for (i, points) in polylignes.iter().enumerate() {
+        aires[i] = aire_signee(points);
+    }
+    // Profondeur de chaque cycle : le point témoin — premier
+    // sommet de la polyligne — contre chaque autre cycle.
+    let mut profondeurs = vec![0_usize; cycles.len()];
+    for (i, points) in polylignes.iter().enumerate() {
+        let Some(temoin) = points.first() else {
+            continue;
+        };
+        for (j, autre) in polylignes.iter().enumerate() {
+            if j != i && temoin_dedans(*temoin, autre) {
+                profondeurs[i] += 1;
+            }
+        }
+    }
+    // Assemblage : profondeur paire = extérieur d'une région,
+    // profondeur impaire = trou de son conteneur direct —
+    // l'englobant le plus profond du point témoin.
+    let mut ouvertes: Vec<(usize, Vec<usize>)> = Vec::new();
+    let mut region_du_cycle: Vec<Option<usize>> = vec![None; cycles.len()];
+    for i in 0..cycles.len() {
+        if profondeurs[i] % 2 == 0 {
+            region_du_cycle[i] = Some(ouvertes.len());
+            ouvertes.push((i, Vec::new()));
+        }
+    }
+    for (i, points) in polylignes.iter().enumerate() {
+        if profondeurs[i] % 2 == 0 {
+            continue;
+        }
+        let Some(temoin) = points.first() else {
+            continue;
+        };
+        let englobants: Vec<usize> = (0..cycles.len())
+            .filter(|&j| j != i && temoin_dedans(*temoin, &polylignes[j]))
+            .collect();
+        let conteneur = englobants.iter().copied().max_by_key(|&j| profondeurs[j]);
+        if let Some(conteneur) = conteneur
+            && let Some(region) = region_du_cycle[conteneur]
+        {
+            ouvertes[region].1.push(i);
+        }
+    }
+    // Orientation normalisée, ordre déterministe : régions par
+    // cycle extérieur croissant, trous par cycle croissant.
+    let mut classees = Vec::with_capacity(ouvertes.len());
+    for (exterieur, trous) in ouvertes {
+        let exterieur_normalise = normalise(&cycles[exterieur], aires[exterieur], true)?;
+        let mut trous_normes = Vec::with_capacity(trous.len());
+        for trou in trous {
+            trous_normes.push(normalise(&cycles[trou], aires[trou], false)?);
+        }
+        classees.push(Region {
+            exterieur: exterieur_normalise,
+            trous: trous_normes,
+        });
+    }
+    Ok(classees)
+}
+
+/// Aire signée recentrée d'une polyligne discrétisée (mm², patron
+/// ADR-0036 D3 : le lacet se calcule autour du centroïde, stable
+/// aux grandes coordonnées) — positive au sens trigonométrique ;
+/// les sommets doublés par la discrétisation s'annulent d'eux-mêmes
+/// et la polyligne se referme par wraparound.
+fn aire_signee(polyligne: &[Point2]) -> f64 {
+    let n = polyligne.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let (cx, cy) = (
+        polyligne.iter().map(|p| p.x().millimeters()).sum::<f64>() / n as f64,
+        polyligne.iter().map(|p| p.y().millimeters()).sum::<f64>() / n as f64,
+    );
+    (0..n)
+        .map(|i| {
+            let a = polyligne[i];
+            let b = polyligne[(i + 1) % n];
+            (a.x().millimeters() - cx) * (b.y().millimeters() - cy)
+                - (b.x().millimeters() - cx) * (a.y().millimeters() - cy)
+        })
+        .sum::<f64>()
+        / 2.0
+}
+
+/// Point témoin dans la polyligne discrétisée d'un autre cycle,
+/// par ray-cast pair-impair (ADR-0037 D3) : les cycles ne
+/// partagent aucun sommet (embranchement refusé, OF-GEO-0008), le
+/// témoin est dedans ou dehors ; les arêtes nulles de la
+/// discrétisation ne traversent jamais la hauteur du témoin.
+fn temoin_dedans(temoin: Point2, polyligne: &[Point2]) -> bool {
+    let (px, py) = (temoin.x().millimeters(), temoin.y().millimeters());
+    let n = polyligne.len();
+    let mut dedans = false;
+    for i in 0..n {
+        let a = polyligne[i];
+        let b = polyligne[(i + 1) % n];
+        let (ax, ay) = (a.x().millimeters(), a.y().millimeters());
+        let (bx, by) = (b.x().millimeters(), b.y().millimeters());
+        if (ay > py) != (by > py) && px < (bx - ax) * (py - ay) / (by - ay) + ax {
+            dedans = !dedans;
+        }
+    }
+    dedans
+}
+
+/// Cycle normalisé dans le sens voulu (ADR-0037 D3) :
+/// trigonométrique pour un extérieur, horaire pour un trou ; un
+/// cycle d'aire nulle est conservé tel quel — le retourner ne
+/// changerait pas le signe de son aire.
+fn normalise(cycle: &Contour2, aire: f64, trigo: bool) -> Result<Contour2, GeomError> {
+    let bon_sens = if trigo { aire > 0.0 } else { aire < 0.0 };
+    if aire == 0.0 || bon_sens {
+        Ok(cycle.clone())
+    } else {
+        retourne(cycle)
+    }
+}
+
+/// Cycle retourné (ADR-0037 D3) : chaque segment est inversé
+/// ([`Segment2::inverse`]) puis la chaîne est re-soudée par
+/// [`crate::contours`] — soudure déterministe, parcours en sens
+/// opposé.
+fn retourne(cycle: &Contour2) -> Result<Contour2, GeomError> {
+    let inverses: Vec<Segment2> = cycle
+        .segments()
+        .iter()
+        .map(|segment| segment.inverse())
+        .collect();
+    // Invariant du graphe (ADR-0037 D2) : retourner chaque arête
+    // d'un cycle laisse exactement un cycle ; un état inattendu,
+    // jamais tranché arbitrairement, conserve le cycle tel quel.
+    let retournes = contours(&inverses)?;
+    Ok(match retournes.as_slice() {
+        [inverse] => inverse.clone(),
+        _ => cycle.clone(),
+    })
 }
 
 #[cfg(test)]
