@@ -676,29 +676,22 @@ mod tests {
     }
 
     #[test]
-    fn chaine_rompue_refusee() {
-        // Un écart réel entre l'arrivée d'un segment et le départ du
-        // suivant rompt la chaîne (recollage à 1e-6 mm).
-        let rompue = [ligne(0.0, 0.0, 10.0, 0.0), ligne(12.0, 0.0, 12.0, 5.0)];
-        let erreur = contours(&rompue).expect_err("chaîne rompue");
-        assert_eq!(erreur.code(), "OF-GEO-0006");
+    fn ecart_reel_composantes_distinctes() {
+        // ADR-0037 D2 : OF-GEO-0006 est retiré — un écart n'est
+        // plus une erreur mais des composantes distinctes ; sans
+        // boucle fermée, aucun contour ne sort du chaînage.
+        let disjointes = [ligne(0.0, 0.0, 10.0, 0.0), ligne(12.0, 0.0, 12.0, 5.0)];
+        let chains = contours(&disjointes).expect("composantes distinctes");
+        assert!(chains.is_empty(), "des queues ne font pas un contour");
     }
 
     #[test]
-    fn chaine_ouverte_et_sens_preserve() {
-        // Contour ouvert : l'ordre des sommets suit l'ordre des
-        // segments, le sens de rotation est préservé tel quel.
+    fn chaine_ouverte_elaguee_sans_contour() {
+        // ADR-0037 D2 : une chaîne ouverte est une queue —
+        // élaguée itérativement, elle ne laisse aucun contour.
         let chaine = [ligne(0.0, 0.0, 10.0, 0.0), ligne(10.0, 0.0, 10.0, 10.0)];
-        let chains = contours(&chaine).expect("chaîne continue");
-        assert_eq!(chains.len(), 1);
-        let contour = &chains[0];
-        assert!(!contour.is_closed());
-        assert_eq!(contour.len(), 3, "deux segments, trois sommets");
-        let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
-        let points = contour.discretiser(tolerance).expect("discrétisation");
-        assert_eq!(points[0].x().millimeters(), 0.0);
-        assert_eq!(points[1].x().millimeters(), 10.0);
-        assert_eq!(points[2].y().millimeters(), 10.0);
+        let chains = contours(&chaine).expect("queue élaguée");
+        assert!(chains.is_empty(), "une queue ne referme pas un contour");
     }
 
     #[test]
@@ -707,6 +700,93 @@ mod tests {
         assert!(chains.is_empty());
     }
 
+    #[test]
+    fn carres_secs_en_un_sommet_refuses() {
+        // ADR-0037 D2 : deux boucles partageant un sommet — le
+        // sommet réunit quatre extrémités, embranchement refusé
+        // (OF-GEO-0008), jamais un contour fusionné « en huit ».
+        let carres = [
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 0.0, 1.0, 1.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(1.0, 1.0, 2.0, 1.0),
+            ligne(2.0, 1.0, 2.0, 2.0),
+            ligne(2.0, 2.0, 1.0, 2.0),
+            ligne(1.0, 2.0, 1.0, 1.0),
+        ];
+        let erreur = contours(&carres).expect_err("embranchement refusé");
+        assert_eq!(erreur.code(), "OF-GEO-0008");
+    }
+
+    #[test]
+    fn carre_avec_queue_rend_son_carre() {
+        // ADR-0037 D2 : la queue (extrémité libre) est élaguée
+        // avant le contrôle d'embranchement — le carré demeure.
+        let carre_queue = [
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 0.0, 1.0, 1.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(1.0, 1.0, 2.0, 1.0),
+        ];
+        let chains = contours(&carre_queue).expect("queue élaguée");
+        assert_eq!(chains.len(), 1, "un contour, jamais deux ni zéro");
+        let contour = &chains[0];
+        assert!(contour.is_closed(), "le carré se referme");
+        assert_eq!(contour.len(), 4, "quatre sommets, la queue n'en est pas un");
+    }
+
+    #[test]
+    fn plafond_d_entites_depasse_refuse() {
+        // ADR-0037 D2 : au-delà du plafond public de 10 000
+        // entités, le chaînage refuse (OF-GEO-0009).
+        let mut lame = Vec::with_capacity(10_001);
+        for i in 0..=10_000u32 {
+            let debut = f64::from(i) * 0.001;
+            lame.push(ligne(debut, 0.0, debut + 0.001, 0.0));
+        }
+        let erreur = contours(&lame).expect_err("plafond dépassé");
+        assert_eq!(erreur.code(), "OF-GEO-0009");
+    }
+
+    #[test]
+    fn entites_desordonnees_et_inversees_meme_contour() {
+        // ADR-0037 D2 : l'entrée est non ordonnée — désordre et
+        // inversions rendent le même contour, les segments à
+        // contre-sens retournés pour suivre le parcours.
+        let desordre = [
+            ligne(1.0, 1.0, 1.0, 0.0),
+            ligne(0.0, 1.0, 0.0, 0.0),
+            ligne(0.0, 0.0, 1.0, 0.0),
+            ligne(1.0, 1.0, 0.0, 1.0),
+        ];
+        let chains = contours(&desordre).expect("le graphe ignore l'ordre d'entrée");
+        assert_eq!(chains.len(), 1);
+        let contour = &chains[0];
+        assert!(contour.is_closed(), "le carré se referme");
+        assert_eq!(contour.len(), 4, "quatre sommets");
+        for paire in contour.segments().windows(2) {
+            assert!(
+                points_recolles(paire[0].fin(), paire[1].debut()),
+                "l'arrivée de chacun rejoint le départ du suivant"
+            );
+        }
+        let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
+        let points = contour.discretiser(tolerance).expect("discrétisation");
+        let coins: Vec<(f64, f64)> = points
+            .iter()
+            .map(|p| (p.x().millimeters(), p.y().millimeters()))
+            .collect();
+        for coin in [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)] {
+            assert!(
+                coins
+                    .iter()
+                    .any(|c| (c.0 - coin.0).abs() < 1e-9 && (c.1 - coin.1).abs() < 1e-9),
+                "coin {coin:?} absent du contour"
+            );
+        }
+    }
     #[test]
     fn segments_serialisables() {
         let segments = [
