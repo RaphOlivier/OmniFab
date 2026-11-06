@@ -520,7 +520,7 @@ pub fn contours(segments: &[Segment2]) -> Result<Vec<Contour2>, ErreurContour> {
         if degres[s] != 1 {
             continue;
         }
-        let Some(&arete) = incident[s].iter().find(|a| vivante[*a]) else {
+        let Some(&arete) = incident[s].iter().find(|a| vivante[**a]) else {
             continue;
         };
         vivante[arete] = false;
@@ -568,7 +568,7 @@ pub fn contours(segments: &[Segment2]) -> Result<Vec<Contour2>, ErreurContour> {
             if sommet == depart_initial {
                 break;
             }
-            let Some(&suivante) = incident[sommet].iter().find(|a| vivante[*a]) else {
+            let Some(&suivante) = incident[sommet].iter().find(|a| vivante[**a]) else {
                 break;
             };
             arete = suivante;
