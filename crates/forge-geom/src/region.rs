@@ -94,13 +94,13 @@ pub fn regions(cycles: &[Contour2]) -> Result<Vec<Region>, GeomError> {
     let mut ouvertes: Vec<(usize, Vec<usize>)> = Vec::new();
     let mut region_du_cycle: Vec<Option<usize>> = vec![None; cycles.len()];
     for i in 0..cycles.len() {
-        if profondeurs[i] % 2 == 0 {
+        if profondeurs[i].is_multiple_of(2) {
             region_du_cycle[i] = Some(ouvertes.len());
             ouvertes.push((i, Vec::new()));
         }
     }
     for (i, points) in polylignes.iter().enumerate() {
-        if profondeurs[i] % 2 == 0 {
+        if profondeurs[i].is_multiple_of(2) {
             continue;
         }
         let Some(temoin) = points.first() else {
