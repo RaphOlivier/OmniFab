@@ -15,6 +15,7 @@ use crate::cad::{
 use crate::esquisse::{ContrainteEsquisse, EntiteEsquisse, ValeurCote};
 use crate::{Session, SessionError};
 use forge_doc::NewEvent;
+use forge_geom::MAGNITUDE_MAX_MM;
 use forge_units::Length;
 use forge_values::ValuesError;
 use forge_values::{
@@ -861,8 +862,9 @@ fn profondeur_de_commande(id: u32, profondeur: &ProfondeurFeature) -> Profondeur
 
 /// Garde commune des commandes de feature (ADR-0024 §7, lot 2) :
 /// croquis connu et pourvu d'un contour fermé aux graines du journal,
-/// profondeur valide, couleur finie — un refus ne laisse rien au
-/// journal (OF-SES-0001).
+/// profondeur valide, couleur aux composantes RGBA finies et dans
+/// 0..=1 (ADR-0036 D2) — un refus ne laisse rien au journal
+/// (OF-SES-0001).
 fn feature_valide(
     session: &Session,
     croquis: u32,
@@ -883,9 +885,14 @@ fn feature_valide(
     }
     match profondeur {
         ProfondeurFeature::Fixe { mm } => {
-            if !mm.millimeters().is_finite() || mm.millimeters() <= 0.0 {
+            // ADR-0036 D1 (A5-04) : la borne haute manquait — 1e300 mm
+            // passait au plan. La garde commune refuse les profondeurs
+            // non finies, négatives et démesurées, rien au journal.
+            if !crate::cad::profondeur_valide(mm.millimeters()) {
                 return Err(SessionError::CommandRejected {
-                    reason: "la profondeur doit être finie et strictement positive".to_string(),
+                    reason: format!(
+                        "la profondeur doit être finie, strictement positive et au plus {MAGNITUDE_MAX_MM} mm"
+                    ),
                 });
             }
         }
@@ -905,11 +912,16 @@ fn feature_valide(
         }
         ProfondeurFeature::ATravers => {}
     }
+    // ADR-0036 D2 (A5-04) : composantes RGBA finies ET dans 0..=1 —
+    // un rouge à 2.0 ou un alpha négatif passaient au plan. Même
+    // garde commune que le rejeu (`crate::cad::couleur_valide`),
+    // refus OF-SES-0001, rien au journal.
     if let Some(couleur) = couleur
-        && (!couleur.rgba.iter().all(|c| c.is_finite()) || !couleur.speculaire.is_finite())
+        && !crate::cad::couleur_valide(couleur)
     {
         return Err(SessionError::CommandRejected {
-            reason: "les composantes de la couleur doivent être finies".to_string(),
+            reason: "les composantes RGBA de la couleur doivent être finies et dans 0..=1"
+                .to_string(),
         });
     }
     Ok(())

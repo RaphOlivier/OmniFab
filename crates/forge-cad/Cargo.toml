@@ -13,6 +13,7 @@ edition.workspace = true
 forge-units = { path = "../forge-units" }
 opencascade = "0.3"
 glam = "0.24"
+robust = "1"
 thiserror.workspace = true
 uuid.workspace = true
 

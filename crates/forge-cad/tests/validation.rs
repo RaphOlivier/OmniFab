@@ -116,6 +116,46 @@ fn prisme_points_alignes_rejete() {
     assert_eq!(erreur, "OF-CAD-0002");
 }
 
+/// A4-16 (audit n°5, ADR-0036 D3) : contre-exemple de l'audit —
+/// triangle (0,0), (1000,0), (500,5e-7). L'aire de lacet (5e-4 mm²)
+/// passe l'epsilon absolu, mais la lame est quasi segment à
+/// l'échelle du contour : l'alignement se juge en hauteur moyenne
+/// (aire/périmètre < TOLERANCE_MM), pas en aire absolue — refus.
+#[test]
+fn prisme_refuse_triangle_quasi_plat_a_echelle_reelle() {
+    let lame = [
+        (mm(0.0), mm(0.0)),
+        (mm(1000.0), mm(0.0)),
+        (mm(500.0), mm(5e-7)),
+    ];
+    let erreur = Solide::prisme(&lame, mm(5.0)).unwrap_err().code();
+    assert_eq!(erreur, "OF-CAD-0002");
+}
+
+/// A4-16 : trois points alignés à 1e-7 mm sur un contour de 1e6 mm —
+/// l'aire absolue (0,1 mm²) est non nulle et la cancellation aux
+/// grandes coordonnées fausse le lacet : recentrage sur le centroïde
+/// puis hauteur moyenne refusent ce qu'un epsilon absolu laisse
+/// passer.
+#[test]
+fn prisme_refuse_alignement_aux_grandes_coordonnees() {
+    let grand = [
+        (mm(0.0), mm(0.0)),
+        (mm(1_000_000.0), mm(0.0)),
+        (mm(500_000.0), mm(1e-7)),
+    ];
+    let erreur = Solide::prisme(&grand, mm(5.0)).unwrap_err().code();
+    assert_eq!(erreur, "OF-CAD-0002");
+}
+
+/// Garde-fou A4-16 : le relatif ne rejette pas le petit sain —
+/// carré de 1 µm (côté 1e-3 mm) accepté.
+#[test]
+fn prisme_accepte_carre_de_micron() {
+    let prisme = Solide::prisme(&carre(1e-3), mm(5.0));
+    assert!(prisme.is_ok(), "carré de 1 µm : {prisme:?}");
+}
+
 #[test]
 fn prisme_coordonnee_non_finie_rejetee() {
     let non_fini = [
