@@ -5,8 +5,9 @@
 //!
 //! (ADR-0009.) Briques géométriques du jalon 1 : tracés 2D pour le
 //! vectoriel importé (SVG et DXF, via forge-io), segments typés 2D —
-//! lignes, arcs et Béziers (ADR-0024, phase B) — et maillage indexé
-//! pour le 3D (STL). Les unités sont strictes à la frontière
+//! lignes, arcs et Béziers (ADR-0024, phase B), régions par
+//! orientation et parité (ADR-0037 D3) et maillage indexé pour le
+//! 3D (STL). Les unités sont strictes à la frontière
 //! (ADR-0000, verrou n°5) : toute coordonnée est une [`Length`] de
 //! forge-units — jamais de `f64` nu dans les API publiques.
 //!
@@ -19,9 +20,12 @@
 //! (OF-GEO-0001).
 
 mod error;
+mod region;
 mod segments;
 
 pub use error::GeomError;
+
+pub use region::{Region, regions};
 
 pub use segments::{
     Contour2, ErreurContour, MAX_ENTITES_CHAINAGE, MAX_POINTS_DISCRETISATION,
