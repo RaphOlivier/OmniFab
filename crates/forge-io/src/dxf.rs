@@ -4,8 +4,9 @@
 //! Convention d'unités : une unité = 1 mm ; le z est ignoré (tracés
 //! 2D). Les entités géométriques du jalon 1 sont lues : `LINE`,
 //! `LWPOLYLINE`, `POLYLINE` (bulges devenus arcs natifs),
-//! `CIRCLE`, `ARC` (cercles et arcs natifs — un balayage nul
-//! dénote le cercle complet) et `SPLINE`
+//! `CIRCLE`, `ARC` (le cercle complet devient le variant
+//! explicite `Segment2::Cercle`, les vrais arcs restent natifs)
+//! et `SPLINE`
 //! (B-splines rationnelles échantillonnées par l'algorithme de
 //! de Boor — l'export DXF d'Inkscape y code toute courbe, cercle
 //! et arc) ; les entités non géométriques (textes, cotes,
@@ -59,7 +60,8 @@ impl Default for DxfBudgets {
 
 /// Importe un DXF en tracés 2D. Convention : une unité = 1 mm ; le
 /// z est ignoré. Les cercles et arcs deviennent des segments
-/// natifs — un cercle est un arc au balayage nul — ; les bulges
+/// natifs — un cercle complet est le variant explicite
+/// [`Segment2::Cercle`] — ; les bulges
 /// des polylignes (arcs codés par sommet, code 42, générés par
 /// FreeCAD à l'export) deviennent des arcs natifs le long de la
 /// corde ; les splines — B-splines rationnelles, qu'Inkscape
@@ -179,12 +181,10 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
                 true
             }
             EntityType::Circle(cercle) => {
-                segments.push(arc_cercle_natif(
+                segments.push(cercle_natif(
                     cercle.center.x,
                     cercle.center.y,
                     cercle.radius,
-                    0.0,
-                    0.0,
                     &mut total,
                     budgets,
                 )?);
@@ -195,15 +195,23 @@ pub fn import_avec_rapport(bytes: &[u8], budgets: &DxfBudgets) -> Result<ImportD
                 if span <= 0.0 {
                     span += 360.0;
                 }
-                segments.push(arc_cercle_natif(
-                    arc.center.x,
-                    arc.center.y,
-                    arc.radius,
-                    arc.start_angle,
-                    arc.start_angle + span,
-                    &mut total,
-                    budgets,
-                )?);
+                // Un balayage nul ou complet est le cercle : le
+                // variant explicite, jamais un arc effondré
+                // (ADR-0037 D1).
+                let segment = if span >= 360.0 {
+                    cercle_natif(arc.center.x, arc.center.y, arc.radius, &mut total, budgets)?
+                } else {
+                    arc_cercle_natif(
+                        arc.center.x,
+                        arc.center.y,
+                        arc.radius,
+                        arc.start_angle,
+                        arc.start_angle + span,
+                        &mut total,
+                        budgets,
+                    )?
+                };
+                segments.push(segment);
                 true
             }
             EntityType::Spline(spline) => {
@@ -380,10 +388,40 @@ fn arc_de_bulge(depart: Point2, arrivee: Point2, bulge: f64) -> Result<Segment2,
     })
 }
 
-/// Arc natif d'un cercle ou d'un arc DXF (z ignoré) : un balayage
-/// nul dénote le cercle complet ; le centre et les points extrêmes
-/// sont validés comme sommets (garde de budget et de bornes), le
-/// rayon doit être strictement positif et fini.
+/// Cercle natif d'un `CIRCLE` DXF (z ignoré) : le variant
+/// explicite [`Segment2::Cercle`], trigonométrique — le centre
+/// et le point à l'angle 0 sont validés comme sommets (garde de
+/// budget et de bornes), le rayon doit être strictement positif
+/// et fini.
+fn cercle_natif(
+    centre_x: f64,
+    centre_y: f64,
+    rayon: f64,
+    total: &mut usize,
+    budgets: &DxfBudgets,
+) -> Result<Segment2, IoError> {
+    if !rayon.is_finite() || rayon <= 0.0 {
+        return Err(IoError::InvalidDxf {
+            raison: format!("rayon de cercle invalide : {rayon}"),
+        });
+    }
+    let centre = sommet(centre_x, centre_y, total, budgets)?;
+    // Le point à l'angle 0 borne les coordonnées réellement
+    // importées : le corps du cercle ne porte que ce point, le
+    // reste est discrétisé à la lecture.
+    sommet(centre_x + rayon, centre_y, total, budgets)?;
+    Ok(Segment2::Cercle {
+        centre,
+        rayon: Length::from_millimeters(rayon),
+        sens: SensHoraire::Trigonometrique,
+    })
+}
+
+/// Arc natif d'un arc DXF (z ignoré) : un balayage nul ou complet
+/// (le cercle) devient le variant explicite [`Segment2::Cercle`]
+/// en amont ; le centre et les points extrêmes sont validés comme
+/// sommets (garde de budget et de bornes), le rayon doit être
+/// strictement positif et fini.
 fn arc_cercle_natif(
     centre_x: f64,
     centre_y: f64,

@@ -44,6 +44,12 @@ pub enum GeomError {
         /// Détail du dépassement.
         raison: &'static str,
     },
+    /// Arc de balayage nul : l'arc effondré (fin = début) n'est
+    /// plus l'encodage du cercle complet — le cercle complet est
+    /// le variant explicite `Segment2::Cercle` (OF-GEO-0007,
+    /// ADR-0037 D1, A5-02 + A4-18 — audit n°5).
+    #[error("OF-GEO-0007 : arc de balayage nul — le cercle complet est `Cercle`")]
+    BalayageNul,
     /// Embranchement de chaînage : un sommet réunit plus de deux
     /// extrémités de segments après l'élagage des queues
     /// (OF-GEO-0008, ADR-0037 D2) — jamais de choix arbitraire de
@@ -80,6 +86,7 @@ impl GeomError {
             Self::CoordonneeHorsBornes { .. } => "OF-GEO-0003",
             Self::DiscretisationImpossible { .. } => "OF-GEO-0004",
             Self::BudgetDiscretisationDepasse { .. } => "OF-GEO-0005",
+            Self::BalayageNul => "OF-GEO-0007",
             Self::EmbranchementContour { .. } => "OF-GEO-0008",
             Self::PlafondChainageDepasse { .. } => "OF-GEO-0009",
         }

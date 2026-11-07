@@ -75,6 +75,7 @@ Code réservé, non encore attribué : OF-SES-0007 (plafond de features CAO — 
 | OF-GEO-0003 | Coordonnée hors de la borne de magnitude | Valeur finie au-delà de 1e9 mm | Corriger les données d'entrée |
 | OF-GEO-0004 | Discrétisation impossible | Tolérance nulle ou non finie, arc à rayon nul/négatif ou non fini | Corriger les données d'entrée |
 | OF-GEO-0005 | Budget de discrétisation dépassé | Profondeur de subdivision ou nombre de points au-delà des bornes publiques de forge-geom | Simplifier la géométrie ou desserrer la tolérance |
+| OF-GEO-0007 | Arc de balayage nul | Arc effondré (angle de fin égal à l'angle de début) : le cercle complet est le variant explicite `Cercle` (ADR-0037 D1) | Corriger le croquis : un vrai arc balaye, un cercle complet se pose `Cercle` |
 | OF-GEO-0008 | Embranchement de chaînage | Un sommet réunit plus de deux extrémités de segments après l'élagage des queues (ADR-0037) | Corriger le croquis : un vrai embranchement n'est jamais tranché |
 | OF-GEO-0009 | Plafond d'entités de chaînage dépassé | Plus de `MAX_ENTITES_CHAINAGE` (10 000) segments soumis au chaînage | Simplifier le croquis ou l'import |
 

@@ -217,7 +217,7 @@ mod tests {
     use super::*;
     use crate::segments::Segment2;
     use crate::{Point2, SensHoraire, TOLERANCE_DISCRETISATION_MM, contours};
-    use forge_units::{Angle, Length};
+    use forge_units::Length;
 
     /// Point de test (mm).
     fn point(x: f64, y: f64) -> Point2 {
@@ -232,14 +232,12 @@ mod tests {
         }
     }
 
-    /// Cercle complet de test (arc à balayage nul, sens
+    /// Cercle complet de test (variant explicite, sens
     /// trigonométrique).
     fn cercle(x: f64, y: f64, rayon: f64) -> Segment2 {
-        Segment2::Arc {
+        Segment2::Cercle {
             centre: point(x, y),
             rayon: Length::from_millimeters(rayon),
-            debut: Angle::ZERO,
-            fin: Angle::ZERO,
             sens: SensHoraire::Trigonometrique,
         }
     }
@@ -317,8 +315,8 @@ mod tests {
 
     #[test]
     fn deux_cercles_concentriques_anneau() {
-        // ADR-0037 D3 : deux cercles complets concentriques (arcs à
-        // balayage nul) — un anneau, le petit cercle est le trou.
+        // ADR-0037 D3 : deux cercles concentriques (Segment2::Cercle
+        // explicites) — un anneau, le petit cercle est le trou.
         let segments = [cercle(0.0, 0.0, 10.0), cercle(0.0, 0.0, 3.0)];
         let regions = regions(&cycles(&segments)).expect("régions classées");
         assert_eq!(regions.len(), 1, "deux cercles concentriques = un anneau");

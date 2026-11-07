@@ -26,9 +26,10 @@ use crate::esquisse::{
 use crate::projection::{Projection, TypesIgnores, verifie_schema};
 use forge_doc::NewEvent;
 use forge_geom::{
-    ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2, SensHoraire,
+    BALAYAGE_NUL_RAD, ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2,
+    SensHoraire, balayage_apparent,
 };
-use forge_units::{Angle, Length};
+use forge_units::Length;
 use std::collections::BTreeMap;
 
 /// Version de schéma courante des événements `cad.feature.added` et
@@ -795,11 +796,13 @@ fn nombre_de_objet(
 
 /// Segments du croquis aux positions données (ADR-0024 D4) : les
 /// entités deviennent des segments typés — lignes entre points,
-/// cercle en arc à balayage nul (le cercle complet), arc par son
-/// centre et ses angles (les points de début et de fin de l'entité ne
-/// portent que la sélection, la géométrie suit les angles — le sens
-/// est trigonométrique si l'angle de fin précède ou égale celui de
-/// début, horaire sinon). Une position absente saute l'entité : le
+/// cercle complet en variant explicite `Segment2::Cercle`
+/// (ADR-0037 D1), arc par son centre et ses angles (les points
+/// de début et de fin de l'entité ne portent que la sélection,
+/// la géométrie suit les angles — le sens est trigonométrique
+/// si l'angle de fin suit ou égale celui de début, horaire
+/// sinon ; un arc effondré, au balayage nul, est omis : il ne
+/// referme aucun contour). Une position absente saute l'entité : le
 /// croquis incomplet ne donne pas de contour.
 pub(crate) fn segments_du_croquis(
     entites: &[(u32, EntiteEsquisse)],
@@ -821,11 +824,9 @@ pub(crate) fn segments_du_croquis(
             }
             EntiteEsquisse::Cercle { centre, rayon } => {
                 if let Some(centre) = point(*centre) {
-                    segments.push(Segment2::Arc {
+                    segments.push(Segment2::Cercle {
                         centre,
                         rayon: *rayon,
-                        debut: Angle::ZERO,
-                        fin: Angle::ZERO,
                         sens: SensHoraire::Trigonometrique,
                     });
                 }
@@ -838,17 +839,20 @@ pub(crate) fn segments_du_croquis(
                 ..
             } => {
                 if let Some(centre) = point(*centre) {
-                    segments.push(Segment2::Arc {
-                        centre,
-                        rayon: *rayon,
-                        debut: *angle_debut,
-                        fin: *angle_fin,
-                        sens: if angle_fin.radians() >= angle_debut.radians() {
-                            SensHoraire::Trigonometrique
-                        } else {
-                            SensHoraire::Horaire
-                        },
-                    });
+                    let sens = if angle_fin.radians() >= angle_debut.radians() {
+                        SensHoraire::Trigonometrique
+                    } else {
+                        SensHoraire::Horaire
+                    };
+                    if balayage_apparent(*angle_debut, *angle_fin, sens).abs() > BALAYAGE_NUL_RAD {
+                        segments.push(Segment2::Arc {
+                            centre,
+                            rayon: *rayon,
+                            debut: *angle_debut,
+                            fin: *angle_fin,
+                            sens,
+                        });
+                    }
                 }
             }
         }
@@ -867,4 +871,116 @@ pub(crate) fn segments_du_croquis(
 pub(crate) fn regions_du_croquis(segments: &[Segment2]) -> Result<Vec<Region>, ErreurContour> {
     let cycles = forge_geom::contours(segments)?;
     forge_geom::regions(&cycles)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use forge_units::Angle;
+
+    /// Positions de deux points (ids 0 et 1), absentes ailleurs.
+    fn positions(x0: f64, y0: f64, x1: f64, y1: f64) -> impl Fn(u32) -> Option<(Length, Length)> {
+        move |id| match id {
+            0 => Some((Length::from_millimeters(x0), Length::from_millimeters(y0))),
+            1 => Some((Length::from_millimeters(x1), Length::from_millimeters(y1))),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn arc_effondre_omis_par_segments_du_croquis() {
+        // A5-02 + A4-18 (audit n°5, ADR-0037 D1) : un arc effondré
+        // (fin = début) n'est plus un cercle complet — omis des
+        // segments du croquis, il ne referme aucun contour.
+        let entites = vec![(
+            0,
+            EntiteEsquisse::Arc {
+                centre: 0,
+                debut: 1,
+                fin: 1,
+                rayon: Length::from_millimeters(5.0),
+                angle_debut: Angle::from_degrees(30.0),
+                angle_fin: Angle::from_degrees(30.0),
+            },
+        )];
+        let segments = segments_du_croquis(&entites, &positions(0.0, 0.0, 1.0, 2.0));
+        assert!(
+            segments.is_empty(),
+            "l'arc effondré ne devient pas un cercle"
+        );
+    }
+
+    #[test]
+    fn cercle_d_entite_devient_cercle_explicite() {
+        // Le cercle complet d'esquisse devient le variant explicite
+        // de Segment2 (ADR-0037 D1), jamais un arc à balayage nul.
+        let entites = vec![(
+            0,
+            EntiteEsquisse::Cercle {
+                centre: 0,
+                rayon: Length::from_millimeters(5.0),
+            },
+        )];
+        let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
+        match segments.as_slice() {
+            [
+                Segment2::Cercle {
+                    centre,
+                    rayon,
+                    sens,
+                },
+            ] => {
+                assert_eq!(centre.x().millimeters(), 1.0);
+                assert_eq!(centre.y().millimeters(), 2.0);
+                assert_eq!(rayon.millimeters(), 5.0);
+                assert_eq!(*sens, SensHoraire::Trigonometrique);
+            }
+            autre => panic!("un cercle explicite attendu : {autre:?}"),
+        }
+    }
+
+    #[test]
+    fn sens_d_un_arc_suivant_la_comparaison_des_angles() {
+        // A5-03 (audit n°5, ADR-0037 D1) : le sens d'un arc suit la
+        // comparaison des angles — trigonométrique si l'angle de
+        // fin suit ou égale celui de début, horaire sinon.
+        let entites = vec![
+            (
+                0,
+                EntiteEsquisse::Arc {
+                    centre: 0,
+                    debut: 1,
+                    fin: 1,
+                    rayon: Length::from_millimeters(5.0),
+                    angle_debut: Angle::from_degrees(30.0),
+                    angle_fin: Angle::from_degrees(60.0),
+                },
+            ),
+            (
+                1,
+                EntiteEsquisse::Arc {
+                    centre: 0,
+                    debut: 1,
+                    fin: 1,
+                    rayon: Length::from_millimeters(5.0),
+                    angle_debut: Angle::from_degrees(60.0),
+                    angle_fin: Angle::from_degrees(30.0),
+                },
+            ),
+        ];
+        let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
+        assert_eq!(segments.len(), 2, "deux arcs, aucun effondré");
+        let sens: Vec<SensHoraire> = segments
+            .iter()
+            .map(|segment| match segment {
+                Segment2::Arc { sens, .. } => *sens,
+                autre => panic!("un arc attendu : {autre:?}"),
+            })
+            .collect();
+        assert_eq!(
+            sens,
+            vec![SensHoraire::Trigonometrique, SensHoraire::Horaire]
+        );
+    }
 }
