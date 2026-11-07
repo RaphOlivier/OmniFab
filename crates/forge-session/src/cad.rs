@@ -800,7 +800,7 @@ fn nombre_de_objet(
 /// (ADR-0037 D1), arc par son centre et ses angles (les points
 /// de début et de fin de l'entité ne portent que la sélection,
 /// la géométrie suit les angles — le sens est trigonométrique
-/// si l'angle de fin précède ou égale celui de début, horaire
+/// si l'angle de fin suit ou égale celui de début, horaire
 /// sinon ; un arc effondré, au balayage nul, est omis : il ne
 /// referme aucun contour). Une position absente saute l'entité : le
 /// croquis incomplet ne donne pas de contour.
@@ -938,5 +938,46 @@ mod tests {
             }
             autre => panic!("un cercle explicite attendu : {autre:?}"),
         }
+    }
+
+    #[test]
+    fn sens_d_un_arc_suivant_la_comparaison_des_angles() {
+        // A5-03 (audit n°5, ADR-0037 D1) : le sens d'un arc suit la
+        // comparaison des angles — trigonométrique si l'angle de
+        // fin suit ou égale celui de début, horaire sinon.
+        let entites = vec![
+            (
+                0,
+                EntiteEsquisse::Arc {
+                    centre: 0,
+                    debut: 1,
+                    fin: 1,
+                    rayon: Length::from_millimeters(5.0),
+                    angle_debut: Angle::from_degrees(30.0),
+                    angle_fin: Angle::from_degrees(60.0),
+                },
+            ),
+            (
+                1,
+                EntiteEsquisse::Arc {
+                    centre: 0,
+                    debut: 1,
+                    fin: 1,
+                    rayon: Length::from_millimeters(5.0),
+                    angle_debut: Angle::from_degrees(60.0),
+                    angle_fin: Angle::from_degrees(30.0),
+                },
+            ),
+        ];
+        let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
+        assert_eq!(segments.len(), 2, "deux arcs, aucun effondré");
+        let sens: Vec<SensHoraire> = segments
+            .iter()
+            .map(|segment| match segment {
+                Segment2::Arc { sens, .. } => *sens,
+                autre => panic!("un arc attendu : {autre:?}"),
+            })
+            .collect();
+        assert_eq!(sens, vec![SensHoraire::Trigonometrique, SensHoraire::Horaire]);
     }
 }
