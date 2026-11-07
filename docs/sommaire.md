@@ -23,6 +23,7 @@
 | [`ci-cargo-deny.md`](ci-cargo-deny.md) | Audit supply-chain des dépendances : licences/CVE via `deny.toml` (CI) |
 | [`en/`](en/README.md) | Couche d'accueil en anglais (README, CONTRIBUTING, index ADR, en-têtes de la matrice) — le français fait foi |
 | [`adr/`](adr/ADR-0000-decisions-initiales-phase-0.md) | Toutes les décisions d'architecture, avec alternatives rejetées 
+
 — détail ci-dessous |
 
 ## ADR — décisions d'architecture (`docs/adr/`)
@@ -45,7 +46,8 @@
 | [`ADR-0013`](adr/ADR-0013-planegcs-ffi.md) | planegcs (solveur de contraintes FreeCAD) via FFI + shim C++ (verrou 3) |
 | [`ADR-0014`](adr/ADR-0014-quick-wins-phase-B.md) | Quick-wins de la phase B du jalon 2 |
 | [`ADR-0015`](adr/ADR-0015-viewport-wgpu.md) | Viewport wgpu : caméras, scènes, pipelines 2D/3D |
-| [`ADR-0016`](adr/ADR-0016-correctifs-robustesse.md) | Correctifs de robustesse (
+| [`ADR-0016`](adr/ADR-0016-correctifs-robustesse.md) | Correctifs de robustesse 
+(
 audits du 2026-10-17) : session transactionnelle, sauvegarde sûre, conteneur durci, fil de travail desktop, export SVG interopérable |
 | [`ADR-0017`](adr/ADR-0017-unites-stl.md) | Unités à l'import/export STL |
 | [`ADR-0018`](adr/ADR-0018-esquisse-2D.md) | Esquisse 2D contrainte (design du sketcher) |
@@ -59,6 +61,12 @@ audits du 2026-10-17) : session transactionnelle, sauvegarde sûre, conteneur du
 | [`ADR-0026`](adr/ADR-0026-editeur-nodal-tableau.md) | Éditeur nodal de valeurs + tableau sémantique |
 | [`ADR-0027`](adr/ADR-0027-desktop-cao.md) | Desktop CAO : espace CAO, arbre de projet, pipeline 3D (design phase E) |
 | [`ADR-0028`](adr/ADR-0028-copies-knowledge-depot.md) | Copies de référence de la Knowledge au dépôt (`docs/knowledge/`) |
+| [`ADR-0035`](adr/ADR-0035-solidcore-veille-regles-noyau.md) | Position vis-à-vis de Tangency Labs : « B-light » pour le noyau CAO, veille solidcore |
+| [`ADR-0036`](adr/ADR-0036-gardes-rejeu-cao-tolerances-relatives.md) | Gardes de rejeu CAO et tolérances relatives (audit n°5, ordre 1) |
+| [`ADR-0037`](adr/ADR-0037-contours-reels-graphe-parite.md) | Contours réels : graphe d'extrémités, régions par parité, cercle explicite et sens des arcs (ordres 2-3) |
+| [`ADR-0038`](adr/ADR-0038-plafonds-bornes-types-imports-features-brep.md) | Plafonds et bornes : types d'imports par format, MAX_FEATURES, B-rep |
+| [`ADR-0039`](adr/ADR-0039-tolerances-unifiees-proptest.md) | Tolérances unifiées et tests de propriété proptest |
+| [`ADR-0040`](adr/ADR-0040-gouvernance-ouverture-multi-contributeurs.md) | Gouvernance de l'ouverture multi-contributeurs : niveau 2 ouvert (pistes isolées) |
 | [`TEMPLATE.md`](adr/TEMPLATE.md) | Modèle pour rédiger un nouvel ADR |
 
 ## Knowledge — le *pourquoi* du projet (`docs/knowledge/`)
@@ -68,7 +76,8 @@ Copie de référence publique des fiches de décisions (ADR-0028) : la raisonnem
 | Fiche | Contenu |
 |---|---|
 | [`README.md`](knowledge/README.md) | Guide de lecture de la Knowledge (parcours recommandés, conventions) |
-| [`KNOWLEDGE.md`](knowledge/KNOWLEDGE.md) | Index général : ce que couvre chaqu
+| [`KNOWLEDGE.md`](knowledge/KNOWLEDGE.md) | Index général : ce que couvre cha
+qu
 e fiche |
 | [`etat-actuel/`](knowledge/etat-actuel/KNOWLEDGE.md) | **Relevé d'une page**, mis à jour à chaque lot : ce qui compile, état de la CI, dette ouverte |
 | [`architecture/`](knowledge/architecture/KNOWLEDGE.md) | Structure des crates, six verrous techniques, roadmap jalons 0-10, résumé des ADR |
@@ -88,7 +97,8 @@ e fiche |
 | [`2026-10-19-gouvernance-adr0019-bibliotheques`](knowledge/archives/2026-10-19-gouvernance-adr0019-bibliotheques.md) | Gouvernance de validation + bibliothèques (ADR-0019) |
 | [`2026-10-20-phaseE-lot1b-liaisons-session`](knowledge/archives/2026-10-20-phaseE-lot1b-liaisons-session.md) | J2 — phase E lot 1b : liaisons forge-session |
 | [`2026-10-20-phaseE-lot2-desktop-liaisons`](knowledge/archives/2026-10-20-phaseE-lot2-desktop-liaisons.md) | J2 — phase E lot 2 : liaisons desktop |
-| [`2026-10-21-j2-contraintes-bascule-ancrage`](knowledge/archives/2026-10-21-j2-contraintes-
+| [`2026-10-21-j2-contraintes-bascule-ancrage`](knowledge/archives/2026-10-21-j2-contraint
+es-
 bascule-ancrage-liste.md) | J2 — contraintes, bascule d'ancrage (ADR-0021) |
 | [`2026-10-21-j2-correctifs-revalidation-suite`](knowledge/archives/2026-10-21-j2-correctifs-revalidation-suite.md) | J2 — correctifs, revalidation en suite |
 | [`2026-10-21-j2-correctifs-validation-jalon2`](knowledge/archives/2026-10-21-j2-correctifs-validation-jalon2.md) | J2 — audit n°1 : correctifs de validation |
@@ -103,7 +113,8 @@ bascule-ancrage-liste.md) | J2 — contraintes, bascule d'ancrage (ADR-0021) |
 | [`2026-10-26-j0-presentation-docs-diagrammes`](knowledge/archives/2026-10-26-j0-presentation-docs-diagrammes.md) | J0 — présentation des docs, diagrammes |
 | [`2026-10-26-j0-protocole-audit`](knowledge/archives/2026-10-26-j0-protocole-audit.md) | J0 — création du protocole d'audit |
 | [`2026-10-26-j0-revue-miroir-dette`](knowledge/archives/2026-10-26-j0-revue-miroir-dette.md) | J0 — revue du miroir, dette documentaire |
-| [`2026-10-26-j3-designs-phases-B-
+| [`2026-10-26-j3-designs-phase
+s-B-
 E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des phases B-E : digest 4/4, 3 amendements, note matériaux, veille OCCT |
 | [`2026-10-26-j4-ouverture-lot-adr`](knowledge/archives/2026-10-26-j4-ouverture-lot-adr.md) | J4 — ouverture du jalon 4 : ADR-0029..0034 validés + conventions `expect` |
 | [`2026-10-26-j0-sans-pc-convergence-docs`](knowledge/archives/2026-10-26-j0-sans-pc-convergence-docs.md) | J0 — session sans PC n°2 : spécifs phase D, matrice EN, sommaire général, ADR-0016/0019, patchs `expect` |
@@ -114,7 +125,8 @@ E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des
 | [`2026-10-31-j3-a3-11-12-13-18-mineurs-forge-doc`](knowledge/archives/2026-10-31-j3-a3-11-12-13-18-mineurs-forge-doc.md) | J3 — mineurs forge-doc A3-11/12/13/18 : UUIDv7 repris au rechargement, journal corrompu refusé, traversée par segment (PR #536) |
 | [`2026-10-31-j3-a3-14-15-16-mineurs-forge-io`](knowledge/archives/2026-10-31-j3-a3-14-15-16-mineurs-forge-io.md) | J3 — mineurs forge-io A3-14/15/16 : STL binaire/ASCII, SVG résolveur neutralisé + DTD internes refusées (PR #528) |
 | [`2026-10-31-j3-a3-17-longueur-faillible`](knowledge/archives/2026-10-31-j3-a3-17-longueur-faillible.md) | J3 — mineur forge-units A3-17 : constructeur faillible `Length::try_millimeters` (PR #540) |
-| [`2026-10-31-j3
+| [`2026-10-
+31-j3
 -a4-04-05-06-hygiene-gcs`](knowledge/archives/2026-10-31-j3-a4-04-05-06-hygiene-gcs.md) | J3 — hygiène forge-gcs A4-04/05/06 : troncature signalée, statut 3 typé, arène avant système (PR #542) |
 | [`2026-10-31-j3-a4-07-13-robustesse-geometrie`](knowledge/archives/2026-10-31-j3-a4-07-13-robustesse-geometrie.md) | J3 — hygiène A4-07/13 : zoom gardé, borne de magnitude OF-GEO-0003, garde ADR-0020 (PR #547) |
 | [`2026-10-31-j3-a4-08-forbid-unsafe`](knowledge/archives/2026-10-31-j3-a4-08-forbid-unsafe.md) | J3 — hygiène A4-08 : `forbid(unsafe_code)` sur les crates cœur, exemption FFI documentée (PR #549) |
@@ -124,7 +136,8 @@ E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des
 | [`2026-10-31-j3-lot-a-forge-render-expect`](knowledge/archives/2026-10-31-j3-lot-a-forge-render-expect.md) | J3 — lot A expect : renderer absent = frame sautée, poison assumé (PR #557) |
 | [`2026-10-31-j3-lot-b-forge-io-expect`](knowledge/archives/2026-10-31-j3-lot-b-forge-io-expect.md) | J3 — lot B expect : 11 messages d'invariant forge-io, zéro changement de comportement (PR #561) |
 | [`2026-10-31-j3-lot-d-desktop-expect`](knowledge/archives/2026-10-31-j3-lot-d-desktop-expect.md) | J3 — lot D expect : 7 messages d'invariant desktop, graine de démo hors lot (PR #562) |
-| [`2026-11-01-j3-lot-e-clippy-expect-workspace`](knowledge/archives/2026-11-01-j3-lot-e-clippy-expect-workspace.md) | J3 — lot E expect : clippy `expect_used` workspace warn
+| [`2026-11-01-j3-lot-e-clippy-expect-workspace`](knowledge/archives/2026-11-01-j3-lot-e-clippy-expect-workspace.md) | J3 — lot E expect : clippy `expect_used` workspac
+e warn
 , 22 `#[expect]`, échappatoires datées (PR #563) |
 | [`2026-11-01-j0-injection-prompt-contributions-externes`](knowledge/archives/2026-11-01-j0-injection-prompt-contributions-externes.md) | J0 — injection de prompt via contributions externes (cas OpenAgents) : règle anti-injection, signalement GitHub |
 | [`2026-11-01-j0-securisation-depot`](knowledge/archives/2026-11-01-j0-securisation-depot.md) | J0 — sécurisation du dépôt : CONTRIBUTING/AGENTS anti-injection, modération 3 niveaux, protection main |
@@ -134,7 +147,8 @@ E`](knowledge/archives/2026-10-26-j3-designs-phases-B-E.md) | J3 — designs des
 | [`2026-11-03-j3-phaseB-lot2-forge-session`](knowledge/archives/2026-11-03-j3-phaseB-lot2-forge-session.md) | J3 — phase B lot 2 : forge-session — croquis nommés, features d'extrusion, alias cad., dette A3-08.e (PR #605) |
 | [`2026-11-03-j0-etude-tangency-labs`](knowledge/archives/2026-11-03-j0-etude-tangency-labs.md) | J0 — étude d'intégration Tangency Labs : B-light pour le noyau CAO, ADR-0035, matrice v9, fiche veille-écosystème (ligne ajoutée à la réception de l'audit 5 — omission de la resynchronisation du 2026-11-03) |
 | [`2026-11-03-j0-audit5-claude`](knowledge/archives/2026-11-03-j0-audit5-claude.md) | J0 — audit externe n°5 (Claude) : 8 signalements A5 + revérification A4-16..21, verdicts en bloc (0 réfuté) |
-| [`2026-11-03-j0-consigne-audit5`](knowledge/archives/2026-11-03-j0-consigne-audit5.md) | J0 — consigne de l'audit n°5 : source des compléments A4-16..21 et des 14 conseils « si j'avais développé dès le départ » (archivée après coup — écart de capitalisation soldé) |
+| [`2026-11-03-j0-consigne-audit5`](knowledge/archives/2026-11-03-j0-consigne-audit5.md) | J0 — consigne de l'audit n°5 : source des compléments 
+A4-16..21 et des 14 conseils « si j'avais développé dès le départ » (archivée après coup — écart de capitalisation soldé) |
 
 ## Code
 
@@ -159,7 +173,8 @@ lock) | Graphe de dépendances figé (builds reproductibles, `--locked`) |
 | [`crates/forge-cad`](../crates/forge-cad) | CAO paramétrique sur OpenCascade (jalon 3) |
 | [`apps/omnifab-desktop`](../apps/omnifab-desktop) | Démonstrateur egui : esquisse, liaisons, viewport, imports/exports |
 | [`apps/omnifab-android`](../apps/omnifab-android) | Cible Android (APK aarch64, même noyau — jalon 7) |
-| [`third_party/`](../third_party) | Dépendances tierces en sous-modules (planegcs) |
+| [`third_party/`](../third_party) | Dépendances tierces en sous-modules 
+(planegcs) |
 
 ## CI — `.github/workflows/`
 
