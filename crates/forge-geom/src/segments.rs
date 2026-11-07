@@ -714,26 +714,95 @@ mod tests {
     }
 
     #[test]
-    fn cercle_complet_debut_egal_fin() {
-        // Balayage nul : l'arc dénote le cercle complet, discrétisé
-        // du point de départ au point de départ.
+    fn arc_de_balayage_nul_refuse_a_la_discretisation() {
+        // A5-02 + A4-18 (audit n°5, ADR-0037 D1) : un arc effondré
+        // (fin = début) ne dénote plus le cercle complet — le
+        // balayage nul est refusé (OF-GEO-0007).
         let segment = Segment2::Arc {
             centre: point(1.0, 2.0),
             rayon: Length::from_millimeters(5.0),
-            debut: Angle::from_degrees(90.0),
-            fin: Angle::from_degrees(90.0),
+            debut: Angle::from_degrees(30.0),
+            fin: Angle::from_degrees(30.0),
             sens: SensHoraire::Trigonometrique,
         };
-        let tolerance = Length::from_millimeters(TOLERANCE_DISCRETISATION_MM);
-        let points = segment.discretiser(tolerance).expect("cercle valide");
-        let premier = points[0];
-        let dernier = points[points.len() - 1];
+        let erreur = segment
+            .discretiser(Length::from_millimeters(TOLERANCE_DISCRETISATION_MM))
+            .expect_err("balayage nul refusé");
+        assert_eq!(erreur.code(), "OF-GEO-0007");
+    }
+
+    #[test]
+    fn arc_de_balayage_nul_refuse_au_chainage() {
+        // Le graphe d'extrémités (ADR-0037 D2) refuse l'arc
+        // effondré dès l'entrée (OF-GEO-0007) — jamais un contour
+        // fermé déguisé en cercle.
+        let segment = Segment2::Arc {
+            centre: point(1.0, 2.0),
+            rayon: Length::from_millimeters(5.0),
+            debut: Angle::from_degrees(30.0),
+            fin: Angle::from_degrees(30.0),
+            sens: SensHoraire::Trigonometrique,
+        };
+        let erreur = contours(&[segment]).expect_err("balayage nul refusé au chaînage");
+        assert_eq!(erreur.code(), "OF-GEO-0007");
+    }
+
+    #[test]
+    fn cercle_explicite_boucle_fermee_a_lui_seul() {
+        // Le cercle complet est un variant explicite (ADR-0037 D1)
+        // — une boucle fermée sur elle-même, chaînable seule.
+        let cercle = Segment2::Cercle {
+            centre: point(1.0, 2.0),
+            rayon: Length::from_millimeters(5.0),
+            sens: SensHoraire::Trigonometrique,
+        };
+        let points = cercle
+            .discretiser(Length::from_millimeters(TOLERANCE_DISCRETISATION_MM))
+            .expect("cercle valide");
         assert!(points.len() > 8, "cercle discrétisé : {}", points.len());
-        // cos(π/2) n'est pas nul en f64 : le sommet du cercle se
-        // vérifie à la tolérance près.
-        assert!((premier.x().millimeters() - 1.0).abs() < 1e-9);
-        assert_eq!(premier.y().millimeters(), 7.0);
-        assert!(points_recolles(premier, dernier), "le cercle se referme");
+        assert!(
+            points.iter().any(|p| (p.x().millimeters() - 6.0).abs() < 1e-9),
+            "le point à l'angle 0 est sur le cercle"
+        );
+        assert!(points_recolles(points[0], points[points.len() - 1]), "le cercle se referme");
+        let chains = contours(&[cercle]).expect("boucle fermée");
+        assert_eq!(chains.len(), 1);
+        assert!(chains[0].is_closed(), "le cercle est un cycle fermé");
+        assert_eq!(chains[0].len(), 1, "un seul segment, jamais découpé");
+        // l'inverse parcourt le cercle en sens horaire
+        match cercle.inverse() {
+            Segment2::Cercle { sens: SensHoraire::Horaire, .. } => {}
+            autre => panic!("cercle inversé horaire attendu : {autre:?}"),
+        }
+    }
+
+    #[test]
+    fn arc_nul_deserialise_est_normalise_en_cercle() {
+        // Rejeu tolérant (ADR-0037 D1) : les anciens journaux
+        // portaient le cercle complet en arc à balayage nul — relu,
+        // il devient le variant explicite.
+        let ancien = Segment2::Arc {
+            centre: point(1.0, 2.0),
+            rayon: Length::from_millimeters(5.0),
+            debut: Angle::from_degrees(30.0),
+            fin: Angle::from_degrees(30.0),
+            sens: SensHoraire::Trigonometrique,
+        };
+        let texte = serde_json::to_string(&ancien).expect("sérialisation");
+        let relu: Segment2 = serde_json::from_str(&texte).expect("désérialisation");
+        assert_eq!(
+            relu,
+            Segment2::Cercle {
+                centre: point(1.0, 2.0),
+                rayon: Length::from_millimeters(5.0),
+                sens: SensHoraire::Trigonometrique,
+            },
+            "l'arc à balayage nul relu devient un cercle explicite"
+        );
+        let points = relu
+            .discretiser(Length::from_millimeters(TOLERANCE_DISCRETISATION_MM))
+            .expect("cercle valide");
+        assert!(points.len() > 8, "cercle discrétisé : {}", points.len());
     }
 
     #[test]
@@ -966,6 +1035,11 @@ mod tests {
                 debut: Angle::from_degrees(90.0),
                 fin: Angle::from_degrees(180.0),
                 sens: SensHoraire::Horaire,
+            },
+            Segment2::Cercle {
+                centre: point(1.0, 2.0),
+                rayon: Length::from_millimeters(5.0),
+                sens: SensHoraire::Trigonometrique,
             },
             Segment2::BezierQuadratique {
                 p1: point(0.0, 0.0),

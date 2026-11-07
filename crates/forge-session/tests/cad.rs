@@ -23,7 +23,7 @@ use forge_session::{
     RemoveAlias, Session, SetExpression, SetInput, UpdateFeature, ValeurCote,
     registre_migrations_courant,
 };
-use forge_units::Length;
+use forge_units::{Angle, Length};
 
 /// Registre des codes d'erreur (garde bidirectionnelle, gabarit
 /// groupe B) : aucun code ne sort sans sa ligne dans le registre
@@ -484,6 +484,82 @@ fn add_feature_refuse_contour_ouvert() {
         .execute(&commande)
         .expect_err("contour ouvert refusé");
     assert_eq!(erreur.code(), "OF-SES-0001");
+}
+
+#[test]
+fn add_feature_refuse_arc_effondre_jamais_un_cercle() {
+    // A5-02 + A4-18 (audit n°5, ADR-0037 D1) : un arc effondré
+    // (angle de fin égal à l'angle de début) était extrudé comme
+    // un cercle complet — le plan le refuse désormais : sans
+    // contour fermé, aucune feature.
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    pose_point(&mut session, 0.0, 0.0);
+    let angle = 30.0_f64.to_radians();
+    pose_point(&mut session, 5.0 * angle.cos(), 5.0 * angle.sin());
+    let entite = EntiteEsquisse::Arc {
+        centre: 0,
+        debut: 1,
+        fin: 1,
+        rayon: mm(5.0),
+        angle_debut: Angle::from_degrees(30.0),
+        angle_fin: Angle::from_degrees(30.0),
+    };
+    session.execute(&AddEntity { entite }).expect("arc posé");
+    let commande = AddFeature {
+        croquis: 1,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    let avant = session.document().events().len();
+    let erreur = session.execute(&commande).expect_err("l'arc effondré ne referme aucun contour");
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert!(
+        erreur.to_string().contains("pas de contour fermé"),
+        "message attendu sur le contour, obtenu : {erreur}"
+    );
+    // refus au plan : rien au journal, rien projeté
+    assert_eq!(session.document().events().len(), avant);
+    assert!(session.cad().features().is_empty(), "rien projeté");
+}
+
+#[test]
+fn cercle_d_esquisse_extrude_le_cylindre_complet() {
+    // Non-régression (ADR-0037 D1) : le cercle complet d'esquisse,
+    // encodé explicitement, extrude toujours le cylindre — π·r²·h.
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    pose_cercle(&mut session, 0.0, 0.0, 5.0);
+    let commande = AddFeature {
+        croquis: 1,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    session.execute(&commande).expect("feature posée");
+    let mut solveur = Systeme2D::new().expect("solveur");
+    let regions = session.croquis_figes_pour_cad(&mut solveur);
+    let profondeurs = session.profondeurs_pour_cad();
+    let corps = session
+        .cad()
+        .reconstruire(&MoteurPrismesAnalytiques, &regions, &profondeurs);
+    let solide = corps.corps.expect("corps reconstruit");
+    let attendu = std::f64::consts::PI * 25.0 * 4.0;
+    assert!(
+        (solide.volume_mm3 - attendu).abs() < 1e-2 * attendu,
+        "volume attendu ≈ {attendu}, obtenu {}",
+        solide.volume_mm3
+    );
+    assert!(matches!(corps.etats[0].1, EtatFeature::Ok));
 }
 
 #[test]

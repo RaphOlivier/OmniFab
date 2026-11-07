@@ -24,6 +24,10 @@ const CERCLE: &[u8] =
 /// de 0 à 90 degrés.
 const ARC: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nARC\n8\n0\n10\n0.0\n20\n0.0\n40\n1.0\n50\n0.0\n51\n90.0\n0\nENDSEC\n0\nEOF\n";
 
+/// SECTION ENTITIES contenant un `ARC` complet de centre (1, 2),
+/// rayon 1, de 0 à 0 degrés — balayage nul : le cercle complet.
+const ARC_COMPLET: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nARC\n8\n0\n10\n1.0\n20\n2.0\n40\n1.0\n50\n0.0\n51\n0.0\n0\nENDSEC\n0\nEOF\n";
+
 /// SECTION ENTITIES contenant une `LWPOLYLINE` fermée (90 : 2
 /// sommets, 70 : 1) de (0, 0) à (10, 0).
 const LWPOLYLIGNE: &[u8] = b"0\nSECTION\n2\nENTITIES\n0\nLWPOLYLINE\n8\n0\n90\n2\n70\n1\n10\n0.0\n20\n0.0\n10\n10.0\n20\n0.0\n0\nENDSEC\n0\nEOF\n";
@@ -56,21 +60,21 @@ fn importe_une_ligne() {
 }
 
 #[test]
-fn cercle_et_arc_devient_des_arcs_natifs() {
-    // Cercle et arc ne sont plus discrétisés à l'import (ADR-0024,
-    // phase B) : chacun devient un arc natif — un balayage nul
-    // dénote le cercle complet.
+fn cercle_devient_cercle_explicite_et_arc_reste_un_arc() {
+    // ADR-0037 D1 : le cercle complet devient le variant explicite
+    // de Segment2 ; l'arc de balayage nul aussi — l'arc partiel
+    // reste un arc natif.
     let cercles = dxf::import(CERCLE, &DxfBudgets::default()).expect("dxf valide");
     assert_eq!(cercles.len(), 1);
     assert!(cercles[0].is_closed(), "le cercle est fermé");
-    assert_eq!(cercles[0].segments().len(), 1, "un cercle = un arc");
+    assert_eq!(cercles[0].segments().len(), 1, "un cercle = un segment");
     match cercles[0].segments()[0] {
-        Segment2::Arc { centre, rayon, .. } => {
+        Segment2::Cercle { centre, rayon, .. } => {
             assert_eq!(centre.x().millimeters(), 1.0);
             assert_eq!(centre.y().millimeters(), 2.0);
             assert_eq!(rayon.millimeters(), 1.0);
         }
-        _ => panic!("le cercle doit devenir un arc natif"),
+        _ => panic!("le cercle doit devenir un cercle explicite"),
     }
     // La discrétisation bornée reste sur le cercle.
     let points = cercles[0].points();
@@ -80,6 +84,17 @@ fn cercle_et_arc_devient_des_arcs_natifs() {
         let y = point.y().millimeters() - 2.0;
         assert!(((x * x + y * y).sqrt() - 1.0).abs() < 1e-9);
     }
+
+    // Balayage nul (50 = 51) : l'arc complet devient lui aussi le
+    // cercle explicite (A5-02 + A4-18, audit n°5).
+    let arcs = dxf::import(ARC_COMPLET, &DxfBudgets::default()).expect("dxf valide");
+    assert_eq!(arcs.len(), 1);
+    assert!(arcs[0].is_closed(), "l'arc complet est fermé");
+    assert_eq!(arcs[0].segments().len(), 1, "un cercle = un segment");
+    assert!(
+        matches!(arcs[0].segments()[0], Segment2::Cercle { .. }),
+        "l'arc de balayage nul devient un cercle explicite"
+    );
 
     let arcs = dxf::import(ARC, &DxfBudgets::default()).expect("dxf valide");
     assert_eq!(arcs.len(), 1);

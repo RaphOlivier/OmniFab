@@ -868,3 +868,60 @@ pub(crate) fn regions_du_croquis(segments: &[Segment2]) -> Result<Vec<Region>, E
     let cycles = forge_geom::contours(segments)?;
     forge_geom::regions(&cycles)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Positions de deux points (ids 0 et 1), absentes ailleurs.
+    fn positions(x0: f64, y0: f64, x1: f64, y1: f64) -> impl Fn(u32) -> Option<(Length, Length)> {
+        move |id| match id {
+            0 => Some((Length::from_millimeters(x0), Length::from_millimeters(y0))),
+            1 => Some((Length::from_millimeters(x1), Length::from_millimeters(y1))),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn arc_effondre_omis_par_segments_du_croquis() {
+        // A5-02 + A4-18 (audit n°5, ADR-0037 D1) : un arc effondré
+        // (fin = début) n'est plus un cercle complet — omis des
+        // segments du croquis, il ne referme aucun contour.
+        let entites = vec![(
+            0,
+            EntiteEsquisse::Arc {
+                centre: 0,
+                debut: 1,
+                fin: 1,
+                rayon: Length::from_millimeters(5.0),
+                angle_debut: Angle::from_degrees(30.0),
+                angle_fin: Angle::from_degrees(30.0),
+            },
+        )];
+        let segments = segments_du_croquis(&entites, &positions(0.0, 0.0, 1.0, 2.0));
+        assert!(segments.is_empty(), "l'arc effondré ne devient pas un cercle");
+    }
+
+    #[test]
+    fn cercle_d_entite_devient_cercle_explicite() {
+        // Le cercle complet d'esquisse devient le variant explicite
+        // de Segment2 (ADR-0037 D1), jamais un arc à balayage nul.
+        let entites = vec![(
+            0,
+            EntiteEsquisse::Cercle {
+                centre: 0,
+                rayon: Length::from_millimeters(5.0),
+            },
+        )];
+        let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
+        match segments.as_slice() {
+            [Segment2::Cercle { centre, rayon, sens }] => {
+                assert_eq!(centre.x().millimeters(), 1.0);
+                assert_eq!(centre.y().millimeters(), 2.0);
+                assert_eq!(rayon.millimeters(), 5.0);
+                assert_eq!(*sens, SensHoraire::Trigonometrique);
+            }
+            autre => panic!("un cercle explicite attendu : {autre:?}"),
+        }
+    }
+}
