@@ -24,3 +24,6 @@
 - MAX_ENTITES + 1 segments → OF-GEO-0009 ; croquis à deux régions disjointes → refus au plan ;
 - non-régression des deux sens d'arc (A5-03), commentaire conforme au code ;
 - rejeu ×2 → mêmes volumes ; CI verte.
+
+**Amendements** :
+- **2026-11-07 (ordre 3)** — Le variant `Segment2::Cercle` porte un champ `sens : SensHoraire` (`Cercle { centre, rayon, sens }`), s'écartant de la signature `Cercle { centre, rayon }` de D1 : D3 (régions par orientation + parité) exige que le cercle, boucle fermée à lui seul, participe à l'orientation normalisée des régions, impossible sans sens. Le rejeu tolérant conserve le sens (`Arc` nul relu en `Cercle`).
