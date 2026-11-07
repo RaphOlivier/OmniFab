@@ -491,4 +491,35 @@ mod tests {
             "les 44 événements au-delà du plafond sont comptés"
         );
     }
+
+    /// Un type déjà retenu n'est jamais recompté au plafond : le
+    /// dédoublonnage précède le plafond — un journal hostile qui
+    /// répète un type connu ne gonfle pas le compteur des
+    /// supplémentaires (audit n°5 A4-20, ADR-0038 D1).
+    #[test]
+    fn type_connu_au_plafond_jamais_recompte() {
+        let mut types = TypesIgnores::default();
+        for i in 0..MAX_TYPES_INCONNUS {
+            types.noter(&format!("forge.journal.faux.{i}"));
+        }
+        assert_eq!(
+            types.retenus().len(),
+            MAX_TYPES_INCONNUS,
+            "le plafond est atteint exactement"
+        );
+        // Défaut A4-20 : au plafond, un type DÉJÀ CONNU retombe dans
+        // la branche plafond et est recompté dans supplementaires.
+        types.noter("forge.journal.faux.0");
+        assert_eq!(
+            types.supplementaires(),
+            0,
+            "un type déjà connu n'est jamais recompté au plafond"
+        );
+        types.noter("forge.journal.faux.nouveau");
+        assert_eq!(
+            types.supplementaires(),
+            1,
+            "un type nouveau au-delà du plafond est compté une fois"
+        );
+    }
 }
