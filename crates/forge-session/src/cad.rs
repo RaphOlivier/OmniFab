@@ -26,7 +26,8 @@ use crate::esquisse::{
 use crate::projection::{Projection, TypesIgnores, verifie_schema};
 use forge_doc::NewEvent;
 use forge_geom::{
-    ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2, SensHoraire,
+    BALAYAGE_NUL_RAD, ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2,
+    SensHoraire, balayage_apparent,
 };
 use forge_units::{Angle, Length};
 use std::collections::BTreeMap;
@@ -795,11 +796,13 @@ fn nombre_de_objet(
 
 /// Segments du croquis aux positions données (ADR-0024 D4) : les
 /// entités deviennent des segments typés — lignes entre points,
-/// cercle en arc à balayage nul (le cercle complet), arc par son
-/// centre et ses angles (les points de début et de fin de l'entité ne
-/// portent que la sélection, la géométrie suit les angles — le sens
-/// est trigonométrique si l'angle de fin précède ou égale celui de
-/// début, horaire sinon). Une position absente saute l'entité : le
+/// cercle complet en variant explicite `Segment2::Cercle`
+/// (ADR-0037 D1), arc par son centre et ses angles (les points
+/// de début et de fin de l'entité ne portent que la sélection,
+/// la géométrie suit les angles — le sens est trigonométrique
+/// si l'angle de fin précède ou égale celui de début, horaire
+/// sinon ; un arc effondré, au balayage nul, est omis : il ne
+/// referme aucun contour). Une position absente saute l'entité : le
 /// croquis incomplet ne donne pas de contour.
 pub(crate) fn segments_du_croquis(
     entites: &[(u32, EntiteEsquisse)],
@@ -821,11 +824,9 @@ pub(crate) fn segments_du_croquis(
             }
             EntiteEsquisse::Cercle { centre, rayon } => {
                 if let Some(centre) = point(*centre) {
-                    segments.push(Segment2::Arc {
+                    segments.push(Segment2::Cercle {
                         centre,
                         rayon: *rayon,
-                        debut: Angle::ZERO,
-                        fin: Angle::ZERO,
                         sens: SensHoraire::Trigonometrique,
                     });
                 }
@@ -838,17 +839,20 @@ pub(crate) fn segments_du_croquis(
                 ..
             } => {
                 if let Some(centre) = point(*centre) {
-                    segments.push(Segment2::Arc {
-                        centre,
-                        rayon: *rayon,
-                        debut: *angle_debut,
-                        fin: *angle_fin,
-                        sens: if angle_fin.radians() >= angle_debut.radians() {
-                            SensHoraire::Trigonometrique
-                        } else {
-                            SensHoraire::Horaire
-                        },
-                    });
+                    let sens = if angle_fin.radians() >= angle_debut.radians() {
+                        SensHoraire::Trigonometrique
+                    } else {
+                        SensHoraire::Horaire
+                    };
+                    if balayage_apparent(*angle_debut, *angle_fin, sens).abs() > BALAYAGE_NUL_RAD {
+                        segments.push(Segment2::Arc {
+                            centre,
+                            rayon: *rayon,
+                            debut: *angle_debut,
+                            fin: *angle_fin,
+                            sens,
+                        });
+                    }
                 }
             }
         }
@@ -899,7 +903,10 @@ mod tests {
             },
         )];
         let segments = segments_du_croquis(&entites, &positions(0.0, 0.0, 1.0, 2.0));
-        assert!(segments.is_empty(), "l'arc effondré ne devient pas un cercle");
+        assert!(
+            segments.is_empty(),
+            "l'arc effondré ne devient pas un cercle"
+        );
     }
 
     #[test]
@@ -915,7 +922,11 @@ mod tests {
         )];
         let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
         match segments.as_slice() {
-            [Segment2::Cercle { centre, rayon, sens }] => {
+            [Segment2::Cercle {
+                centre,
+                rayon,
+                sens,
+            }] => {
                 assert_eq!(centre.x().millimeters(), 1.0);
                 assert_eq!(centre.y().millimeters(), 2.0);
                 assert_eq!(rayon.millimeters(), 5.0);

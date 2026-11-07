@@ -18,6 +18,7 @@ fn toutes_les_variantes() -> Vec<GeomError> {
         GeomError::CoordonneeHorsBornes { axis: "x" },
         GeomError::DiscretisationImpossible { raison: "test" },
         GeomError::BudgetDiscretisationDepasse { raison: "test" },
+        GeomError::BalayageNul,
         GeomError::EmbranchementContour {
             x: Length::from_millimeters(1.0),
             y: Length::from_millimeters(1.0),

@@ -28,9 +28,9 @@ pub use error::GeomError;
 pub use region::{Region, regions};
 
 pub use segments::{
-    Contour2, ErreurContour, MAX_ENTITES_CHAINAGE, MAX_POINTS_DISCRETISATION,
-    MAX_PROFONDEUR_SUBDIVISION, Segment2, SensHoraire, TOLERANCE_DISCRETISATION_MM, contours,
-    points_recolles,
+    BALAYAGE_NUL_RAD, Contour2, ErreurContour, MAX_ENTITES_CHAINAGE, MAX_POINTS_DISCRETISATION,
+    MAX_PROFONDEUR_SUBDIVISION, Segment2, SensHoraire, TOLERANCE_DISCRETISATION_MM,
+    balayage_apparent, contours, points_recolles,
 };
 
 use forge_units::Length;
@@ -213,8 +213,8 @@ impl Path2 {
 
     /// Nombre de sommets de la chaîne : autant que de segments sur
     /// un tracé fermé, un de plus sur un tracé ouvert — un cercle
-    /// importé n'a qu'un sommet, son unique arc partant de lui et
-    /// y revenant.
+    /// importé n'a qu'un sommet, son unique segment
+    /// [`Segment2::Cercle`] partant de lui et y revenant.
     pub fn len(&self) -> usize {
         if self.segments.is_empty() {
             0

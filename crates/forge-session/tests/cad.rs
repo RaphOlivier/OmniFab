@@ -517,7 +517,9 @@ fn add_feature_refuse_arc_effondre_jamais_un_cercle() {
         couleur: None,
     };
     let avant = session.document().events().len();
-    let erreur = session.execute(&commande).expect_err("l'arc effondré ne referme aucun contour");
+    let erreur = session
+        .execute(&commande)
+        .expect_err("l'arc effondré ne referme aucun contour");
     assert_eq!(erreur.code(), "OF-SES-0001");
     assert!(
         erreur.to_string().contains("pas de contour fermé"),

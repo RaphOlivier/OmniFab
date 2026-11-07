@@ -6,8 +6,10 @@
 //! queues, refus typé au-delà du degré 2.
 //!
 //! Un arc porte son balayage en creux : de `debut` à `fin` dans le
-//! sens donné — un balayage nul (`debut` == `fin`) dénote le cercle
-//! complet. La discrétisation d'un arc calcule son nombre de points
+//! sens donné — un balayage nul (`debut` == `fin`) est refusé
+//! (OF-GEO-0007) : le cercle complet est le variant explicite
+//! [`Segment2::Cercle`] (ADR-0037 D1). La discrétisation d'un arc
+//! calcule son nombre de points
 //! en forme fermée depuis la flèche ; celle d'une Bézier subdivise à
 //! la demande (de Casteljau) jusqu'à la flèche satisfaite. Au-delà
 //! des budgets publics, [`Segment2::discretiser`] refuse
@@ -34,6 +36,12 @@ pub const MAX_PROFONDEUR_SUBDIVISION: u32 = 16;
 /// (OF-GEO-0005).
 pub const MAX_POINTS_DISCRETISATION: usize = 65_536;
 
+/// Balayage apparent au plus duquel un arc est effondré : l'arc de
+/// balayage nul ne dénote plus le cercle complet — le cercle
+/// complet est le variant explicite [`Segment2::Cercle`]
+/// (ADR-0037 D1) ; l'arc effondré est refusé (OF-GEO-0007).
+pub const BALAYAGE_NUL_RAD: f64 = 1e-12;
+
 /// Sens de balayage d'un arc (ADR-0024 D1).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SensHoraire {
@@ -57,7 +65,7 @@ impl SensHoraire {
 /// Segment typé 2D (ADR-0024 D1) : ligne, arc à balayage signé ou
 /// Bézier — une vraie courbe, jamais une polyligne. Sérialisable :
 /// les tracés importés circulent tel quel entre sessions.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub enum Segment2 {
     /// Segment de droite entre deux points.
     Ligne {
@@ -66,8 +74,9 @@ pub enum Segment2 {
         /// Arrivée du segment.
         p2: Point2,
     },
-    /// Arc de cercle : de `debut` à `fin` dans le sens donné, un
-    /// balayage nul (debut == fin) dénote le cercle complet.
+    /// Arc de cercle : de `debut` à `fin` dans le sens donné — un
+    /// balayage nul (`debut` == `fin`) est refusé (OF-GEO-0007) :
+    /// le cercle complet est le variant explicite `Cercle`.
     Arc {
         /// Centre de l'arc.
         centre: Point2,
@@ -78,6 +87,18 @@ pub enum Segment2 {
         /// Angle d'arrivée.
         fin: Angle,
         /// Sens de balayage.
+        sens: SensHoraire,
+    },
+    /// Cercle complet : centre, rayon et sens de parcours — une
+    /// boucle fermée sur elle-même, chaînable seule (ADR-0037 D1).
+    /// Un arc de balayage nul ne l'encode plus : refusé
+    /// (OF-GEO-0007).
+    Cercle {
+        /// Centre du cercle.
+        centre: Point2,
+        /// Rayon du cercle, strictement positif.
+        rayon: Length,
+        /// Sens de parcours.
         sens: SensHoraire,
     },
     /// Courbe de Bézier quadratique (un point de contrôle).
@@ -102,6 +123,87 @@ pub enum Segment2 {
     },
 }
 
+impl<'de> Deserialize<'de> for Segment2 {
+    fn deserialize<D>(des: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
+        /// Forme sérialisée d'un segment : les anciens journaux
+        /// portaient le cercle complet en arc à balayage nul —
+        /// relu, il devient le variant explicite (ADR-0037 D1).
+        #[derive(Deserialize)]
+        enum Segment2Brut {
+            Ligne {
+                p1: Point2,
+                p2: Point2,
+            },
+            Arc {
+                centre: Point2,
+                rayon: Length,
+                debut: Angle,
+                fin: Angle,
+                sens: SensHoraire,
+            },
+            Cercle {
+                centre: Point2,
+                rayon: Length,
+                sens: SensHoraire,
+            },
+            BezierQuadratique {
+                p1: Point2,
+                controle: Point2,
+                p2: Point2,
+            },
+            BezierCubique {
+                p1: Point2,
+                c1: Point2,
+                c2: Point2,
+                p2: Point2,
+            },
+        }
+        match Segment2Brut::deserialize(des)? {
+            Segment2Brut::Ligne { p1, p2 } => Ok(Segment2::Ligne { p1, p2 }),
+            Segment2Brut::Arc {
+                centre,
+                rayon,
+                debut,
+                fin,
+                sens,
+            } => {
+                // Rejeu tolérant : l'ancien encodage du cercle
+                // complet devient le variant explicite.
+                if balayage_apparent(debut, fin, sens).abs() <= BALAYAGE_NUL_RAD {
+                    Ok(Segment2::Cercle {
+                        centre,
+                        rayon,
+                        sens,
+                    })
+                } else {
+                    Ok(Segment2::Arc {
+                        centre,
+                        rayon,
+                        debut,
+                        fin,
+                        sens,
+                    })
+                }
+            }
+            Segment2Brut::Cercle {
+                centre,
+                rayon,
+                sens,
+            } => Ok(Segment2::Cercle {
+                centre,
+                rayon,
+                sens,
+            }),
+            Segment2Brut::BezierQuadratique { p1, controle, p2 } => {
+                Ok(Segment2::BezierQuadratique { p1, controle, p2 })
+            }
+            Segment2Brut::BezierCubique { p1, c1, c2, p2 } => {
+                Ok(Segment2::BezierCubique { p1, c1, c2, p2 })
+            }
+        }
+    }
+}
+
 impl Segment2 {
     /// Point de départ du segment.
     pub fn debut(&self) -> Point2 {
@@ -115,6 +217,9 @@ impl Segment2 {
                 debut,
                 ..
             } => point_d_angle(*centre, rayon.millimeters(), debut.radians()).unwrap_or(*centre),
+            Self::Cercle { centre, rayon, .. } => {
+                point_d_angle(*centre, rayon.millimeters(), 0.0).unwrap_or(*centre)
+            }
         }
     }
 
@@ -127,6 +232,9 @@ impl Segment2 {
             Self::Arc {
                 centre, rayon, fin, ..
             } => point_d_angle(*centre, rayon.millimeters(), fin.radians()).unwrap_or(*centre),
+            Self::Cercle { centre, rayon, .. } => {
+                point_d_angle(*centre, rayon.millimeters(), 0.0).unwrap_or(*centre)
+            }
         }
     }
 
@@ -148,6 +256,15 @@ impl Segment2 {
                 rayon,
                 debut: fin,
                 fin: debut,
+                sens: sens.inverse(),
+            },
+            Self::Cercle {
+                centre,
+                rayon,
+                sens,
+            } => Self::Cercle {
+                centre,
+                rayon,
                 sens: sens.inverse(),
             },
             Self::BezierQuadratique { p1, controle, p2 } => Self::BezierQuadratique {
@@ -192,7 +309,7 @@ impl Segment2 {
         match self.discretisation(tolerance) {
             Ok((discretisee, _)) => discretisee,
             Err(_) => match self {
-                Self::Arc { centre, .. } => vec![*centre, *centre],
+                Self::Arc { centre, .. } | Self::Cercle { centre, .. } => vec![*centre, *centre],
                 _ => vec![self.debut(), self.fin()],
             },
         }
@@ -221,23 +338,28 @@ impl Segment2 {
                         raison: "angle d'arc non fini",
                     });
                 }
-                let balayage = balayage_signe(*debut, *fin, *sens);
-                // Flèche d'une corde : r·(1 − cos(balayage/2n)) ≤ tol
-                // → n ≥ balayage / (2·arccos(1 − tol/r)).
-                let demi = (1.0 - tolerance.millimeters() / r).clamp(-1.0, 1.0).acos();
-                let nombre = if demi <= 1e-12 {
-                    MAX_POINTS_DISCRETISATION + 1
-                } else {
-                    ((balayage.abs() / (2.0 * demi)).ceil() as usize).max(1)
-                };
-                let depasse = nombre > MAX_POINTS_DISCRETISATION;
-                let n = nombre.min(MAX_POINTS_DISCRETISATION);
-                let mut discretisee = Vec::with_capacity(n + 1);
-                for i in 0..=n {
-                    let angle = debut.radians() + balayage * i as f64 / n as f64;
-                    discretisee.push(point_d_angle(*centre, r, angle)?);
+                if self.balayage_nul() {
+                    return Err(GeomError::BalayageNul);
                 }
-                Ok((discretisee, depasse))
+                let balayage = balayage_apparent(*debut, *fin, *sens);
+                discretise_balayage(*centre, r, debut.radians(), balayage, tolerance)
+            }
+            Self::Cercle {
+                centre,
+                rayon,
+                sens,
+            } => {
+                let r = rayon.millimeters();
+                if !r.is_finite() || r <= 0.0 {
+                    return Err(GeomError::DiscretisationImpossible {
+                        raison: "rayon de cercle nul, négatif ou non fini",
+                    });
+                }
+                let balayage = match *sens {
+                    SensHoraire::Trigonometrique => 2.0 * std::f64::consts::PI,
+                    SensHoraire::Horaire => -2.0 * std::f64::consts::PI,
+                };
+                discretise_balayage(*centre, r, 0.0, balayage, tolerance)
             }
             Self::BezierQuadratique { p1, controle, p2 } => {
                 let mut discretisee = vec![*p1];
@@ -252,23 +374,65 @@ impl Segment2 {
             }
         }
     }
-}
 
-/// Balayage signé d'un arc, en radians : positif en sens
-/// trigonométrique, négatif en sens horaire ; nul apparent
-/// (`debut` == `fin`) dénote le cercle complet.
-fn balayage_signe(debut: Angle, fin: Angle, sens: SensHoraire) -> f64 {
-    let tour = 2.0 * std::f64::consts::PI;
-    match sens {
-        SensHoraire::Trigonometrique => {
-            let positif = (fin.radians() - debut.radians()).rem_euclid(tour);
-            if positif <= 1e-12 { tour } else { positif }
-        }
-        SensHoraire::Horaire => {
-            let negatif = (debut.radians() - fin.radians()).rem_euclid(tour);
-            if negatif <= 1e-12 { -tour } else { -negatif }
+    /// Arc effondré : le balayage apparent est au plus
+    /// [`BALAYAGE_NUL_RAD`] — refusé partout (OF-GEO-0007), le
+    /// cercle complet est le variant explicite `Cercle`
+    /// (ADR-0037 D1).
+    fn balayage_nul(&self) -> bool {
+        match self {
+            Self::Arc {
+                debut,
+                fin,
+                sens,
+                ..
+            } => balayage_apparent(*debut, *fin, *sens).abs() <= BALAYAGE_NUL_RAD,
+            _ => false,
         }
     }
+}
+
+/// Balayage apparent d'un arc, en radians : positif en sens
+/// trigonométrique, négatif en sens horaire, indépendant du
+/// nombre de tours complets — nul si et seulement si l'arc est
+/// effondré (`debut` == `fin`) ; le cercle complet est le variant
+/// explicite [`Segment2::Cercle`] (ADR-0037 D1).
+pub fn balayage_apparent(debut: Angle, fin: Angle, sens: SensHoraire) -> f64 {
+    let tour = 2.0 * std::f64::consts::PI;
+    match sens {
+        SensHoraire::Trigonometrique => (fin.radians() - debut.radians()).rem_euclid(tour),
+        SensHoraire::Horaire => -(debut.radians() - fin.radians()).rem_euclid(tour),
+    }
+}
+
+/// Discrétise un arc de balayage donné : le nombre de cordes
+/// vient de la formule fermée de la flèche, les points sont
+/// régulièrement espacés sur le balayage. Renvoie les points et
+/// le drapeau de dépassement de budget (le plafond borne le
+/// nombre de points alors).
+fn discretise_balayage(
+    centre: Point2,
+    rayon: f64,
+    angle_debut: f64,
+    balayage: f64,
+    tolerance: Length,
+) -> Result<(Vec<Point2>, bool), GeomError> {
+    // Flèche d'une corde : r·(1 − cos(balayage/2n)) ≤ tol
+    // → n ≥ balayage / (2·arccos(1 − tol/r)).
+    let demi = (1.0 - tolerance.millimeters() / rayon).clamp(-1.0, 1.0).acos();
+    let nombre = if demi <= 1e-12 {
+        MAX_POINTS_DISCRETISATION + 1
+    } else {
+        ((balayage.abs() / (2.0 * demi)).ceil() as usize).max(1)
+    };
+    let depasse = nombre > MAX_POINTS_DISCRETISATION;
+    let n = nombre.min(MAX_POINTS_DISCRETISATION);
+    let mut discretisee = Vec::with_capacity(n + 1);
+    for i in 0..=n {
+        let angle = angle_debut + balayage * i as f64 / n as f64;
+        discretisee.push(point_d_angle(centre, rayon, angle)?);
+    }
+    Ok((discretisee, depasse))
 }
 
 /// Point sur le cercle de centre et rayon donnés, à l'angle donné.
@@ -479,8 +643,9 @@ fn soude(
 /// arbitrairement. Les composantes restantes sont des cycles
 /// fermés : un `Contour2` chacune, les segments à contre-sens
 /// retournés pour suivre le sens de parcours. Au-delà du plafond
-/// [`MAX_ENTITES_CHAINAGE`], refus typé (OF-GEO-0009) ; l'entrée
-/// vide rend aucun contour.
+/// [`MAX_ENTITES_CHAINAGE`], refus typé (OF-GEO-0009) ; un arc
+/// effondré (balayage nul) est refusé à l'entrée (OF-GEO-0007,
+/// ADR-0037 D1) ; l'entrée vide rend aucun contour.
 pub fn contours(segments: &[Segment2]) -> Result<Vec<Contour2>, ErreurContour> {
     if segments.is_empty() {
         return Ok(Vec::new());
@@ -490,6 +655,13 @@ pub fn contours(segments: &[Segment2]) -> Result<Vec<Contour2>, ErreurContour> {
             entites: segments.len(),
             plafond: MAX_ENTITES_CHAINAGE,
         });
+    }
+    // Un arc effondré ne dénote plus le cercle complet : refusé
+    // à l'entrée (OF-GEO-0007), jamais un contour fermé déguisé.
+    for segment in segments {
+        if segment.balayage_nul() {
+            return Err(GeomError::BalayageNul);
+        }
     }
     // Soudure des extrémités : un sommet par grappe recollée, une
     // arête orientée par segment.
@@ -761,17 +933,25 @@ mod tests {
             .expect("cercle valide");
         assert!(points.len() > 8, "cercle discrétisé : {}", points.len());
         assert!(
-            points.iter().any(|p| (p.x().millimeters() - 6.0).abs() < 1e-9),
+            points
+                .iter()
+                .any(|p| (p.x().millimeters() - 6.0).abs() < 1e-9),
             "le point à l'angle 0 est sur le cercle"
         );
-        assert!(points_recolles(points[0], points[points.len() - 1]), "le cercle se referme");
+        assert!(
+            points_recolles(points[0], points[points.len() - 1]),
+            "le cercle se referme"
+        );
         let chains = contours(&[cercle]).expect("boucle fermée");
         assert_eq!(chains.len(), 1);
         assert!(chains[0].is_closed(), "le cercle est un cycle fermé");
         assert_eq!(chains[0].len(), 1, "un seul segment, jamais découpé");
         // l'inverse parcourt le cercle en sens horaire
         match cercle.inverse() {
-            Segment2::Cercle { sens: SensHoraire::Horaire, .. } => {}
+            Segment2::Cercle {
+                sens: SensHoraire::Horaire,
+                ..
+            } => {}
             autre => panic!("cercle inversé horaire attendu : {autre:?}"),
         }
     }
