@@ -978,6 +978,9 @@ mod tests {
                 autre => panic!("un arc attendu : {autre:?}"),
             })
             .collect();
-        assert_eq!(sens, vec![SensHoraire::Trigonometrique, SensHoraire::Horaire]);
+        assert_eq!(
+            sens,
+            vec![SensHoraire::Trigonometrique, SensHoraire::Horaire]
+        );
     }
 }
