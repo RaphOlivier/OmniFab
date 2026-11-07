@@ -29,7 +29,7 @@ use forge_geom::{
     BALAYAGE_NUL_RAD, ErreurContour, MAGNITUDE_MAX_MM, Mesh, Point2, Point3, Region, Segment2,
     SensHoraire, balayage_apparent,
 };
-use forge_units::{Angle, Length};
+use forge_units::Length;
 use std::collections::BTreeMap;
 
 /// Version de schéma courante des événements `cad.feature.added` et
@@ -877,6 +877,8 @@ pub(crate) fn regions_du_croquis(segments: &[Segment2]) -> Result<Vec<Region>, E
 mod tests {
     use super::*;
 
+    use forge_units::Angle;
+
     /// Positions de deux points (ids 0 et 1), absentes ailleurs.
     fn positions(x0: f64, y0: f64, x1: f64, y1: f64) -> impl Fn(u32) -> Option<(Length, Length)> {
         move |id| match id {
@@ -922,11 +924,13 @@ mod tests {
         )];
         let segments = segments_du_croquis(&entites, &positions(1.0, 2.0, 0.0, 0.0));
         match segments.as_slice() {
-            [Segment2::Cercle {
-                centre,
-                rayon,
-                sens,
-            }] => {
+            [
+                Segment2::Cercle {
+                    centre,
+                    rayon,
+                    sens,
+                },
+            ] => {
                 assert_eq!(centre.x().millimeters(), 1.0);
                 assert_eq!(centre.y().millimeters(), 2.0);
                 assert_eq!(rayon.millimeters(), 5.0);

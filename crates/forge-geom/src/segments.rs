@@ -124,7 +124,10 @@ pub enum Segment2 {
 }
 
 impl<'de> Deserialize<'de> for Segment2 {
-    fn deserialize<D>(des: D) -> Result<Self, D::Error> where D: serde::Deserializer<'de> {
+    fn deserialize<D>(des: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
         /// Forme sérialisée d'un segment : les anciens journaux
         /// portaient le cercle complet en arc à balayage nul —
         /// relu, il devient le variant explicite (ADR-0037 D1).
@@ -382,10 +385,7 @@ impl Segment2 {
     fn balayage_nul(&self) -> bool {
         match self {
             Self::Arc {
-                debut,
-                fin,
-                sens,
-                ..
+                debut, fin, sens, ..
             } => balayage_apparent(*debut, *fin, *sens).abs() <= BALAYAGE_NUL_RAD,
             _ => false,
         }
@@ -419,7 +419,9 @@ fn discretise_balayage(
 ) -> Result<(Vec<Point2>, bool), GeomError> {
     // Flèche d'une corde : r·(1 − cos(balayage/2n)) ≤ tol
     // → n ≥ balayage / (2·arccos(1 − tol/r)).
-    let demi = (1.0 - tolerance.millimeters() / rayon).clamp(-1.0, 1.0).acos();
+    let demi = (1.0 - tolerance.millimeters() / rayon)
+        .clamp(-1.0, 1.0)
+        .acos();
     let nombre = if demi <= 1e-12 {
         MAX_POINTS_DISCRETISATION + 1
     } else {
