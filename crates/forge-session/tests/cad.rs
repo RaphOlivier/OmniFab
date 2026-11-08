@@ -24,6 +24,7 @@ use forge_session::{
     registre_migrations_courant,
 };
 use forge_units::{Angle, Length};
+use std::cell::Cell;
 
 /// Registre des codes d'erreur (garde bidirectionnelle, gabarit
 /// groupe B) : aucun code ne sort sans sa ligne dans le registre
@@ -881,9 +882,15 @@ fn feature_en_echec_marquee_le_reste_du_corps_survit() {
 }
 
 #[test]
-fn edition_cad_invalidee_par_toute_ecriture_au_journal() {
+fn edition_cad_invalidee_par_les_evenements_cao_seulement() {
+    // A5-05 (audit n°5, ADR-0038 D3) : le numéro d'édition CAO ne
+    // croît plus à chaque événement appliqué, seulement quand la
+    // projection CAO change d'état — croquis et features. Les
+    // événements des autres domaines et les types inconnus
+    // n'invalident plus le corps : reconstruire() (O(n) appels
+    // moteur) n'est plus relancé pour rien.
     let mut session = Session::new("tests");
-    let avant = session.cad().edition();
+    let depart = session.cad().edition();
     session
         .execute(&SetInput {
             name: "a".to_string(),
@@ -891,9 +898,53 @@ fn edition_cad_invalidee_par_toute_ecriture_au_journal() {
             unite: None,
         })
         .expect("entrée");
-    assert!(
-        session.cad().edition() > avant,
-        "toute écriture au journal invalide le fil de travail CAO"
+    assert_eq!(
+        session.cad().edition(),
+        depart,
+        "un événement du domaine des liaisons n'invalide plus le corps CAO"
+    );
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    assert_eq!(
+        session.cad().edition(),
+        depart + 1,
+        "un événement CAO traité invalide le fil de travail"
+    );
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    assert_eq!(
+        session.cad().edition(),
+        depart + 1,
+        "les entités d'esquisse sont des types inconnus du domaine CAO : l'état ne change pas"
+    );
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+            couleur: None,
+        })
+        .expect("feature posée");
+    assert_eq!(
+        session.cad().edition(),
+        depart + 2,
+        "une feature posée invalide le fil de travail"
+    );
+    session
+        .execute(&UpdateFeature {
+            id: 0,
+            croquis: 1,
+            mode: ModeExtrusion::Soustraction,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(5.0) },
+            couleur: None,
+        })
+        .expect("feature mise à jour");
+    assert_eq!(
+        session.cad().edition(),
+        depart + 3,
+        "le remplacement d'une feature invalide le fil de travail"
     );
 }
 
@@ -1509,4 +1560,225 @@ fn anneau_extrude_aire_nette_et_rejeu_deux_fois() {
             "rejeu {rejeu} : la feature doit passer"
         );
     }
+}
+
+#[test]
+fn rejeu_au_dela_du_plafond_de_features_refuse() {
+    // A5-05 (audit n°5, ADR-0038 D3) : un journal forgé qui annonce
+    // une MAX+1-ième feature (10 001) est refusé à l'ouverture —
+    // OF-SES-0007, le document refuse de s'ouvrir : un journal
+    // hostile ne construit pas dix mille et une features en
+    // mémoire.
+    let mut document = Document::new();
+    for id in 0..=10_000u32 {
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": id,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": 4.0}},
+                }
+            }),
+        ));
+    }
+    let erreur = Session::from_document("tests", document)
+        .err()
+        .expect("le plafond de features doit refuser l'ouverture");
+    assert_eq!(erreur.code(), "OF-SES-0007");
+}
+
+#[test]
+fn commande_de_feature_au_plafond_refusee_au_plan() {
+    // A5-05 (audit n°5, ADR-0038 D3) : au plafond de features, une
+    // commande d'ajout est refusée au plan — OF-SES-0001, rien au
+    // journal, piles undo/redo intactes (pattern ADR-0036/ADR-0011 :
+    // l'erreur est visible, le projet intact).
+    let mut document = Document::new();
+    // rectangle sur le croquis implicite 0 — entités au schéma v3
+    // courant, même forme que les tests hostiles
+    for (id, x, y) in [
+        (0, 0.0, 0.0),
+        (1, 40.0, 0.0),
+        (2, 40.0, 25.0),
+        (3, 0.0, 25.0),
+    ] {
+        document.append(NewEvent::new(
+            "sketch.entity.added",
+            3,
+            "tests",
+            serde_json::json!({"genre": "point", "croquis": 0, "id": id, "x": x, "y": y}),
+        ));
+    }
+    for (id, p1, p2) in [(4, 0, 1), (5, 1, 2), (6, 2, 3), (7, 3, 0)] {
+        document.append(NewEvent::new(
+            "sketch.entity.added",
+            3,
+            "tests",
+            serde_json::json!({"genre": "ligne", "croquis": 0, "id": id, "p1": p1, "p2": p2}),
+        ));
+    }
+    // le plafond lui-même : 10 000 features, même forme que
+    // « cad.feature.added » v1
+    for id in 0..10_000u32 {
+        document.append(NewEvent::new(
+            "cad.feature.added",
+            1,
+            "tests",
+            serde_json::json!({
+                "id": id,
+                "feature": {
+                    "type": "extrusion",
+                    "croquis": 0,
+                    "mode": "addition",
+                    "profondeur": {"type": "cote", "valeur": {"type": "fixe", "mm": 4.0}},
+                }
+            }),
+        ));
+    }
+    let mut session = Session::from_document("tests", document).expect("rejeu au plafond");
+    assert_eq!(session.cad().features().len(), 10_000);
+    let avant = session.document().events().len();
+    let commande = AddFeature {
+        croquis: 0,
+        mode: ModeExtrusion::Addition,
+        profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+        couleur: None,
+    };
+    let erreur = session
+        .execute(&commande)
+        .expect_err("le plafond refuse l'ajout au plan");
+    assert_eq!(erreur.code(), "OF-SES-0001");
+    assert!(
+        erreur.to_string().contains("plafond"),
+        "message attendu sur le plafond, obtenu : {erreur}"
+    );
+    // refus au plan : rien au journal, piles intactes
+    assert_eq!(session.document().events().len(), avant);
+    assert_eq!(
+        session.undo().expect_err("rien à annuler").code(),
+        "OF-SES-0003"
+    );
+    assert_eq!(
+        session.redo().expect_err("rien à rétablir").code(),
+        "OF-SES-0004"
+    );
+}
+
+/// Moteur compteur d'appels (ADR-0038 D3) : délègue au moteur
+/// analytique et compte chaque appel moteur — le test du patron de
+/// cache du fil de travail prouve qu'un événement hors domaine CAO
+/// ne relance pas `reconstruire()` (O(n) appels moteur) pour rien.
+struct MoteurCompteur<'a> {
+    /// Compteur d'appels, partagé avec le test.
+    appels: &'a Cell<usize>,
+}
+
+impl MoteurCad for MoteurCompteur<'_> {
+    type Solide = SolideAnalytique;
+
+    fn extruder(
+        &self,
+        region: &Region,
+        mode: ModeExtrusion,
+        profondeur: Length,
+    ) -> Result<SolideAnalytique, ErreurMoteurCad> {
+        self.appels.set(self.appels.get() + 1);
+        MoteurPrismesAnalytiques.extruder(region, mode, profondeur)
+    }
+
+    fn fusionner(
+        &self,
+        base: &SolideAnalytique,
+        autre: &SolideAnalytique,
+    ) -> Result<SolideAnalytique, ErreurMoteurCad> {
+        self.appels.set(self.appels.get() + 1);
+        MoteurPrismesAnalytiques.fusionner(base, autre)
+    }
+
+    fn soustraire(
+        &self,
+        base: &SolideAnalytique,
+        outil: &SolideAnalytique,
+    ) -> Result<SolideAnalytique, ErreurMoteurCad> {
+        self.appels.set(self.appels.get() + 1);
+        MoteurPrismesAnalytiques.soustraire(base, outil)
+    }
+
+    fn tesseller(
+        &self,
+        solide: &SolideAnalytique,
+        tolerance: Length,
+    ) -> Result<Mesh, ErreurMoteurCad> {
+        self.appels.set(self.appels.get() + 1);
+        MoteurPrismesAnalytiques.tesseller(solide, tolerance)
+    }
+
+    fn boite_englobante(
+        &self,
+        solide: &SolideAnalytique,
+    ) -> Result<BoiteEnglobante, ErreurMoteurCad> {
+        self.appels.set(self.appels.get() + 1);
+        MoteurPrismesAnalytiques.boite_englobante(solide)
+    }
+}
+
+#[test]
+fn evenement_hors_domaine_ne_relance_pas_reconstruire() {
+    // A5-05 (audit n°5, ADR-0038 D3) : la clé d'invalidation du
+    // corps est l'édition CAO (ADR-0024 D4) — le fil de travail ne
+    // relance reconstruire() que si la clé a changé. Un événement
+    // hors domaine CAO ne la fait plus croître : le compteur
+    // d'appels du moteur de test n'augmente pas.
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "corps".to_string(),
+        })
+        .expect("croquis");
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+            couleur: None,
+        })
+        .expect("feature posée");
+    let compteur = Cell::new(0usize);
+    let moteur = MoteurCompteur { appels: &compteur };
+    // fil de travail : le corps reconstruit vit en cache à clé
+    // d'édition (ADR-0024 D4) — la marque du corps suffit ici.
+    let mut cle_cache: Option<u64> = None;
+    for _ in 0..2 {
+        let cle = session.cad().edition();
+        if cle_cache != Some(cle) {
+            let mut solveur = Systeme2D::new().expect("solveur");
+            let regions = session.croquis_figes_pour_cad(&mut solveur);
+            let profondeurs = session.profondeurs_pour_cad();
+            session
+                .cad()
+                .reconstruire(&moteur, &regions, &profondeurs)
+                .expect("corps reconstruit");
+            cle_cache = Some(cle);
+        }
+        // entre les deux tours : un événement du domaine des
+        // liaisons, hors domaine CAO
+        session
+            .execute(&SetInput {
+                name: "a".to_string(),
+                value: 1.0,
+                unite: None,
+            })
+            .expect("entrée");
+    }
+    assert_eq!(
+        compteur.get(),
+        1,
+        "le corps n'est pas reconstruit pour un événement hors domaine CAO"
+    );
 }
