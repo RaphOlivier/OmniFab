@@ -43,6 +43,18 @@ pub(crate) enum Travail {
         /// Fichier à lire.
         chemin: PathBuf,
     },
+    /// Relecture puis parse du maillage à la confirmation d'échelle
+    /// (ADR-0038 D2) : la demande d'échelle ne garde pas d'octets —
+    /// le fichier est relu sous le budget du format, il a pu changer
+    /// entre la mesure et la réponse.
+    ConfirmerMaillage {
+        /// Génération de l'état au moment de l'envoi.
+        generation: u64,
+        /// Fichier à relire.
+        chemin: PathBuf,
+        /// Échelle d'import décidée par l'utilisateur (ADR-0017).
+        echelle: f64,
+    },
     /// Re-parse du blob d'origine puis export des tracés.
     ExportTraces {
         /// Génération de l'état au moment de l'envoi.
@@ -113,6 +125,7 @@ impl Travail {
         match self {
             Travail::ImportTraces { generation, .. }
             | Travail::ImportMaillage { generation, .. }
+            | Travail::ConfirmerMaillage { generation, .. }
             | Travail::ExportTraces { generation, .. }
             | Travail::ExportMaillage { generation, .. }
             | Travail::ResoudreEsquisse { generation, .. }
@@ -137,7 +150,7 @@ impl Travail {
                 format,
                 chemin,
             } => {
-                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
+                let octets = match lire_borne(&chemin, budget_du_format(format)) {
                     Ok(octets) => octets,
                     Err(message) => return erreur_de_travail(generation, message),
                 };
@@ -162,7 +175,7 @@ impl Travail {
                 }
             }
             Travail::ImportMaillage { generation, chemin } => {
-                let octets = match lire_borne(&chemin, MAX_OCTETS_IMPORT) {
+                let octets = match lire_borne(&chemin, budget_du_format("stl")) {
                     Ok(octets) => octets,
                     Err(message) => return erreur_de_travail(generation, message),
                 };
@@ -175,8 +188,33 @@ impl Travail {
                             octets,
                             triangles,
                             dimension,
+                            chemin,
                         }
                     }
+                    Err(error) => erreur_de_travail(generation, error),
+                }
+            }
+            Travail::ConfirmerMaillage {
+                generation,
+                chemin,
+                echelle,
+            } => {
+                // ADR-0038 D2 : la confirmation relit le fichier sous
+                // le budget du format — il a pu changer entre la
+                // mesure et la réponse ; tout échec (effacé, modifié,
+                // démesuré) devient un message d'import, jamais une
+                // écriture au journal.
+                let octets = match lire_borne(&chemin, budget_du_format("stl")) {
+                    Ok(octets) => octets,
+                    Err(message) => return erreur_de_travail(generation, message),
+                };
+                match stl::import(&octets, &stl::StlBudgets::default()) {
+                    Ok(maillage) => Retour::ConfirmerMaillage {
+                        generation,
+                        octets,
+                        triangles: maillage.triangle_count(),
+                        echelle,
+                    },
                     Err(error) => erreur_de_travail(generation, error),
                 }
             }
@@ -282,6 +320,22 @@ pub(crate) enum Retour {
         /// Plus grande dimension du maillage, en millimètres
         /// (ADR-0017).
         dimension: f64,
+        /// Fichier lu : la confirmation d'échelle le relira
+        /// (ADR-0038 D2).
+        chemin: PathBuf,
+    },
+    /// Maillage relu et re-parsé à la confirmation d'échelle
+    /// (ADR-0038 D2) : octets d'origine pour le blob, compte de
+    /// triangles et échelle décidée par l'utilisateur.
+    ConfirmerMaillage {
+        /// Génération de l'état au moment de l'envoi du travail.
+        generation: u64,
+        /// Octets d'origine relus sous le budget du format.
+        octets: Vec<u8>,
+        /// Nombre de triangles.
+        triangles: usize,
+        /// Échelle d'import décidée (ADR-0017).
+        echelle: f64,
     },
     /// Export écrit au chemin donné.
     Export {
@@ -325,6 +379,7 @@ impl Retour {
         match self {
             Retour::ImportTraces { generation, .. }
             | Retour::ImportMaillage { generation, .. }
+            | Retour::ConfirmerMaillage { generation, .. }
             | Retour::Export { generation, .. }
             | Retour::Erreur { generation, .. } => *generation,
             Retour::EsquisseResolue { generation, .. } => *generation,
@@ -485,6 +540,15 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
 /// SVG, DXF et STL.
 const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
 
+/// Budget d'octets du format importé (ADR-0038 D2, A4-19) : chaque
+/// lecture d'import passe par lui. STUB rouge test-first — le
+/// correctif déléguera aux défauts des parseurs (une seule source
+/// de vérité, zéro chiffre dupliqué au desktop) ; le comportement
+/// courant, le 1 Gio uniforme, tient le temps du rouge.
+pub(crate) fn budget_du_format(_format: &str) -> u64 {
+    MAX_OCTETS_IMPORT
+}
+
 /// Lit un fichier d'import sous un budget d'octets, refusé AVANT
 /// lecture (audit n°3 A3-07, ADR-0009) : la taille du fichier est
 /// mesurée sur ses métadonnées, un fichier démesuré est refusé sans
@@ -589,6 +653,99 @@ mod tests {
             "le refus cite la taille et le budget : {erreur}"
         );
         let _ = std::fs::remove_file(&chemin);
+    }
+
+    /// Le budget d'octets d'un import délègue aux défauts des
+    /// parseurs (ADR-0038 D2, A4-19) : la pré-lecture suit toute
+    /// montée des budgets des parseurs, sans chiffre dupliqué au
+    /// desktop ; un format inconnu refuse la lecture d'emblée.
+    #[test]
+    fn budget_du_format_delegue_aux_defauts_des_parseurs() {
+        assert_eq!(
+            budget_du_format("stl"),
+            stl::StlBudgets::default().max_bytes as u64,
+            "STL délègue au défaut de son parseur"
+        );
+        assert_eq!(
+            budget_du_format("svg"),
+            svg::SvgBudgets::default().max_bytes as u64,
+            "SVG délègue au défaut de son parseur"
+        );
+        assert_eq!(
+            budget_du_format("dxf"),
+            dxf::DxfBudgets::default().max_bytes as u64,
+            "DXF délègue au défaut de son parseur"
+        );
+        assert_eq!(
+            budget_du_format("step"),
+            0,
+            "format inconnu : la lecture est refusée d'emblée"
+        );
+    }
+
+    /// La confirmation d'échelle relit le fichier sous le budget du
+    /// format (ADR-0038 D2) : le fichier a pu changer entre la
+    /// mesure et la réponse — modifié illisible ou effacé, l'échec
+    /// remonte en message d'import, jamais en panique, jamais
+    /// d'écriture au journal.
+    #[test]
+    fn confirmation_echelle_relit_le_fichier() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s1 = Point3::new(un, un, Length::ZERO).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let octets = stl::export(&maillage).expect("export STL de test");
+        let chemin = std::env::temp_dir().join("omnifab-adr0038-confirmation.stl");
+        std::fs::write(&chemin, &octets).expect("écriture du fichier test");
+        // Présent et lisible : la confirmation relit et re-parse, le
+        // compte de triangles et l'échelle décidée voyagent avec.
+        let travail = Travail::ConfirmerMaillage {
+            generation: 3,
+            chemin: chemin.clone(),
+            echelle: 1000.0,
+        };
+        match travail.executer() {
+            Retour::ConfirmerMaillage {
+                generation,
+                octets: relus,
+                triangles,
+                echelle,
+            } => {
+                assert_eq!(generation, 3, "la génération voyage avec le retour");
+                assert_eq!(relus, octets, "les octets relus partent au blob");
+                assert_eq!(triangles, 1, "le maillage re-parsé a un triangle");
+                assert_eq!(echelle, 1000.0, "l'échelle décidée voyage avec le retour");
+            }
+            _ => panic!("la confirmation réussie doit ramener le maillage relu"),
+        }
+        // Modifié illisible : échec propre en message, pas de panique.
+        std::fs::write(&chemin, b"n'est plus un STL").expect("écrasement du fichier test");
+        let travail = Travail::ConfirmerMaillage {
+            generation: 4,
+            chemin: chemin.clone(),
+            echelle: 1.0,
+        };
+        match travail.executer() {
+            Retour::Erreur { generation, message } => {
+                assert_eq!(generation, 4, "l'erreur porte sa génération");
+                assert!(!message.is_empty(), "l'échec porte un message d'import");
+            }
+            _ => panic!("un fichier modifié illisible doit échouer proprement"),
+        }
+        // Effacé : échec propre, aucun crash.
+        std::fs::remove_file(&chemin).expect("suppression du fichier test");
+        let travail = Travail::ConfirmerMaillage {
+            generation: 5,
+            chemin,
+            echelle: 1.0,
+        };
+        match travail.executer() {
+            Retour::Erreur { generation, .. } => {
+                assert_eq!(generation, 5, "l'erreur porte sa génération");
+            }
+            _ => panic!("un fichier effacé doit échouer proprement"),
+        }
     }
 
     // --- Fil de travail résilient (audit n°3 N8) ---
