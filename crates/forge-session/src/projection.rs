@@ -50,15 +50,18 @@ pub(crate) struct TypesIgnores {
 impl TypesIgnores {
     /// Note un type ignoré : retenu s'il est nouveau tant que le
     /// plafond [`MAX_TYPES_INCONNUS`] n'est pas atteint, sinon
-    /// seulement compté.
+    /// seulement compté. Un type déjà connu n'est jamais recompté :
+    /// le dédoublonnage précède le plafond (audit n°5 A4-20).
     pub(crate) fn noter(&mut self, nom: &str) {
+        if self.vus.contains(nom) {
+            return; // déjà connu : ignoré, jamais compté (audit n°5 A4-20)
+        }
         if self.vus.len() >= MAX_TYPES_INCONNUS {
             self.supplementaires += 1;
             return;
         }
-        if self.vus.insert(nom.to_string()) {
-            self.retenus.push(nom.to_string());
-        }
+        self.vus.insert(nom.to_string());
+        self.retenus.push(nom.to_string());
     }
 
     /// Types retenus, uniques, dans l'ordre de rencontre.
