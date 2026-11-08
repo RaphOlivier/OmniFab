@@ -1441,3 +1441,2123 @@ mod tests {
             DecisionFermeture::Bloquer,
             "la fermeture reste bloquée tant que la confirmation est ouverte"
         );
+        // Travail non enregistré, rien d'ouvert : bloquer et
+        // demander.
+        assert_eq!(
+            garde_fermeture(true, false),
+            DecisionFermeture::BloquerEtConfirmer,
+            "la confirmation de perte doit s'ouvrir avant de fermer"
+        );
+        // Rien à perdre : la fenêtre se ferme.
+        assert_eq!(
+            garde_fermeture(false, false),
+            DecisionFermeture::LaisserFermer,
+            "sans travail non enregistré, la fermeture passe"
+        );
+    }
+
+    // --- Lecture bornée avant allocation (audit n°3 A3-07) ---
+
+    /// Le fil mort ne laisse pas un « travail en cours » permanent
+    /// (audit n°3 N8) : l'envoi suivant relance un fil neuf, le
+    /// compteur des travaux repart de zéro et le travail est traité.
+    #[test]
+    fn le_fil_mort_est_relance_au_prochain_envoi() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        // Simule un fil mort : l'émetteur en place n'a plus de fil.
+        let (emetteur_mort, recepteur_mort) = mpsc::channel::<Travail>();
+        drop(recepteur_mort);
+        app.travaux = Some(emetteur_mort);
+        app.travaux_en_attente = 7;
+        app.envoyer_travail(Travail::ResoudreApercu {
+            generation: app.generation,
+            croquis: EsquisseProjection::default(),
+        });
+        assert_eq!(
+            app.travaux_en_attente, 1,
+            "le compteur repart de zéro puis compte le travail relancé"
+        );
+        // Le travail relancé revient : le fil neuf le traite.
+        let mut recus: Vec<Retour> = Vec::new();
+        for _ in 0..2_000 {
+            recus.extend(app.retours.try_iter());
+            if !recus.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            matches!(recus.first(), Some(Retour::EsquisseApercue { .. })),
+            "le travail relancé est traité par le fil neuf"
+        );
+    }
+
+    /// L'import est une action annulable : undo vide la géométrie de
+    /// l'état (ADR-0011).
+    #[test]
+    fn undo_d_import_disparait_de_l_etat() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        importer_svg_de_test(&mut app);
+        assert!(app.session.geom().traces().is_some(), "géométrie importée");
+        app.session.undo().expect("undo");
+        assert!(app.session.geom().traces().is_none(), "l'import est défait");
+    }
+
+    /// Export puis re-import forment un aller-retour : mêmes compteurs.
+    #[test]
+    fn export_puis_reimport_est_equivalent() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        importer_svg_de_test(&mut app);
+        let reference = app.session.geom().traces().expect("traces importées");
+        let blob = reference.blob.clone();
+        let octets = app.session.document().blob(&blob).expect("blob déposé");
+        let traces = svg::import(octets, &svg::SvgBudgets::default()).expect("re-parse");
+        let exporte = svg::export(&traces).expect("export");
+        let reimporte = svg::import(&exporte, &svg::SvgBudgets::default()).expect("re-import");
+        assert_eq!(reimporte.len(), traces.len(), "même nombre de tracés");
+        let attendus: usize = traces.iter().map(|trace| trace.len()).sum();
+        let obtenus: usize = reimporte.iter().map(|trace| trace.len()).sum();
+        assert_eq!(obtenus, attendus, "même nombre de sommets");
+    }
+
+    /// Un nouvel import après un undo ne laisse fuir aucun blob
+    /// orphelin (ADR-0011) : l'ancien contenu est remplacé, et une
+    /// sauvegarde après undo n'emporte aucun blob.
+    #[test]
+    fn nouvel_import_apres_undo_ne_fuit_pas_de_blob() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        importer_svg_de_test(&mut app);
+        let noms = app.session.document().blob_names();
+        assert_eq!(noms.len(), 1, "le blob de l'import est déposé");
+        assert!(noms[0].starts_with("geometry/traces"), "nom du blob");
+        app.session.undo().expect("undo");
+        importer_svg_de_test(&mut app);
+        assert_eq!(
+            app.session.document().blob_names().len(),
+            1,
+            "un seul blob : l'ancien est purgé, pas dupliqué"
+        );
+        app.session.undo().expect("undo");
+        let octets = app.session.save_to_bytes().expect("sauvegarde");
+        let document = Document::from_bytes(&octets).expect("conteneur");
+        assert!(
+            document.blob_names().is_empty(),
+            "aucun blob orphelin dans le fichier"
+        );
+    }
+
+    /// Un projet enregistré vers un chemin choisi se rouvre tel quel :
+    /// même état rejoué, chemin mémorisé (ADR-0014).
+    #[test]
+    fn enregistrer_puis_ouvrir_par_chemin() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 1234.0,
+            unite: None,
+        })
+        .expect("largeur");
+        let dossier = std::env::temp_dir().join("omnifab-phase-b-enregistrer");
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).expect("dossier de test");
+        let chemin = dossier.join("projet.omnifab");
+        app.enregistrer_dans(&chemin);
+        assert!(chemin.is_file(), "le projet est écrit");
+        assert_eq!(app.chemin_projet, Some(chemin.clone()), "chemin mémorisé");
+        let mut relue = DemoApp::new(i18n::catalogue(), None);
+        relue.ouvrir_projet(&chemin);
+        assert_eq!(
+            relue.chemin_projet,
+            Some(chemin),
+            "chemin repris à l'ouverture"
+        );
+        assert_eq!(relue.ecran, Ecran::Atelier, "l'atelier s'ouvre");
+        let largeur = relue.session.graph_mut().value("largeur").expect("valeur");
+        assert_eq!(largeur, 1234.0, "l'état est rejoué");
+    }
+
+    /// La boîte de scêne englobe tracés et maillage : union des boîtes
+    /// englobantes, une seule échelle (ADR-0014).
+    #[test]
+    fn boite_scene_union_traces_maillage() {
+        let un = Length::from_millimeters(1.0);
+        let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
+        let b = Point2::new(un, Length::ZERO).expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let s0 = Point3::new(Length::ZERO, un, Length::ZERO).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, un, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let boite = DemoApp::boite_scene(&[trace], Some(&maillage)).expect("boîte");
+        assert_eq!(boite.min_x, 0.0, "origine x commune");
+        assert_eq!(boite.min_y, 0.0, "origine y commune");
+        assert_eq!(boite.max_x, 1.0, "union en x");
+        assert_eq!(boite.max_y, 1.0, "union en y");
+    }
+
+    /// Le cadrage automatique vise la scêne importée, même éloignée de
+    /// l'origine : un import positionné loin du rectangle paramétrique
+    /// reste centré sur ses objets (bug de recentrage DXF signalé à la
+    /// validation C1 — l'union avec le rectangle déplaçait le centre).
+    #[test]
+    fn le_cadrage_vise_la_scene_meme_eloignee_du_rectangle() {
+        let a = Point2::new(
+            Length::from_millimeters(100.0),
+            Length::from_millimeters(200.0),
+        )
+        .expect("fini");
+        let b = Point2::new(
+            Length::from_millimeters(120.0),
+            Length::from_millimeters(220.0),
+        )
+        .expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let scene = DemoApp::boite_scene(&[trace], None).expect("boîte de scêne");
+        let boite = DemoApp::boite_cadrage(50.0, 50.0, Some(scene));
+        assert_eq!(boite.min_x, 100.0, "origine x de la scêne");
+        assert_eq!(boite.min_y, 200.0, "origine y de la scêne");
+        assert_eq!(boite.max_x, 120.0, "portée x de la scêne");
+        assert_eq!(boite.max_y, 220.0, "portée y de la scêne");
+    }
+
+    /// Sans scêne importée, le cadrage vise le rectangle paramétrique
+    /// seul (ADR-0015).
+    #[test]
+    fn le_cadrage_sans_scene_vise_le_rectangle() {
+        let boite = DemoApp::boite_cadrage(800.0, 600.0, None);
+        assert_eq!(boite.min_x, 0.0, "origine x du rectangle");
+        assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
+        assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
+        assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
+    }
+
+    /// La boîte de scêne 3D englobe tracés et maillage en volume :
+    /// les tracés posés sur le plan z = 0, les sommets du maillage
+    /// avec leur altitude (ADR-0015, phase C2).
+    #[test]
+    fn boite_scene_3d_union_traces_maillage() {
+        let un = Length::from_millimeters(1.0);
+        let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
+        let b = Point2::new(un, Length::ZERO).expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let s0 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s1 = Point3::new(un, un, un).expect("fini");
+        let s2 = Point3::new(un, un, Length::ZERO).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let boite = DemoApp::boite_scene_3d(&[trace], Some(&maillage)).expect("boîte");
+        assert_eq!(boite.min_x, 0.0, "origine x commune");
+        assert_eq!(boite.min_y, 0.0, "origine y commune");
+        assert_eq!(boite.min_z, 0.0, "tracé posé sur le plan z = 0");
+        assert_eq!(boite.max_x, 1.0, "union en x");
+        assert_eq!(boite.max_y, 1.0, "union en y");
+        assert_eq!(boite.max_z, 1.0, "altitude du maillage");
+    }
+
+    /// Sans scêne importée, le cadrage 3D vise le rectangle
+    /// paramétrique posé sur le plan z = 0 (ADR-0015, phase C2).
+    #[test]
+    fn le_cadrage_3d_sans_scene_vise_le_rectangle() {
+        let boite = DemoApp::boite_cadrage_3d(800.0, 600.0, None);
+        assert_eq!(boite.min_x, 0.0, "origine x du rectangle");
+        assert_eq!(boite.min_y, 0.0, "origine y du rectangle");
+        assert_eq!(boite.max_x, 800.0, "portée x du rectangle");
+        assert_eq!(boite.max_y, 600.0, "portée y du rectangle");
+        assert_eq!(boite.min_z, 0.0, "plan z = 0");
+        assert_eq!(boite.max_z, 0.0, "rectangle posé sur le plan");
+    }
+
+    /// Position du premier segment portant la couleur donnée :
+    /// sert à vérifier la priorité d'affichage de la vue 3D.
+    fn premiere_couleur(scene: &Scene3D, couleur: Couleur) -> usize {
+        scene
+            .segments
+            .iter()
+            .position(|s| s.couleur == couleur)
+            .expect("couleur présente")
+    }
+
+    /// Priorité d'affichage de la vue 3D : le pipeline de lignes ne
+    /// teste pas la profondeur, le dernier segment ajouté recouvre
+    /// les précédents. La grille est donc posée sous les tracés et
+    /// le rectangle, qui ne scintillent plus quand ils coïncident
+    /// avec elle (validation C2, round 2).
+    #[test]
+    fn la_grille_3d_passe_sous_les_traces_et_le_rectangle() {
+        let un = Length::from_millimeters(1.0);
+        let a = Point2::new(Length::ZERO, Length::ZERO).expect("fini");
+        let b = Point2::new(un, Length::ZERO).expect("fini");
+        let trace = Path2::from_points(vec![a, b], false);
+        let camera = Camera3D::nouvelle();
+        let scene = DemoApp::scene_vue_3d(&[trace], &[], &camera, 800.0, 600.0);
+        let grille = premiere_couleur(&scene, COULEUR_GRILLE);
+        let trace_pos = premiere_couleur(&scene, COULEUR_TRACES);
+        let rectangle = premiere_couleur(&scene, COULEUR_RECTANGLE_3D);
+        assert!(
+            grille < trace_pos && trace_pos < rectangle,
+            "grille sous les tracés sous le rectangle"
+        );
+    }
+
+    /// La valeur glissée s'engage depuis le tampon persistant : au
+    /// relâchement, le champ est déjà revenu à la valeur du graphe —
+    /// un engagement sur la seule valeur du champ écrivait l'ancienne
+    /// valeur (dimensions figées au glissement, validations C1
+    /// rounds 3 à 6). Sans changement effectif, rien ne va au
+    /// journal.
+    #[test]
+    fn le_glissement_s_engage_sur_le_tampon_persistant() {
+        // Relâchement après un glissement : le tampon gagne.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, false, true, false),
+            Some(500.0)
+        );
+        // Glissement en cours : aucun événement par frame.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, true, false, true),
+            None
+        );
+        // Édition clavier : le tampon final s'engage.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 500.0, false, false, true),
+            Some(500.0)
+        );
+        // Geste revenu à la valeur de départ : rien au journal.
+        assert_eq!(
+            DemoApp::engagement_params(800.0, 800.0, false, true, true),
+            None
+        );
+    }
+
+    /// Tampon d'édition d'un champ de dimension : inactif, il suit le
+    /// graphe (undo/redo, ouverture) ; actif, il persiste — c'est lui
+    /// qui garde la valeur glissée d'une frame à l'autre pendant le
+    /// geste (validation C1 round 6).
+    #[test]
+    fn le_tampon_inactif_suit_le_graphe_l_actif_persiste() {
+        assert_eq!(
+            DemoApp::tampon_apres_inactivite(false, 123.0, Some(800.0)),
+            800.0,
+            "inactif : reprise du graphe"
+        );
+        assert_eq!(
+            DemoApp::tampon_apres_inactivite(true, 123.0, Some(800.0)),
+            123.0,
+            "actif : le tampon persiste"
+        );
+        assert_eq!(
+            DemoApp::tampon_apres_inactivite(false, 123.0, None),
+            0.0,
+            "entrée absente : affichage zéro"
+        );
+    }
+
+    /// Les trois événements vierges (largeur, hauteur, diagonale)
+    /// forment trois groupes d'undo : annuler puis rétablir les
+    /// parcourt sans perdre le journal — après un undo des
+    /// dimensions, le clamp d'affichage d'un champ comptait comme
+    /// un changement et détruisait les groupes défaits (validation
+    /// C1 round 3).
+    #[test]
+    fn annuler_puis_retablir_les_groupes_vierges() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        assert!(app.session.can_undo(), "session vierge annulable");
+        app.session.undo().expect("premier undo");
+        assert!(app.session.can_redo(), "rétablissable après un undo");
+        app.session.undo().expect("second undo");
+        assert!(app.session.can_redo(), "rétablissable après deux undos");
+        app.session.redo().expect("premier rétablissement");
+        app.session.redo().expect("second rétablissement");
+        assert_eq!(
+            app.session.document().events().len(),
+            3,
+            "journal intact : trois événements"
+        );
+        let largeur = app.session.graph_mut().value("largeur").expect("valeur");
+        let hauteur = app.session.graph_mut().value("hauteur").expect("valeur");
+        assert_eq!(largeur, 240.0, "largeur rétablie");
+        assert_eq!(hauteur, 160.0, "hauteur rétablie");
+    }
+
+    /// Le projet vierge porte les trois liaisons de référence :
+    /// largeur et hauteur en entrées mm, diagonale en expression mm
+    /// (ADR-0019 §6).
+    #[test]
+    fn le_projet_vierge_porte_les_trois_liaisons() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let noms = app.session.graph().names();
+        assert!(noms.contains(&"largeur".to_string()), "entrée largeur");
+        assert!(noms.contains(&"hauteur".to_string()), "entrée hauteur");
+        assert!(
+            noms.contains(&"diagonale".to_string()),
+            "expression diagonale"
+        );
+        let info = app.session.graph().noeud("largeur").expect("nœud");
+        assert_eq!(info.unite, Some(Unite::Millimetre), "unité mm déclarée");
+        assert!(info.expression.is_none(), "largeur est une entrée");
+        let diagonale = app.session.graph_mut().value("diagonale").expect("valeur");
+        assert!(
+            (diagonale - 288.44410203711914).abs() < 1e-9,
+            "sqrt(240² + 160²)"
+        );
+    }
+
+    /// La génération des liaisons avance sur les commandes de
+    /// valeurs et l'annulation, pas sur les autres commandes : les
+    /// cotes pilotées savent quand se re-figer (ADR-0019 §6).
+    #[test]
+    fn la_generation_des_liaisons_avance() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let avant = app.generation_liaisons;
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 900.0,
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("largeur");
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 1,
+            "une commande de valeur avance la génération"
+        );
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(1.0),
+                y: Length::from_millimeters(2.0),
+            },
+        })
+        .expect("point");
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 1,
+            "une commande hors liaisons ne l'avance pas"
+        );
+        app.annuler();
+        assert_eq!(
+            app.generation_liaisons,
+            avant + 2,
+            "l'annulation avance la génération"
+        );
+    }
+
+    /// Une cote pilotée se fige depuis le graphe et suit les
+    /// liaisons : changer la largeur re-fige la cote à la prochaine
+    /// résolution (ADR-0019 §4/§6, checklist §8).
+    #[test]
+    fn la_cote_pilotee_se_gele_depuis_le_graphe() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        for (x, y) in [(0.0, 0.0), (100.0, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Expression {
+                    texte: "largeur / 2".into(),
+                    alias: "esquisse.demi".into(),
+                },
+            },
+        })
+        .expect("cote pilotée");
+        let figee = app.session.croquis_pour_resolution().expect("croquis figé");
+        // La cote figée ne porte plus son alias (Expression →
+        // Fixe) : la contrainte Distance se cherche directement.
+        let valeur = figee
+            .contraintes()
+            .iter()
+            .find_map(|(_, contrainte)| match contrainte {
+                ContrainteEsquisse::Distance { valeur, .. } => Some(valeur.clone()),
+                _ => None,
+            })
+            .expect("cote présente");
+        let ValeurCote::Fixe { mm } = valeur else {
+            panic!("cote figée pour le solveur");
+        };
+        assert_eq!(mm.millimeters(), 120.0, "largeur 240 → cote 120");
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 1000.0,
+            unite: Some(Unite::Millimetre),
+        })
+        .expect("largeur");
+        let figee = app.session.croquis_pour_resolution().expect("croquis figé");
+        // La cote figée ne porte plus son alias (Expression →
+        // Fixe) : la contrainte Distance se cherche directement.
+        let valeur = figee
+            .contraintes()
+            .iter()
+            .find_map(|(_, contrainte)| match contrainte {
+                ContrainteEsquisse::Distance { valeur, .. } => Some(valeur.clone()),
+                _ => None,
+            })
+            .expect("cote présente");
+        let ValeurCote::Fixe { mm } = valeur else {
+            panic!("cote figée pour le solveur");
+        };
+        assert_eq!(mm.millimeters(), 500.0, "largeur 1000 → cote 500");
+    }
+
+    /// L'axe Y monte dans la scêne et descend à l'écran : un point
+    /// plus haut apparaît plus haut — sans l'inversion, les fichiers
+    /// asymétriques se reflétaient en miroir (DXF réel importé à la
+    /// validation de la phase B).
+    #[test]
+    fn projection_inverse_l_axe_y() {
+        let mut camera = Camera2D::nouvelle();
+        camera.ajuster(
+            100.0,
+            100.0,
+            Boite2::du_point(0.0, 0.0).etendre(10.0, 10.0),
+            0.0,
+        );
+        let bas = camera.vers_ecran((5.0, 0.0));
+        let haut = camera.vers_ecran((5.0, 10.0));
+        assert!(
+            haut.1 < bas.1,
+            "plus haut dans la scêne, plus haut à l'écran"
+        );
+    }
+
+    /// La caméra vise le centre du rect, pas son coin : le centre de
+    /// la boîte d'ajustement atterrit au centre du viewport (bug de
+    /// recentrage signalé à la validation C1).
+    #[test]
+    fn le_centre_de_la_camera_atterrit_au_centre_du_rect() {
+        let mut camera = Camera2D::nouvelle();
+        camera.ajuster(
+            1000.0,
+            600.0,
+            Boite2::du_point(0.0, 0.0).etendre(800.0, 600.0),
+            20.0,
+        );
+        let rect = egui::Rect::from_min_size(egui::pos2(40.0, 30.0), egui::vec2(1000.0, 600.0));
+        let centre = camera.centre_mm;
+        let affiche = DemoApp::point_ecran(&camera, rect, centre.0, centre.1);
+        assert_eq!(affiche, rect.center(), "centré, pas vers le coin");
+    }
+
+    /// Le wireframe 2D du maillage : trois arêtes par triangle en
+    /// projection de dessus, cyan, un pixel — le STL revient en vue
+    /// 2D, dessiné par le même pipeline GPU que les tracés, sans
+    /// plafond (validation C2, round 5).
+    #[test]
+    fn le_wireframe_2d_pose_trois_aretes_par_triangle() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let mut scene = Scene2D::vide();
+        DemoApp::ajouter_maillage_2d(&mut scene, &maillage);
+        assert_eq!(scene.segments.len(), 3, "trois arêtes par triangle");
+        assert_eq!(scene.segments[0].depart, (0.0, 0.0), "vue de dessus");
+        assert!(
+            scene
+                .segments
+                .iter()
+                .all(|segment| segment.couleur == COULEUR_WIREFRAME),
+            "arêtes cyan"
+        );
+    }
+
+    /// Plafond d'arêtes attendu pour le wireframe 2D (audit n°4
+    /// A4-02).
+    const MAX_ARETES_WIREFRAME: usize = 2_097_152;
+
+    /// Le wireframe 2D d'un maillage démesuré est plafonné : jamais
+    /// plus de `MAX_ARETES_WIREFRAME` segments par frame, les
+    /// tampons GPU restent sous la limite de 256 Mio (audit n°4
+    /// A4-02).
+    #[test]
+    fn le_wireframe_2d_est_plafonne() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let triangles = vec![[0, 1, 2]; 800_000];
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], triangles).expect("valide");
+        let mut scene = Scene2D::vide();
+        DemoApp::ajouter_maillage_2d(&mut scene, &maillage);
+        assert!(
+            scene.segments.len() <= MAX_ARETES_WIREFRAME,
+            "le wireframe 2D est plafonné à {} arêtes, pas {}",
+            MAX_ARETES_WIREFRAME,
+            scene.segments.len()
+        );
+    }
+
+    /// Le wireframe 3D vit en cache à clé d'édition (ADR-0027,
+    /// patron `camera_cle`, audit n°4 A4-02) : deux frames de
+    /// suite ne reconstruisent pas le wireframe, une clé changée
+    /// le reconstruit.
+    #[test]
+    fn le_wireframe_3d_vit_en_cache_a_cle_edition() {
+        let un = Length::from_millimeters(1.0);
+        let s0 = Point3::new(Length::ZERO, Length::ZERO, un).expect("fini");
+        let s1 = Point3::new(Length::ZERO, un, un).expect("fini");
+        let s2 = Point3::new(un, Length::ZERO, un).expect("fini");
+        let maillage = Mesh::from_parts(vec![s0, s1, s2], vec![[0, 1, 2]]).expect("valide");
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.cache_maillage = Some(("blob-stl".to_string(), Ok(maillage)));
+        app.rafraichir_wireframe(&Some("blob-stl".to_string()));
+        let segments = app.wireframe_maillage.as_ref().expect("cache posé").1.len();
+        assert!(segments > 0, "le wireframe est construit une première fois");
+        // Sabotage du cache : s'il survit à la frame suivante, le
+        // wireframe n'est pas reconstruit à chaque frame.
+        app.wireframe_maillage
+            .as_mut()
+            .expect("cache posé")
+            .1
+            .clear();
+        app.rafraichir_wireframe(&Some("blob-stl".to_string()));
+        assert!(
+            app.wireframe_maillage
+                .as_ref()
+                .expect("cache posé")
+                .1
+                .is_empty(),
+            "même clé : le sabotage survit, pas de reconstruction"
+        );
+        // Clé d'édition changée : le wireframe est reconstruit.
+        app.rafraichir_wireframe(&None);
+        assert!(
+            !app.wireframe_maillage
+                .as_ref()
+                .expect("cache posé")
+                .1
+                .is_empty(),
+            "une clé d'édition changée reconstruit le wireframe"
+        );
+    }
+
+    /// La sauvegarde après un undo ne casse plus le redo : le fichier
+    /// contient le journal appliqué, la pile redo survit en mémoire
+    /// (ADR-0016 C3).
+    #[test]
+    fn enregistrer_apres_undo_preserve_le_redo() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 900.0,
+            unite: None,
+        })
+        .expect("largeur");
+        app.annuler();
+        assert!(app.session.can_redo(), "le redo est en place");
+        let dossier = std::env::temp_dir().join("omnifab-c3-enregistrer-undo");
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).expect("dossier de test");
+        let chemin = dossier.join("projet.omnifab");
+        app.enregistrer_dans(&chemin);
+        assert!(chemin.is_file(), "le projet est écrit");
+        let document = Document::open_from_path(&chemin).expect("ouverture");
+        assert_eq!(
+            document.events().len(),
+            EVENEMENTS_VIERGES,
+            "le fichier contient le journal appliqué"
+        );
+        assert!(app.session.can_redo(), "enregistrer garde le redo");
+        app.retablir();
+        let largeur = app.session.graph_mut().value("largeur").expect("valeur");
+        assert_eq!(largeur, 900.0, "le redo restaure la largeur");
+    }
+
+    /// L'indicateur de travail non enregistré suit les commandes,
+    /// l'annulation et la sauvegarde (ADR-0016 C3).
+    #[test]
+    fn dirty_suit_les_commandes_et_la_sauvegarde() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        assert!(!app.dirty, "session vierge : rien à enregistrer");
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 900.0,
+            unite: None,
+        })
+        .expect("largeur");
+        assert!(app.dirty, "une commande effective pose l'indicateur");
+        let dossier = std::env::temp_dir().join("omnifab-c3-dirty");
+        let _ = std::fs::remove_dir_all(&dossier);
+        std::fs::create_dir_all(&dossier).expect("dossier de test");
+        let chemin = dossier.join("projet.omnifab");
+        app.enregistrer_dans(&chemin);
+        assert!(!app.dirty, "la sauvegarde lève l'indicateur");
+        app.annuler();
+        assert!(app.dirty, "l'annulation repose l'indicateur");
+    }
+
+    /// Un import au format inconnu est refusé par la session : aucun
+    /// succès n'est affiché, et l'import valide suivant efface le
+    /// refus (ADR-0016 C4).
+    #[test]
+    fn succes_d_import_conditionne_a_la_commande() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::ImportTraces {
+            generation: app.generation,
+            format: "step",
+            octets: vec![],
+            traces: 1,
+            sommets: 3,
+        });
+        assert!(app.error.is_some(), "le refus est affiché");
+        assert!(app.info.is_none(), "aucun succès après un refus");
+        app.appliquer_retour(Retour::ImportTraces {
+            generation: app.generation,
+            format: "svg",
+            octets: SVG_TEST.to_vec(),
+            traces: 1,
+            sommets: 3,
+        });
+        assert!(app.info.is_some(), "l'import réussi affiche son succès");
+        assert!(app.error.is_none(), "le refus précédent est effacé");
+    }
+
+    /// L'action suivante efface l'erreur de la précédente : plus de
+    /// rouge persistant après correction (ADR-0016 C4).
+    #[test]
+    fn messages_d_etat_fideles() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::Erreur {
+            generation: app.generation,
+            message: "fichier invalide".to_string(),
+        });
+        assert!(app.error.is_some(), "l'échec est affiché");
+        assert!(app.info.is_none(), "aucun succès affiché");
+        app.executer(&SetInput {
+            name: "largeur".into(),
+            value: 900.0,
+            unite: None,
+        })
+        .expect("commande valide");
+        assert!(app.error.is_none(), "la correction efface l'erreur");
+    }
+
+    /// Un import minuscule attend le choix des unités : rien n'est
+    /// écrit avant la réponse, et « Mètres » importe à l'échelle
+    /// × 1000 (ADR-0017).
+    #[test]
+    fn import_minuscule_attend_le_choix_des_unites() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.appliquer_retour(Retour::ImportMaillage {
+            generation: app.generation,
+            chemin: PathBuf::from("minuscule.stl"),
+            octets: b"solid minuscule".to_vec(),
+            triangles: 1,
+            dimension: 0.05,
+        });
+        assert!(app.demande_echelle.is_some(), "le choix des unités attend");
+        assert!(app.session.geom().maillage().is_none(), "rien au journal");
+        let demande = app.demande_echelle.as_ref().expect("demande d'échelle");
+        assert_eq!(
+            demande.chemin,
+            PathBuf::from("minuscule.stl"),
+            "la demande garde le chemin à relire"
+        );
+        assert_eq!(demande.dimension, 0.05, "la demande garde la dimension mesurée");
+        app.importer_maillage(b"solid minuscule".to_vec(), 1, 1000.0);
+        assert!(app.demande_echelle.is_none(), "demande consommée");
+        let maillage = app.session.geom().maillage().expect("maillage importé");
+        assert_eq!(maillage.echelle, 1000.0, "échelle mètres retenue");
+    }
+
+    /// La confirmation d'échelle importe depuis le retour du fil de
+    /// travail (ADR-0038 D2) : octets relus et échelle décidée ; un
+    /// échec de relecture n'écrit rien — seul l'import confirmé est
+    /// au journal.
+    #[test]
+    fn confirmation_d_echelle_importe_le_maillage_relu() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.demande_echelle = Some(DemandeEchelle {
+            chemin: PathBuf::from("minuscule.stl"),
+            dimension: 0.05,
+        });
+        app.appliquer_retour(Retour::ConfirmerMaillage {
+            generation: app.generation,
+            octets: b"solid minuscule".to_vec(),
+            triangles: 1,
+            echelle: 1000.0,
+        });
+        assert!(app.demande_echelle.is_none(), "demande consommée");
+        let maillage = app.session.geom().maillage().expect("maillage importé");
+        assert_eq!(maillage.echelle, 1000.0, "échelle décidée appliquée");
+        // Un échec de relecture devient un message d'import : rien de
+        // plus au journal, seul l'import confirmé s'y trouve.
+        app.appliquer_retour(Retour::Erreur {
+            generation: app.generation,
+            message: "fichier disparu".to_string(),
+        });
+        assert!(app.error.is_some(), "l'échec de relecture est affiché");
+        app.session.undo().expect("l'import confirmé est annulable");
+        assert!(
+            app.session.geom().maillage().is_none(),
+            "seul l'import confirmé a touché le journal"
+        );
+    }
+
+    /// Compare une position résolue aux coordonnées attendues,
+    /// à la tolérance du domaine près (1e-6 mm).
+    fn proche(position: Option<(Length, Length)>, x: f64, y: f64) -> bool {
+        let (px, py) = match position {
+            Some((px, py)) => (px, py),
+            None => return false,
+        };
+        px.approx_eq(Length::from_millimeters(x)) && py.approx_eq(Length::from_millimeters(y))
+    }
+
+    /// Pompe les retours du fil de travail jusqu’à ce que la
+    /// résolution en vol revienne : délai maximal 10 secondes
+    /// (ADR-0016 C1).
+    fn pomper_les_retours(app: &mut DemoApp) {
+        for _ in 0..2_000 {
+            if app.resolution_en_attente.is_none() {
+                return;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("la résolution du croquis ne revient jamais");
+    }
+
+    /// Pompe le retour de l'aperçu de glissement : la boucle ne
+    /// tient que l'aperçu en vol (`apercu_en_attente`), jamais la
+    /// résolution — même canal, deux attentes distinctes.
+    fn pomper_l_apercu(app: &mut DemoApp) {
+        for _ in 0..2_000 {
+            if !app.apercu_en_attente {
+                return;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("l'aperçu de glissement ne revient jamais");
+    }
+
+    /// Le croquis contraint se résout au fil de travail : une entité
+    /// posée, une demande, le cache reçoit les positions résolues
+    /// (ADR-0018 D3).
+    #[test]
+    fn le_croquis_se_resout_au_fil_de_travail() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(10.0),
+                y: Length::from_millimeters(20.0),
+            },
+        })
+        .expect("entité posée");
+        app.demande_resolution_esquisse();
+        assert_eq!(
+            app.resolution_en_attente,
+            Some((1, app.generation_liaisons)),
+            "résolution demandée"
+        );
+        pomper_les_retours(&mut app);
+        let (cle, resultat) = app.croquis_resolu.expect("croquis résolu");
+        assert_eq!(
+            cle,
+            (1, app.generation_liaisons),
+            "clé du cache : édition et liaisons"
+        );
+        let resolu = resultat.expect("résolution réussie");
+        assert!(proche(resolu.position(0), 10.0, 20.0), "position résolue");
+    }
+
+    /// Le croquis résolu n’est pas renvoyé : une seule résolution par
+    /// édition, aucune nouvelle demande quand le cache est à jour —
+    /// et le croquis vide ne demande rien (ADR-0016 C1,
+    /// ADR-0018 D3).
+    #[test]
+    fn le_croquis_resolu_n_est_pas_reenvoye() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 0, "croquis vide : aucun envoi");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(10.0),
+                y: Length::from_millimeters(20.0),
+            },
+        })
+        .expect("entité posée");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "une résolution envoyée");
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "en vol : pas de redemande");
+        pomper_les_retours(&mut app);
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 0, "cache à jour : aucun renvoi");
+        assert!(app.croquis_resolu.is_some(), "le cache est rempli");
+        app.session.undo().expect("undo");
+        app.demande_resolution_esquisse();
+        assert!(app.croquis_resolu.is_none(), "croquis vide : cache vidé");
+        assert_eq!(app.travaux_en_attente, 0, "aucun nouvel envoi");
+    }
+
+    /// Pendant le vol d'une résolution fraîche, l'affichage garde la
+    /// dernière résolution connue : le croquis contraint ne saute
+    /// jamais aux graines au moment d'un clic — la « déformation »
+    /// rapportée à la re-validation §7 disparaît. L'accroche, elle,
+    /// attend la résolution fraîche.
+    #[test]
+    fn l_affichage_garde_la_derniere_resolution_pendant_le_vol() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("origine");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("mobile");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("ancrage");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Cache à jour : l'affichage montre la position résolue (à
+        // 40 mm de l'ancré), pas la graine (80, -3) — l'ancrage
+        // épingle la position résolue du point (ADR-0021, révision
+        // du 2026-10-22), la distance se lit autour de l'ancré.
+        let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        let (x0, y0) = resolu.position(0).expect("point ancré résolu");
+        let (x, y) = resolu.position(1).expect("point mobile résolu");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
+        assert!(
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "position résolue à 40 mm de l'ancré, pas à la graine"
+        );
+        // Un point de plus : l'édition avance, la résolution
+        // repart — l'affichage garde la dernière connue pendant le
+        // vol au lieu de flasher les graines.
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(120.0),
+                y: Length::from_millimeters(90.0),
+            },
+        })
+        .expect("point posé");
+        // Trame du clic elle-même : la demande n'est pas encore
+        // partie — l'affichage garde déjà la dernière résolution,
+        // il ne saute pas aux graines.
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("l'ancienne résolution est montrée dès le clic");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
+        assert!(
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "l'affichage ne flashe pas les graines dès le clic"
+        );
+        app.demande_resolution_esquisse();
+        assert_eq!(app.travaux_en_attente, 1, "résolution fraîche en vol");
+        assert!(
+            !app.croquis_resolu
+                .as_ref()
+                .is_some_and(|(cle, _)| cle.0 == app.session.esquisse().edition()),
+            "le cache est bien périmé"
+        );
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("dernière résolution tenue pendant le vol");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
+        assert!(
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "l'affichage tient la résolution, pas la graine"
+        );
+    }
+
+    /// L'affichage garde la dernière résolution RÉUSSIE quand la
+    /// fraîche ÉCHOUE (re-test du 24-10) : une résolution qui
+    /// échoue ne doit jamais effacer la dernière forme saine —
+    /// sinon le croquis saute aux graines du journal et paraît se
+    /// déformer au moment même de la pose fautive. L'erreur est
+    /// signalée, le DoF du panneau disparaît avec la résolution
+    /// fraîche, mais la forme saine reste dessinée.
+    #[test]
+    fn l_affichage_garde_la_derniere_resolution_bonne_quand_le_frais_echoue() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("origine posée");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("mobile posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("ancrage posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Une cote impossible : à 40 mm de l'origine ET à 200 mm du
+        // point déjà à 40 mm de l'origine — le triangle ne peut pas
+        // exister, la résolution fraîche échoue.
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(120.0),
+                y: Length::from_millimeters(90.0),
+            },
+        })
+        .expect("troisième point posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(200.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let frais = app.croquis_resolu.as_ref().expect("résolution fraîche");
+        assert!(frais.1.is_err(), "la résolution fraîche échoue");
+        assert!(app.error.is_some(), "l'échec est signalé");
+        // La dernière résolution réussie tient l'affichage : la
+        // forme saine d'avant la cote impossible reste dessinée,
+        // le croquis ne saute pas aux graines.
+        let resolu = atelier_esquisse::resolu_affichage(&app)
+            .expect("la dernière résolution réussie reste affichable");
+        let (x0, y0) = resolu.position(0).expect("point ancré affiché");
+        let (x, y) = resolu.position(1).expect("point mobile affiché");
+        let dx = x.millimeters() - x0.millimeters();
+        let dy = y.millimeters() - y0.millimeters();
+        assert!(
+            (dx.hypot(dy) - 40.0).abs() < 1e-6,
+            "l'affichage tient la forme saine, pas les graines"
+        );
+    }
+
+    /// La coïncidence traverse le fil de travail : deux points
+    /// distincts se superposent après résolution (ADR-0018 D3).
+    #[test]
+    fn la_coincidence_traverse_le_fil_de_travail() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(30.0),
+                y: Length::from_millimeters(40.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Coincidence { p1: 0, p2: 1 },
+        })
+        .expect("contrainte posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        let (x1, y1) = resolu.position(0).expect("premier point résolu");
+        let (x2, y2) = resolu.position(1).expect("second point résolu");
+        assert!(x1.approx_eq(x2) && y1.approx_eq(y2), "points superposés");
+    }
+
+    /// Un clic de l'outil Point se colle au pas de grille le plus
+    /// proche (ADR-0018, lot 3c-2).
+    #[test]
+    fn le_clic_de_point_vise_la_grille() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Point;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.24, pas * 0.67);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 1, "un point posé");
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[0].1 else {
+            panic!("l'entité posée est un point");
+        };
+        assert_eq!(x.millimeters(), pas, "abscisse collée au pas");
+        assert_eq!(y.millimeters(), pas, "ordonnée collée au pas");
+    }
+
+    /// Le clic reprend le point existant le plus proche sous le
+    /// seuil d'un quart de pas, et pose un point neuf collé à la
+    /// grille au-delà (ADR-0018, lot 3c-2).
+    #[test]
+    fn le_clic_s_accroche_aux_points_existants() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Point;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.24, pas * 0.1);
+        assert_eq!(
+            app.session.esquisse().entites().len(),
+            1,
+            "premier point posé"
+        );
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, pas * 0.05);
+        assert_eq!(
+            app.session.esquisse().entites().len(),
+            1,
+            "point proche repris"
+        );
+        atelier_esquisse::traiter_clic(&mut app, pas, pas, 0.0);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 2, "un point neuf posé");
+        let EntiteEsquisse::Point { x, y } = esquisse.entites()[1].1 else {
+            panic!("l'entité posée est un point");
+        };
+        assert_eq!(x.millimeters(), pas, "abscisse au pas");
+        assert_eq!(y.millimeters(), 0.0, "ordonnée nulle");
+    }
+
+    /// L'outil Ligne pose l'origine au premier clic, l'extrémité
+    /// au second, et l'entité ligne les relie (ADR-0018,
+    /// lot 3c-2).
+    #[test]
+    fn l_outil_ligne_pose_deux_points_et_une_ligne() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Ligne;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        assert!(app.geste.is_some(), "geste ouvert à l'origine");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, pas);
+        assert!(app.geste.is_none(), "geste clos à l'extrémité");
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 3, "deux points et une ligne");
+        let EntiteEsquisse::Ligne { p1, p2 } = esquisse.entites()[2].1 else {
+            panic!("l'entité posée est une ligne");
+        };
+        assert_eq!(p1, 0, "origine au premier clic");
+        assert_eq!(p2, 1, "extrémité au second clic");
+    }
+
+    /// L'outil Cercle pose le centre au premier clic, le rayon au
+    /// second — sans point d'extrémité (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_cercle_pose_le_centre_puis_le_rayon() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Cercle;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 2, "le centre et le cercle");
+        let EntiteEsquisse::Cercle { centre, rayon } = esquisse.entites()[1].1 else {
+            panic!("l'entité posée est un cercle");
+        };
+        assert_eq!(centre, 0, "centre au premier clic");
+        assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du centre au clic");
+    }
+
+    /// Le balayage est signé (ADR-0020) : une fin « avant » le début
+    /// dans le sens trigonométrique balaie dans le sens horaire — le
+    /// sens suit le geste au lieu d'enrouler le cercle.
+    #[test]
+    fn le_balayage_de_l_arc_est_signe() {
+        let angles = atelier_esquisse::angles_arc(
+            forge_units::Angle::from_radians(0.5),
+            forge_units::Angle::from_radians(0.2),
+            8,
+        );
+        assert_eq!(angles.len(), 9, "segments + bornes");
+        assert!((angles[0] - 0.5).abs() < 1e-12, "le départ est conservé");
+        assert!(
+            (angles[8] - 0.2).abs() < 1e-12,
+            "arrivée au sens horaire à l'angle de fin"
+        );
+    }
+
+    /// Une fin confondue avec le début dessine le tour entier, dans
+    /// le sens trigonométrique (ADR-0020).
+    #[test]
+    fn l_arc_confondu_balaie_le_tour_entier() {
+        let angles = atelier_esquisse::angles_arc(
+            forge_units::Angle::from_radians(0.5),
+            forge_units::Angle::from_radians(0.5),
+            8,
+        );
+        assert!(
+            (angles[8] - (0.5 + std::f64::consts::TAU)).abs() < 1e-12,
+            "le tour entier depuis le départ"
+        );
+    }
+
+    /// Le sens de l'arc suit le geste (ADR-0020) : un troisième clic
+    /// « avant » le début dans le sens trigonométrique balaie dans
+    /// le sens horaire.
+    #[test]
+    fn l_arc_balaie_dans_le_sens_du_geste() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Arc;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * -2.0);
+        let esquisse = app.session.esquisse();
+        let EntiteEsquisse::Arc { angle_fin, .. } = esquisse.entites()[3].1 else {
+            panic!("l'entité posée est un arc");
+        };
+        assert!(
+            (angle_fin.radians() + std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "fin « avant » le début : balayage horaire"
+        );
+    }
+
+    /// La sélection atteint les cercles (ADR-0020) : un clic sur la
+    /// courbe sélectionne l'entité, pas seulement les points et les
+    /// lignes.
+    #[test]
+    fn la_selection_atteint_les_cercles() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Cercle;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
+        assert_eq!(app.selection, vec![1], "le cercle visé est sélectionné");
+    }
+
+    /// La page d'aide suit le code terminal du message (ADR-0020) :
+    /// le refus de la session enveloppe le code de la cause, le
+    /// dernier code du message est la page à ouvrir.
+    #[test]
+    fn la_page_d_aide_suivit_le_code_terminal() {
+        let mut message =
+            String::from("OF-SES-0002 : la projection « values » rejette l'événement : ");
+        message.push_str("OF-VAL-0007 : « angle » en deg lit « largeur » en mm");
+        assert_eq!(aide_du_code(&message), "aide-of-val-0007");
+        assert_eq!(
+            aide_du_code("OF-VAL-0001 : cycle dans le graphe de liaisons : b → a → b"),
+            "aide-of-val-0001"
+        );
+    }
+
+    /// L'outil Arc pose le centre, le début puis la fin : trois
+    /// points et l'arc, angles au centre aux extrémités
+    /// (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_arc_pose_trois_points_et_un_arc() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Arc;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, pas * 2.0);
+        assert!(app.geste.is_none(), "geste clos à la fin de l'arc");
+        let esquisse = app.session.esquisse();
+        assert_eq!(esquisse.entites().len(), 4, "trois points et un arc");
+        let EntiteEsquisse::Arc {
+            centre,
+            debut,
+            fin,
+            rayon,
+            angle_debut,
+            angle_fin,
+        } = esquisse.entites()[3].1
+        else {
+            panic!("l'entité posée est un arc");
+        };
+        assert_eq!(centre, 0, "centre au premier clic");
+        assert_eq!(debut, 1, "début au second clic");
+        assert_eq!(fin, 2, "fin au troisième clic");
+        assert_eq!(rayon.millimeters(), pas * 2.0, "rayon du début");
+        assert_eq!(angle_debut.radians(), 0.0, "angle de début nul");
+        assert!(
+            (angle_fin.radians() - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "angle de fin droit"
+        );
+    }
+
+    /// L'outil Sélection ne pose rien : aucun geste n'ouvre, le
+    /// journal reste vierge (ADR-0018, lot 3c-2).
+    #[test]
+    fn l_outil_selection_ne_pose_rien() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, 0.0, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas, pas);
+        assert_eq!(app.session.esquisse().entites().len(), 0, "aucune entité");
+        assert!(app.geste.is_none(), "aucun geste");
+    }
+
+    /// L'affichage du croquis préfère les positions résolues du
+    /// cache et retombe sur les graines du journal sans résolution
+    /// (ADR-0018 D7, lot 3c).
+    #[test]
+    fn l_affichage_prefere_les_positions_resolues() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(30.0),
+                y: Length::from_millimeters(40.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Coincidence { p1: 0, p2: 1 },
+        })
+        .expect("contrainte posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        let esquisse = app.session.esquisse();
+        // Sans résolution : les graines distinctes du journal.
+        let (x0, y0) = atelier_esquisse::position_point(esquisse, None, 0).expect("graine 0");
+        let (x1, y1) = atelier_esquisse::position_point(esquisse, None, 1).expect("graine 1");
+        assert!(
+            !x0.approx_eq(x1) || !y0.approx_eq(y1),
+            "les graines du journal restent distinctes"
+        );
+        // Avec la résolution : les points coïncident.
+        let (x0, y0) = atelier_esquisse::position_point(esquisse, Some(&resolu), 0)
+            .expect("position résolue du premier point");
+        let (x1, y1) = atelier_esquisse::position_point(esquisse, Some(&resolu), 1)
+            .expect("position résolue du second point");
+        assert!(
+            x0.approx_eq(x1) && y0.approx_eq(y1),
+            "les positions résolues coïncident"
+        );
+    }
+
+    /// L'outil Sélection vise le point le plus proche au clic et
+    /// vide la sélection ailleurs (ADR-0018 D5, lot 3c-3) : aucun
+    /// geste n'ouvre, le journal ne grandit pas.
+    #[test]
+    fn la_selection_vise_le_point_le_plus_proche() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, 0.0);
+        assert_eq!(app.selection, vec![0], "le point proche est sélectionné");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 4.0, 0.0);
+        assert!(app.selection.is_empty(), "un clic loin vide la sélection");
+    }
+
+    /// Le relâchement d'une poignée pose la graine par `MovePoint`
+    /// (ADR-0018 D4, lot 3c-3) : l'aperçu du glissement déplace le
+    /// point saisi sans écrire au journal, le relâchement écrit un
+    /// événement et la projection porte la nouvelle graine.
+    #[test]
+    fn le_relachement_deplace_le_point_par_move_point() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        app.saisie = Some(0);
+        let empreinte_avant = app.empreinte_journal();
+        // Aperçu du glissement : le point saisi suit le curseur,
+        // la graine du journal ne bouge pas.
+        let (id, x, y) = atelier_esquisse::cible_du_geste(&app, pas, pas * 2.0, pas)
+            .expect("visée du point saisi");
+        assert_eq!(id, 0, "le point saisi");
+        assert_eq!(x.millimeters(), pas * 2.0, "abscisse visée en aperçu");
+        assert_eq!(y.millimeters(), pas, "ordonnée visée en aperçu");
+        assert_eq!(
+            app.empreinte_journal(),
+            empreinte_avant,
+            "l'aperçu n'écrit rien au journal"
+        );
+        // Relâchement : la graine part à la position visée, un
+        // événement de plus au journal.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "un événement écrit au relâchement"
+        );
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point déplacé");
+        assert_eq!(x.millimeters(), pas * 2.0, "graine à l'abscisse visée");
+        assert_eq!(y.millimeters(), pas, "graine à l'ordonnée visée");
+    }
+
+    /// L'aperçu de glissement suit le geste en direct (re-test du
+    /// 2026-10-23) : la résolution d'aperçu part au fil de travail
+    /// à la position visée — une seule par position — le point
+    /// saisi y est résolu et le journal ne bouge pas ; l'échec est
+    /// silencieux, il ne remonte jamais comme erreur.
+    #[test]
+    fn l_apercu_de_glissement_suite_le_geste_en_direct() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.saisie = Some(0);
+        let empreinte_avant = app.empreinte_journal();
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(20.0),
+            Length::from_millimeters(10.0),
+        );
+        assert!(
+            app.apercu_en_attente,
+            "l'aperçu est parti au fil de travail"
+        );
+        // La même position ne repart pas : un seul aperçu en vol.
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(20.0),
+            Length::from_millimeters(10.0),
+        );
+        assert_eq!(
+            app.travaux_en_attente, 1,
+            "une seule résolution d'aperçu en vol"
+        );
+        // Pompage du retour : la résolution d'aperçu revient.
+        for _ in 0..2_000 {
+            if !app.apercu_en_attente {
+                break;
+            }
+            let recus: Vec<Retour> = app.retours.try_iter().collect();
+            app.travaux_en_attente = app.travaux_en_attente.saturating_sub(recus.len() as u32);
+            for retour in garde_actuels(recus, app.generation) {
+                app.appliquer_retour(retour);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(
+            !app.apercu_en_attente,
+            "l'aperçu est revenu du fil de travail"
+        );
+        let resolu = app
+            .croquis_apercu
+            .as_ref()
+            .and_then(|resultat| resultat.as_ref().ok())
+            .expect("aperçu résolu");
+        assert!(
+            proche(resolu.position(0), 20.0, 10.0),
+            "le point saisi est à la visée"
+        );
+        assert_eq!(
+            app.empreinte_journal(),
+            empreinte_avant,
+            "l'aperçu n'écrit rien au journal"
+        );
+    }
+
+    /// Pendant le glissement, aucune position brute du curseur ne
+    /// s'affiche (re-test du 24-10) : la visée reste la graine de
+    /// l'aperçu, jamais une position d'affichage — le dessin ne
+    /// montre que des états résolus, une ligne contrainte
+    /// horizontalement ou verticalement ne devient jamais une
+    /// diagonale, même le temps d'un aller-retour de résolution.
+    #[test]
+    fn pendant_le_glissement_aucune_position_brute_ne_s_affiche() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas * 4.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .expect("contrainte horizontale");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Glissement diagonal du second point : la visée part à
+        // l'aperçu, aucune surcharge d'affichage ne la montre.
+        app.saisie = Some(1);
+        let (surcharge, cible) =
+            atelier_esquisse::affichage_du_geste(&app, pas, Some((pas * 5.0, pas * 2.0)));
+        assert!(
+            surcharge.is_none(),
+            "aucune position brute du curseur ne s'affiche pendant le glissement"
+        );
+        let (id, vise_x, vise_y) = cible.expect("visée du geste à l'aperçu");
+        assert_eq!(id, 1, "le point saisi");
+        assert_eq!(vise_x.millimeters(), pas * 5.0, "abscisse visée");
+        assert_eq!(vise_y.millimeters(), pas * 2.0, "ordonnée visée");
+    }
+
+    /// L'aperçu d'un geste sur une ligne contrainte horizontale
+    /// garde la ligne horizontale (re-test du 24-10) : la
+    /// résolution d'aperçu épingle le point saisi à la visée et la
+    /// contrainte entraîne l'autre extrémité — la forme affichée
+    /// ne montre jamais une diagonale.
+    #[test]
+    fn l_apercu_du_geste_sur_une_ligne_horizontale_reste_horizontale() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas * 4.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("second point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Horizontale { ligne: 2 },
+        })
+        .expect("contrainte horizontale");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Geste diagonal : l'aperçu épingle le point saisi à la
+        // visée, la contrainte tient l'ordonnée des deux bouts.
+        app.saisie = Some(1);
+        app.demande_apercu_glissement(
+            1,
+            Length::from_millimeters(pas * 5.0),
+            Length::from_millimeters(pas * 2.0),
+        );
+        pomper_l_apercu(&mut app);
+        let resolu = app
+            .croquis_apercu
+            .as_ref()
+            .and_then(|resultat| resultat.as_ref().ok())
+            .expect("aperçu résolu");
+        assert!(
+            proche(resolu.position(1), pas * 5.0, pas * 2.0),
+            "le point saisi est épinglé à la visée"
+        );
+        let (_, y0) = resolu.position(0).expect("premier point résolu");
+        let (_, y1) = resolu.position(1).expect("second point résolu");
+        assert!(
+            y0.approx_eq(y1),
+            "la contrainte horizontale tient : même ordonnée aux deux bouts"
+        );
+    }
+
+    /// Le vol du relâchement garde l'aperçu du geste comme
+    /// résolution d'affichage (re-test du 24-10) : l'aperçu n'est
+    /// purgé qu'une fois le frais du relâchement arrivé —
+    /// l'affichage ne retombe jamais sur la résolution d'avant le
+    /// glissement, même le temps du vol.
+    #[test]
+    fn le_vol_du_relachement_affiche_l_apercu_du_geste() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Geste : l'aperçu résout le croquis à la visée.
+        app.saisie = Some(0);
+        app.demande_apercu_glissement(
+            0,
+            Length::from_millimeters(pas * 2.0),
+            Length::from_millimeters(pas),
+        );
+        pomper_l_apercu(&mut app);
+        // Relâchement : la graine part au journal, le frais vole —
+        // l'aperçu du geste reste l'affichage du vol.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_some(),
+            "le vol du relâchement tient la surcharge anti-flash"
+        );
+        assert!(
+            app.resolution_du_geste().is_some(),
+            "l'aperçu du geste reste la résolution d'affichage pendant le vol"
+        );
+        // Fin du vol : le frais remplace l'aperçu, la purge suit.
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_none(),
+            "le frais remplace la surcharge du relâchement"
+        );
+        assert!(
+            app.resolution_du_geste().is_none(),
+            "l'aperçu se purge une fois le frais arrivé"
+        );
+    }
+
+    /// Le relâchement s'accroche aux autres points, jamais au
+    /// point saisi lui-même (ADR-0018 D4, lot 3c-3) : la graine du
+    /// point déplacé colle au point visé.
+    #[test]
+    fn le_relachement_s_accroche_aux_autres_points() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("premier point");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(pas),
+                y: Length::from_millimeters(pas),
+            },
+        })
+        .expect("second point");
+        app.saisie = Some(0);
+        // Relâchement près du second point : la graine du point
+        // saisi s'accroche à lui, jamais à elle-même.
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 1.1, pas);
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point déplacé");
+        assert_eq!(x.millimeters(), pas, "graine collée au second point");
+        assert_eq!(y.millimeters(), pas, "graine collée au second point");
+    }
+
+    /// Le relâchement ne fait pas flasher le croquis en arrière
+    /// pendant le vol de sa résolution (anti-flash du relâchement,
+    /// re-validation §7) : le point lâché reste affiché à sa
+    /// position visée jusqu'à l'arrivée du frais — l'affichage ne
+    /// retombe pas sur la résolution d'avant le glissement.
+    #[test]
+    fn le_relachement_ne_fait_pas_flasher_le_croquis_en_arriere() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Glissement puis relâchement sur (2·pas, pas) : la graine
+        // part au journal, la résolution repart au fil de travail.
+        app.saisie = Some(0);
+        atelier_esquisse::relacher_poignee(&mut app, pas, pas * 2.0, pas);
+        // Trame du relâchement : le frais n'est pas encore là — le
+        // point lâché reste affiché à sa position visée.
+        let (id, x, y) = atelier_esquisse::surcharge_du_relachement(&app)
+            .expect("surcharge du point relâché pendant le vol");
+        assert_eq!(id, 0, "le point relâché");
+        assert_eq!(x.millimeters(), pas * 2.0, "abscisse visée au relâchement");
+        assert_eq!(y.millimeters(), pas, "ordonnée visée au relâchement");
+        // Fin du vol : la résolution fraîche remplace la surcharge.
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        assert!(
+            atelier_esquisse::surcharge_du_relachement(&app).is_none(),
+            "le frais remplace la surcharge du relâchement"
+        );
+    }
+
+    /// La sélection garde au plus deux entités et retire celle
+    /// re-cliquée (ADR-0018 D5, lot 3c-4) : les contraintes
+    /// relient au plus deux entités, la plus ancienne cède sa
+    /// place à la nouvelle.
+    #[test]
+    fn la_selection_borne_deux_entites() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [(0.0, 0.0), (pas, 0.0), (pas * 2.0, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.outil = atelier_esquisse::OutilEsquisse::Selection;
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 0.1, 0.0);
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.1, 0.0);
+        assert_eq!(app.selection, vec![0, 1], "deux entités sélectionnées");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 2.1, 0.0);
+        assert_eq!(app.selection, vec![1, 2], "la plus ancienne cède sa place");
+        atelier_esquisse::traiter_clic(&mut app, pas, pas * 1.1, 0.0);
+        assert_eq!(app.selection, vec![2], "le re-clic retire de la sélection");
+    }
+
+    /// Une contrainte posée depuis l'atelier passe par la session
+    /// (ADR-0018 D2, lot 3c-4) : un événement de plus au journal,
+    /// la contrainte visible ; un refus n'écrit rien et le message
+    /// d'état porte l'erreur (ADR-0016 C4).
+    #[test]
+    fn la_contrainte_de_l_atelier_passe_par_la_session() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [(0.0, 0.0), (pas, 0.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.selection = vec![2];
+        let empreinte_avant = app.empreinte_journal();
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 2 },
+        );
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "un événement écrit"
+        );
+        assert_eq!(
+            app.session.esquisse().contraintes().len(),
+            1,
+            "la contrainte est posée"
+        );
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 99 },
+        );
+        assert_eq!(
+            app.empreinte_journal().0,
+            empreinte_avant.0 + 1,
+            "le refus n'écrit rien au journal"
+        );
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+    }
+
+    /// L'orientation opposée depuis l'atelier est refusée, comme
+    /// dans FreeCAD (ADR-0021 D1 révisée le 2026-10-22) : une ligne
+    /// déjà orientée refuse toute pose d'orientation — même genre
+    /// (redondance) ou genre opposé — sans rien écrire ; seule la
+    /// pose effective surligne dans la liste (ADR-0021 D2).
+    #[test]
+    fn l_orientation_opposee_depuis_l_atelier_est_refusee() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        for (x, y) in [(0.0, 0.0), (40.0, 25.0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("point posé");
+        }
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Ligne { p1: 0, p2: 1 },
+        })
+        .expect("ligne posée");
+        app.selection = vec![2];
+        atelier_esquisse::ajouter_contrainte(
+            &mut app,
+            ContrainteEsquisse::Horizontale { ligne: 2 },
+        );
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "la pose surligne la contrainte"
+        );
+        // Genre opposé : refusé (alignement FreeCAD), la
+        // contrainte posée tient, rien d'autre au journal.
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::Verticale { ligne: 2 });
+        let contraintes = app.session.esquisse().contraintes();
+        assert_eq!(contraintes.len(), 1, "refus : rien d'ajouté");
+        assert!(matches!(
+            contraintes[0].1,
+            ContrainteEsquisse::Horizontale { ligne: 2 }
+        ));
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "rien de neuf à surligner"
+        );
+        // Reposer le même genre : refusé, aucune nouvelle
+        // surbrillance.
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::Verticale { ligne: 2 });
+        assert!(app.error.is_some(), "le refus s'affiche en message d'état");
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((0, app.instant)),
+            "rien de neuf à surligner"
+        );
+    }
+
+    /// Un point ancré ne se saisit plus (ADR-0021 D3) : le grab est
+    /// refusé et un déplacement scripté par `MovePoint` laisse la
+    /// graine en place.
+    #[test]
+    fn un_point_ancre_ne_se_saisit_plus() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.selection = vec![0];
+        atelier_esquisse::ajouter_contrainte(&mut app, ContrainteEsquisse::PointFixe { point: 0 });
+        atelier_esquisse::saisir_poignee(&mut app, pas, 0.0, 0.0);
+        assert!(app.saisie.is_none(), "le point ancré n'est pas saisi");
+        // Un déplacement scripté est refusé : la graine tient.
+        let _ = app.executer(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(pas),
+            y: Length::from_millimeters(pas),
+        });
+        assert!(
+            app.error.is_some(),
+            "le déplacement d'un point ancré est refusé"
+        );
+        let (x, y) = app
+            .session
+            .esquisse()
+            .position_graine(0)
+            .expect("graine du point");
+        assert_eq!(x.millimeters(), 0.0, "la graine tient");
+        assert_eq!(y.millimeters(), 0.0, "la graine tient");
+    }
+
+    /// Un croquis entièrement contraint ne saisit pas ses poignées
+    /// (re-test du 24-10) : zéro degré de liberté ne donne rien à
+    /// absorber — FreeCAD épingle le point tiré par une contrainte
+    /// temporaire et la forme ne suit jamais un geste impossible.
+    /// Le glissement cède au pan de vue, comme pour un point ancré.
+    #[test]
+    fn un_croquis_entierement_contraint_ne_saisit_pas_ses_poignees() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [
+            (0.0, 0.0),
+            (pas * 4.0, 0.0),
+            (pas * 4.0, pas * 3.0),
+            (0.0, pas * 3.0),
+        ] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin posé");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté posé");
+        }
+        for (ligne, horizontale) in [(4, true), (5, false), (6, true), (7, false)] {
+            let contrainte = if horizontale {
+                ContrainteEsquisse::Horizontale { ligne }
+            } else {
+                ContrainteEsquisse::Verticale { ligne }
+            };
+            app.executer(&AddConstraint { contrainte })
+                .expect("contrainte posée");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 4.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 3.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("coin fixé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Emprunt, pas déplacement : le test saisit une poignée
+        // APRÈS la lecture du cache — `app` ne doit être que
+        // partiellement emprunté, jamais déplacé (E0382).
+        let resolu = app
+            .croquis_resolu
+            .as_ref()
+            .and_then(|(_, resultat)| resultat.as_ref().ok())
+            .expect("résolution réussie");
+        assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
+        // Le coin 2 n'est ni ancré ni absent : seule l'absence de
+        // degré de liberté doit refuser la saisie.
+        atelier_esquisse::saisir_poignee(&mut app, pas, pas * 4.0, pas * 3.0);
+        assert!(
+            app.saisie.is_none(),
+            "un croquis entièrement contraint ne saisit pas ses poignées"
+        );
+    }
+
+    /// Fixer un point glissé ne le fait pas sauter (ADR-0021 D2,
+    /// révisée le 2026-10-23 — re-test jalon 2, point 8) : le bouton
+    /// « Point fixe » capture la position DESSINÉE — la résolution
+    /// épinglée du cache, pas la passe de base — et l'ancre la fige :
+    /// après re-résolution, le point reste exactement là où
+    /// l'utilisateur le voyait.
+    #[test]
+    fn fixer_un_point_glisse_ne_le_fait_pas_sauter() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(0.0),
+                y: Length::from_millimeters(0.0),
+            },
+        })
+        .expect("point posé");
+        app.executer(&AddEntity {
+            entite: EntiteEsquisse::Point {
+                x: Length::from_millimeters(80.0),
+                y: Length::from_millimeters(-3.0),
+            },
+        })
+        .expect("point posé");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(40.0),
+                },
+            },
+        })
+        .expect("distance posée");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        // Le geste : le point 0 part à (10, 20) — l'affichage
+        // l'épingle là où on le lâche.
+        app.executer(&MovePoint {
+            point: 0,
+            x: Length::from_millimeters(10.0),
+            y: Length::from_millimeters(20.0),
+        })
+        .expect("déplacement");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let resolu = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        assert!(
+            proche(resolu.position(0), 10.0, 20.0),
+            "l'affichage épingle"
+        );
+        // Fixer : la position DESSINÉE est capturée et figée.
+        atelier_esquisse::ancrer_point(&mut app, 0);
+        assert_eq!(
+            app.derniere_contrainte,
+            Some((1, app.instant)),
+            "la contrainte d'ancrage posée se surligne"
+        );
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let ancre = atelier_esquisse::resolu_affichage(&app).expect("résolution affichable");
+        assert!(
+            proche(ancre.position(0), 10.0, 20.0),
+            "le point fixé ne saute pas : la position affichée tient"
+        );
+    }
+
+    /// Le rectangle contraint tombe à zéro degré de liberté
+    /// (ADR-0018 D5, lot 3c-4) : quatre points partagés, quatre
+    /// lignes, quatre contraintes horizontale et verticale, deux
+    /// cotes de distance, un coin fixé — le DoF lu sur le cache
+    /// résolu tombe à zéro.
+    #[test]
+    fn le_rectangle_contraint_tombe_a_zero_dof() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        let pas = pas_de_grille(app.camera.echelle, GRILLE_CIBLE_PX);
+        for (x, y) in [
+            (0.0, 0.0),
+            (pas * 4.0, 0.0),
+            (pas * 4.0, pas * 3.0),
+            (0.0, pas * 3.0),
+        ] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Point {
+                    x: Length::from_millimeters(x),
+                    y: Length::from_millimeters(y),
+                },
+            })
+            .expect("coin posé");
+        }
+        for (p1, p2) in [(0, 1), (1, 2), (2, 3), (3, 0)] {
+            app.executer(&AddEntity {
+                entite: EntiteEsquisse::Ligne { p1, p2 },
+            })
+            .expect("côté posé");
+        }
+        for (ligne, horizontale) in [(4, true), (5, false), (6, true), (7, false)] {
+            let contrainte = if horizontale {
+                ContrainteEsquisse::Horizontale { ligne }
+            } else {
+                ContrainteEsquisse::Verticale { ligne }
+            };
+            app.executer(&AddConstraint { contrainte })
+                .expect("contrainte posée");
+        }
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 0,
+                p2: 1,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 4.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::Distance {
+                p1: 1,
+                p2: 2,
+                valeur: ValeurCote::Fixe {
+                    mm: Length::from_millimeters(pas * 3.0),
+                },
+            },
+        })
+        .expect("cote posée");
+        app.executer(&AddConstraint {
+            contrainte: ContrainteEsquisse::PointFixe { point: 0 },
+        })
+        .expect("coin fixé");
+        app.demande_resolution_esquisse();
+        pomper_les_retours(&mut app);
+        let (_, resultat) = app.croquis_resolu.expect("croquis résolu");
+        let resolu = resultat.expect("résolution réussie");
+        assert_eq!(resolu.dof(), 0, "le rectangle est entièrement contraint");
+    }
+
+    /// L'hystérésis des redondances (ADR-0018 D5, lot 3c-4) : le
+    /// diagnostic ne s'affiche que stable sur deux résolutions
+    /// consécutives — jamais de faux conflit clignotant
+    /// (FPA #106).
+    #[test]
+    fn les_redondances_demandent_deux_resolutions() {
+        assert!(
+            atelier_esquisse::redondances_stables(None, &[1]).is_none(),
+            "une première résolution ne s'affiche pas"
+        );
+        assert_eq!(
+            atelier_esquisse::redondances_stables(Some(&[1]), &[1]),
+            Some(vec![1]),
+            "le diagnostic stable s'affiche"
+        );
+        assert!(
+            atelier_esquisse::redondances_stables(Some(&[1]), &[2]).is_none(),
+            "un diagnostic qui change ne s'affiche pas"
+        );
+    }
+}
