@@ -534,19 +534,21 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
     }
 }
 
-/// Budget d'octets d'un fichier importé (audit n°3 A3-07,
-/// ADR-0009) : un fichier d'import démesuré est refusé avant
-/// lecture — 1 Gio dépasse déjà de loin les budgets des parseurs
-/// SVG, DXF et STL.
-const MAX_OCTETS_IMPORT: u64 = 1024 * 1024 * 1024;
-
-/// Budget d'octets du format importé (ADR-0038 D2, A4-19) : chaque
-/// lecture d'import passe par lui. STUB rouge test-first — le
-/// correctif déléguera aux défauts des parseurs (une seule source
-/// de vérité, zéro chiffre dupliqué au desktop) ; le comportement
-/// courant, le 1 Gio uniforme, tient le temps du rouge.
-pub(crate) fn budget_du_format(_format: &str) -> u64 {
-    MAX_OCTETS_IMPORT
+/// Budget d'octets du format importé, délégué aux défauts des
+/// parseurs (ADR-0038 D2, A4-19) : une seule source de vérité — la
+/// pré-lecture suit toute montée des budgets des parseurs, zéro
+/// chiffre dupliqué au desktop. STL, SVG et DXF lisent leurs
+/// budgets forge-io (256 Mio chacun aujourd'hui) ; un format
+/// inconnu refuse la lecture d'emblée (budget nul). STEP et BREP
+/// délégueront à `CadBudgets::default().octets_max` quand leur
+/// import atterrira dans ce fil de travail.
+pub(crate) fn budget_du_format(format: &str) -> u64 {
+    match format {
+        "stl" => stl::StlBudgets::default().max_bytes as u64,
+        "svg" => svg::SvgBudgets::default().max_bytes as u64,
+        "dxf" => dxf::DxfBudgets::default().max_bytes as u64,
+        _ => 0,
+    }
 }
 
 /// Lit un fichier d'import sous un budget d'octets, refusé AVANT
