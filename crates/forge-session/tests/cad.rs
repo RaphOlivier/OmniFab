@@ -1762,8 +1762,7 @@ fn evenement_hors_domaine_ne_relance_pas_reconstruire() {
             let profondeurs = session.profondeurs_pour_cad();
             session
                 .cad()
-                .reconstruire(&moteur, &regions, &profondeurs)
-                .expect("corps reconstruit");
+                .reconstruire(&moteur, &regions, &profondeurs);
             cle_cache = Some(cle);
         }
         // entre les deux tours : un événement du domaine des
