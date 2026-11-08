@@ -2158,7 +2158,10 @@ mod tests {
             PathBuf::from("minuscule.stl"),
             "la demande garde le chemin à relire"
         );
-        assert_eq!(demande.dimension, 0.05, "la demande garde la dimension mesurée");
+        assert_eq!(
+            demande.dimension, 0.05,
+            "la demande garde la dimension mesurée"
+        );
         app.importer_maillage(b"solid minuscule".to_vec(), 1, 1000.0);
         assert!(app.demande_echelle.is_none(), "demande consommée");
         let maillage = app.session.geom().maillage().expect("maillage importé");

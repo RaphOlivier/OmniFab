@@ -729,7 +729,10 @@ mod tests {
             echelle: 1.0,
         };
         match travail.executer() {
-            Retour::Erreur { generation, message } => {
+            Retour::Erreur {
+                generation,
+                message,
+            } => {
                 assert_eq!(generation, 4, "l'erreur porte sa génération");
                 assert!(!message.is_empty(), "l'échec porte un message d'import");
             }
