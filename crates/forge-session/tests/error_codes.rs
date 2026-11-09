@@ -29,6 +29,7 @@ fn toutes_les_variantes() -> Vec<SessionError> {
         SessionError::BlobRejected {
             reason: "OF-DOC-0013".to_string(),
         },
+        SessionError::PlafondFeatures { limite: 10_000 },
     ]
 }
 

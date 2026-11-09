@@ -63,8 +63,7 @@ Code réservé, non encore attribué : OF-VAL-0010 (table dimensionnelle, design
 | OF-SES-0004 | Rien à rétablir | Redo demandé sans événement défait en attente | — |
 | OF-SES-0005 | Données d'événement invalides | Journal altéré : champ manquant ou de type inattendu pour un type connu | Restaurer une copie saine du projet |
 | OF-SES-0006 | Blob refusé par le document | Nom de blob invalide (OF-DOC-0013) ou taille hors bornes (OF-DOC-0011) au dépôt d'une commande | Corriger le nom ou le contenu du blob |
-
-Code réservé, non encore attribué : OF-SES-0007 (plafond de features CAO — ADR-0038).
+| OF-SES-0007 | Plafond de features dépassé — un document ne porte pas plus de `MAX_FEATURES` (10 000) features CAO | Journal anormal ou forgé : plus de 10 000 features CAO annoncées | Restaurer une copie saine du projet |
 
 ## forge-geom (GEO) — géométrie minimale
 

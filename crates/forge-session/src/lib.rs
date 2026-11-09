@@ -39,8 +39,8 @@ mod projection;
 
 pub use cad::{
     BoiteEnglobante, CadProjection, CorpsCad, CouleurFeature, ErreurMoteurCad, EtatFeature,
-    FACTEUR_ATRAVERS, FeatureCad, ModeExtrusion, MoteurCad, PlanCroquis, ProfondeurCad,
-    ProfondeurFeature,
+    FACTEUR_ATRAVERS, FeatureCad, MAX_FEATURES, ModeExtrusion, MoteurCad, PlanCroquis,
+    ProfondeurCad, ProfondeurFeature,
 };
 pub use command::{
     AddConstraint, AddEntity, AddFeature, AncrerPoint, Command, CommandPlan, CreateSketch,

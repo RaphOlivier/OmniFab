@@ -36,6 +36,14 @@ use std::collections::BTreeMap;
 /// `cad.feature.updated` (ADR-0024 §7, lot 2) : nés en v1.
 pub(crate) const VERSION_SCHEMA_FEATURE: u32 = 1;
 
+/// Plafond de features CAO par document (ADR-0038 D3, audit n°5
+/// A5-05) : refusé au plan (OF-SES-0001, rien au journal) et au
+/// rejeu (OF-SES-0007, le document refuse de s'ouvrir). Aligné sur
+/// `formes_max` de forge-cad et `MAX_ENTITES_CHAINAGE` d'ADR-0037 ;
+/// sous ce plafond, le cast `len() as u32` de
+/// [`CadProjection::prochaine_id_feature`] est exact.
+pub const MAX_FEATURES: usize = 10_000;
+
 /// Plan d'un croquis (ADR-0024 §7, lot 2) : seul « xy » est supporté —
 /// un plan inconnu d'un journal plus récent est retenu tel quel,
 /// jamais deviné, jamais refusé.
@@ -302,9 +310,14 @@ pub struct CadProjection {
     features: Vec<(u32, FeatureCad)>,
     /// Types d'événements ignorés, plafonnés (audit n°4 A4-03).
     unknown: TypesIgnores,
-    /// Numéro d'édition : croît à CHAQUE événement appliqué, tout
-    /// type — toute écriture au journal invalide le fil de travail
-    /// CAO (ADR-0024 D4).
+    /// Numéro d'édition : croît seulement quand la projection CAO
+    /// change d'état — événements CAO traités (croquis, features,
+    /// y compris features marquées en échec), pas les types
+    /// inconnus ni les autres domaines (ADR-0038 D3). Clé de cache
+    /// monotone pour le fil de travail CAO (ADR-0024 D4) : un
+    /// événement d'alias ou d'import n'invalide plus le corps,
+    /// `reconstruire()` (O(n) appels moteur) n'est plus relancé
+    /// pour rien.
     edition: u64,
 }
 
@@ -319,12 +332,12 @@ impl CadProjection {
         &self.features
     }
 
-    /// Feature de l'identifiant donné, ou `None`.
+    /// Feature de l'identifiant donné, ou `None`. Les ids sont
+    /// denses par construction (garde `id == len()` à l'ajout,
+    /// ADR-0038 D3) : accès direct O(1) avec garde de bornes — pas
+    /// de carte d'index à maintenir, pas de recherche linéaire.
     pub fn feature(&self, id: u32) -> Option<&FeatureCad> {
-        self.features
-            .iter()
-            .find(|(identifiant, _)| *identifiant == id)
-            .map(|(_, feature)| feature)
+        self.features.get(id as usize).map(|(_, feature)| feature)
     }
 
     /// Feature d'extrusion dont la profondeur pilotée s'appuie sur le
@@ -349,8 +362,11 @@ impl CadProjection {
     }
 
     /// Prochain identifiant de feature (séquentiel : l'ordre d'ajout
-    /// au journal fait foi, ADR-0024 §7).
+    /// au journal fait foi, ADR-0024 §7). Sous le plafond
+    /// ([`MAX_FEATURES`], ADR-0038 D3), le cast `len() as u32` est
+    /// exact — l'invariant est porté par `debug_assert!`.
     pub fn prochaine_id_feature(&self) -> u32 {
+        debug_assert!(self.features.len() <= u32::MAX as usize);
         self.features.len() as u32
     }
 
@@ -508,16 +524,20 @@ impl Projection for CadProjection {
     }
 
     fn apply(&mut self, event: &NewEvent) -> Result<(), SessionError> {
-        // Toute écriture au journal invalide le fil de travail CAO :
-        // l'édition croît à chaque événement appliqué, tout type
-        // (ADR-0024 D4).
-        self.edition += 1;
+        // ADR-0038 D3 : l'édition ne croît plus à chaque événement
+        // appliqué, seulement quand la projection CAO change d'état
+        // — croquis et features traités. Les types inconnus et les
+        // autres domaines n'invalident plus le corps.
         match event.event_type.as_str() {
             // Croquis créé : le domaine CAO n'y accroche rien — la
             // projection d'esquisse porte l'état, l'édition suffit
             // ici (validation de schéma : un journal plus récent n'est
             // jamais lu comme du v1).
-            EVENT_SKETCH_CREATED => verifie_schema(event, VERSION_SCHEMA_CROQUIS),
+            EVENT_SKETCH_CREATED => {
+                verifie_schema(event, VERSION_SCHEMA_CROQUIS)?;
+                self.edition += 1;
+                Ok(())
+            }
             EVENT_FEATURE_ADDED => {
                 verifie_schema(event, VERSION_SCHEMA_FEATURE)?;
                 let id = champ_id(event, "id")?;
@@ -528,7 +548,17 @@ impl Projection for CadProjection {
                         reason: format!("identifiant de feature {id} non séquentiel"),
                     });
                 }
+                // ADR-0038 D3 : plafond anti-bombe — un journal
+                // hostile ne construit pas MAX+1 features en
+                // mémoire. Refus typé OF-SES-0007 : le document
+                // refuse de s'ouvrir.
+                if self.features.len() >= MAX_FEATURES {
+                    return Err(SessionError::PlafondFeatures {
+                        limite: MAX_FEATURES,
+                    });
+                }
                 self.features.push((id, feature));
+                self.edition += 1;
                 Ok(())
             }
             EVENT_FEATURE_UPDATED => {
@@ -548,6 +578,7 @@ impl Projection for CadProjection {
                 // Identifiant conservé : seule la feature change,
                 // l'ordre d'ajout au journal fait foi (ADR-0024 §7).
                 self.features[position].1 = feature;
+                self.edition += 1;
                 Ok(())
             }
             _ => {

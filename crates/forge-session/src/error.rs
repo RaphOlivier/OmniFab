@@ -43,6 +43,14 @@ pub enum SessionError {
         /// Message de l'erreur du document (avec son code OF-DOC-*).
         reason: String,
     },
+    /// Plafond de features CAO dépassé au rejeu (OF-SES-0007) : un
+    /// journal hostile annonce une MAX+1-ième feature — le document
+    /// refuse de s'ouvrir (ADR-0038 D3).
+    #[error("OF-SES-0007 : plafond de features CAO dépassé (limite : {limite})")]
+    PlafondFeatures {
+        /// Plafond dépassé (`MAX_FEATURES`).
+        limite: usize,
+    },
 }
 
 impl SessionError {
@@ -57,6 +65,7 @@ impl SessionError {
             Self::RedoEmpty => "OF-SES-0004",
             Self::InvalidEventData { .. } => "OF-SES-0005",
             Self::BlobRejected { .. } => "OF-SES-0006",
+            Self::PlafondFeatures { .. } => "OF-SES-0007",
         }
     }
 }

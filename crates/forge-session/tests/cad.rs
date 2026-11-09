@@ -1781,3 +1781,37 @@ fn evenement_hors_domaine_ne_relance_pas_reconstruire() {
         "le corps n'est pas reconstruit pour un événement hors domaine CAO"
     );
 }
+
+#[test]
+fn feature_par_identifiant_en_acces_direct_aux_ids_denses() {
+    // A5-05 (audit n°5, ADR-0038 D3) : les ids de features sont
+    // denses par construction (garde `id == len()` à l'ajout) —
+    // feature(id) lit l'entrée directe, avec garde de bornes : un id
+    // présent répond, un id hors bornes répond None.
+    let mut session = Session::new("tests");
+    session
+        .execute(&CreateSketch {
+            nom: "croquis-1".to_string(),
+        })
+        .expect("croquis");
+    pose_rectangle(&mut session, 0.0, 0.0, 40.0, 25.0);
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Addition,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(4.0) },
+            couleur: None,
+        })
+        .expect("feature posée");
+    session
+        .execute(&AddFeature {
+            croquis: 1,
+            mode: ModeExtrusion::Soustraction,
+            profondeur: ProfondeurFeature::Fixe { mm: mm(2.0) },
+            couleur: None,
+        })
+        .expect("seconde feature posée");
+    assert!(session.cad().feature(0).is_some(), "id dense 0 : accès direct");
+    assert!(session.cad().feature(1).is_some(), "id dense 1 : accès direct");
+    assert!(session.cad().feature(2).is_none(), "id hors bornes : None");
+}
