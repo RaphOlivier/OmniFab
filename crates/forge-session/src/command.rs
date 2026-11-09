@@ -999,6 +999,19 @@ pub struct AddFeature {
 
 impl Command for AddFeature {
     fn plan(&self, session: &Session) -> Result<CommandPlan, SessionError> {
+        // ADR-0038 D3 : plafond de features — refus au plan
+        // (OF-SES-0001), rien au journal. La garde vit ici plutôt
+        // que dans `feature_valide` : un remplacement
+        // (`UpdateFeature`) ne crée rien, il reste légitime au
+        // plafond.
+        if session.cad().features().len() >= crate::cad::MAX_FEATURES {
+            return Err(SessionError::CommandRejected {
+                reason: format!(
+                    "le plafond de {} features CAO par document est atteint",
+                    crate::cad::MAX_FEATURES
+                ),
+            });
+        }
         feature_valide(session, self.croquis, &self.profondeur, &self.couleur)?;
         let id = session.cad().prochaine_id_feature();
         let feature = FeatureCad::Extrusion {

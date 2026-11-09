@@ -189,12 +189,13 @@ pub(crate) fn garde_fermeture(dirty: bool, confirmation_en_cours: bool) -> Decis
 /// Choix des unités d'un maillage minuscule demandé à l'import
 /// (ADR-0017) : le fil de travail a lu les octets et mesuré la plus
 /// grande dimension ; l'import attend la réponse de l'utilisateur.
+/// La demande ne garde que le chemin et la dimension mesurée
+/// (ADR-0038 D2) : pas de copie d'octets — le fichier est relu au
+/// fil de travail sous le budget du format à la confirmation.
 #[derive(Debug, Clone)]
 pub(crate) struct DemandeEchelle {
-    /// Octets d'origine du fichier importé.
-    pub(crate) octets: Vec<u8>,
-    /// Nombre de triangles du maillage.
-    pub(crate) triangles: usize,
+    /// Fichier importé, à relire à la confirmation d'échelle.
+    pub(crate) chemin: PathBuf,
     /// Plus grande dimension du maillage, en millimètres.
     pub(crate) dimension: f64,
 }
@@ -901,7 +902,16 @@ impl DemoApp {
         if annule {
             self.demande_echelle = None;
         } else if let Some(echelle) = decision {
-            self.importer_maillage(demande.octets, demande.triangles, echelle);
+            // ADR-0038 D2 : la demande ne garde pas d'octets — le
+            // fichier est relu au fil de travail sous le budget du
+            // format ; consommée ici, un échec de relecture devient
+            // un message d'import, jamais une écriture au journal.
+            self.demande_echelle = None;
+            self.envoyer_travail(Travail::ConfirmerMaillage {
+                generation: self.generation,
+                chemin: demande.chemin,
+                echelle,
+            });
         }
     }
 
@@ -1005,6 +1015,7 @@ impl DemoApp {
                 }
             }
             Retour::ImportMaillage {
+                chemin,
                 octets,
                 triangles,
                 dimension,
@@ -1013,15 +1024,24 @@ impl DemoApp {
                 // Un maillage minuscule ressemble à un export en
                 // mètres : l'import attend le choix des unités
                 // (ADR-0017) ; rien n'est écrit avant la réponse.
+                // La demande ne garde que chemin et dimension —
+                // pas de copie d'octets (ADR-0038 D2).
                 if propose_echelle_metres(dimension) {
-                    self.demande_echelle = Some(DemandeEchelle {
-                        octets,
-                        triangles,
-                        dimension,
-                    });
+                    self.demande_echelle = Some(DemandeEchelle { chemin, dimension });
                 } else {
                     self.importer_maillage(octets, triangles, 1.0);
                 }
+            }
+            Retour::ConfirmerMaillage {
+                octets,
+                triangles,
+                echelle,
+                ..
+            } => {
+                // La confirmation d'échelle a relu le fichier au fil
+                // de travail sous le budget du format (ADR-0038 D2) :
+                // l'import part des octets relus, tout-ou-rien.
+                self.importer_maillage(octets, triangles, echelle);
             }
             Retour::Export { chemin, .. } => {
                 self.info = Some(self.texte_avec(
@@ -2125,16 +2145,61 @@ mod tests {
         let mut app = DemoApp::new(i18n::catalogue(), None);
         app.appliquer_retour(Retour::ImportMaillage {
             generation: app.generation,
+            chemin: PathBuf::from("minuscule.stl"),
             octets: b"solid minuscule".to_vec(),
             triangles: 1,
             dimension: 0.05,
         });
         assert!(app.demande_echelle.is_some(), "le choix des unités attend");
         assert!(app.session.geom().maillage().is_none(), "rien au journal");
+        let demande = app.demande_echelle.as_ref().expect("demande d'échelle");
+        assert_eq!(
+            demande.chemin,
+            PathBuf::from("minuscule.stl"),
+            "la demande garde le chemin à relire"
+        );
+        assert_eq!(
+            demande.dimension, 0.05,
+            "la demande garde la dimension mesurée"
+        );
         app.importer_maillage(b"solid minuscule".to_vec(), 1, 1000.0);
         assert!(app.demande_echelle.is_none(), "demande consommée");
         let maillage = app.session.geom().maillage().expect("maillage importé");
         assert_eq!(maillage.echelle, 1000.0, "échelle mètres retenue");
+    }
+
+    /// La confirmation d'échelle importe depuis le retour du fil de
+    /// travail (ADR-0038 D2) : octets relus et échelle décidée ; un
+    /// échec de relecture n'écrit rien — seul l'import confirmé est
+    /// au journal.
+    #[test]
+    fn confirmation_d_echelle_importe_le_maillage_relu() {
+        let mut app = DemoApp::new(i18n::catalogue(), None);
+        app.demande_echelle = Some(DemandeEchelle {
+            chemin: PathBuf::from("minuscule.stl"),
+            dimension: 0.05,
+        });
+        app.appliquer_retour(Retour::ConfirmerMaillage {
+            generation: app.generation,
+            octets: b"solid minuscule".to_vec(),
+            triangles: 1,
+            echelle: 1000.0,
+        });
+        assert!(app.demande_echelle.is_none(), "demande consommée");
+        let maillage = app.session.geom().maillage().expect("maillage importé");
+        assert_eq!(maillage.echelle, 1000.0, "échelle décidée appliquée");
+        // Un échec de relecture devient un message d'import : rien de
+        // plus au journal, seul l'import confirmé s'y trouve.
+        app.appliquer_retour(Retour::Erreur {
+            generation: app.generation,
+            message: "fichier disparu".to_string(),
+        });
+        assert!(app.error.is_some(), "l'échec de relecture est affiché");
+        app.session.undo().expect("l'import confirmé est annulable");
+        assert!(
+            app.session.geom().maillage().is_none(),
+            "seul l'import confirmé a touché le journal"
+        );
     }
 
     /// Compare une position résolue aux coordonnées attendues,

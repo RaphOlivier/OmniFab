@@ -306,6 +306,7 @@ fn step_instances_au_dela_du_budget_refusees_avant_occt() {
     let budgets = CadBudgets {
         octets_max: 1024 * 1024,
         formes_max: 5,
+        ..CadBudgets::default()
     };
     let erreur = step::importer(texte.as_bytes(), &budgets)
         .unwrap_err()
@@ -321,6 +322,7 @@ fn step_texte_sans_instance_pas_refuse_par_le_budget() {
     let budgets = CadBudgets {
         octets_max: 1024 * 1024,
         formes_max: 5,
+        ..CadBudgets::default()
     };
     let erreur = step::importer(b"n'est pas du STEP", &budgets)
         .unwrap_err()

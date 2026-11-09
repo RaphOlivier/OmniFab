@@ -94,9 +94,25 @@ fn brep_aller_retour_volume_conserve() {
 fn budget_octets_depasse_refuse_avant_occt() {
     let budgets = CadBudgets {
         octets_max: 4,
-        formes_max: 100,
+        ..CadBudgets::default()
     };
     let erreur = step::importer(b"STEP!", &budgets).unwrap_err();
+    assert!(matches!(erreur, CadError::Budget { .. }));
+    assert_eq!(erreur.code(), "OF-CAD-0004");
+}
+
+#[test]
+fn budget_octets_brep_depasse_refuse_avant_occt() {
+    // A5-06 (audit n°5, ADR-0038 D4) : le BREP textuel est compact et
+    // son expansion en formes OCCT n'est bornée autrement par rien —
+    // la borne d'octets BREP (`octets_max_brep`, défaut 64 Mio) refuse
+    // AVANT le premier octet confié à OCCT (OF-CAD-0004) ;
+    // `octets_max` reste la borne des STEP.
+    let budgets = CadBudgets {
+        octets_max_brep: 4,
+        ..CadBudgets::default()
+    };
+    let erreur = brep::importer(b"BREP!", &budgets).unwrap_err();
     assert!(matches!(erreur, CadError::Budget { .. }));
     assert_eq!(erreur.code(), "OF-CAD-0004");
 }

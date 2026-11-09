@@ -221,10 +221,19 @@ fn segments_se_touchent(a: (f64, f64), b: (f64, f64), c: (f64, f64), d: (f64, f6
 /// le premier octet confié à OCCT).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CadBudgets {
-    /// Taille maximale en octets d'un fichier importé.
+    /// Taille maximale en octets d'un fichier STEP importé
+    /// (ADR-0038 D4 : les BREP portent leur propre borne,
+    /// `octets_max_brep`).
     pub octets_max: usize,
-    /// Nombre maximal de formes acceptées dans un fichier.
+    /// Nombre maximal de formes acceptées dans un fichier — vérifié
+    /// à l'import STEP seulement, par le compte des instances
+    /// déclarées : `formes_max` = STEP only (ADR-0038 D4).
     pub formes_max: usize,
+    /// Taille maximale en octets d'un fichier BREP importé (défaut
+    /// 64 Mio, ADR-0038 D4) : le BREP textuel est compact et son
+    /// expansion en formes OCCT n'est bornée autrement par rien —
+    /// la vérification précède tout appel OCCT.
+    pub octets_max_brep: usize,
 }
 
 impl Default for CadBudgets {
@@ -232,6 +241,7 @@ impl Default for CadBudgets {
         Self {
             octets_max: 256 * 1024 * 1024,
             formes_max: 10_000,
+            octets_max_brep: 64 * 1024 * 1024,
         }
     }
 }
@@ -593,9 +603,13 @@ pub mod brep {
     /// [`CadError::FormeInvalide`] (OF-CAD-0002) si la forme importée est
     /// vide ou non solide.
     pub fn importer(octets: &[u8], budgets: &CadBudgets) -> Result<Vec<Solide>, CadError> {
-        if octets.len() > budgets.octets_max {
+        // ADR-0038 D4 : le BREP textuel est compact et son expansion
+        // en formes OCCT n'est bornée autrement par rien — la borne
+        // dédiée (défaut 64 Mio) refuse AVANT le premier octet confié
+        // au noyau, `octets_max` reste la borne des STEP.
+        if octets.len() > budgets.octets_max_brep {
             return Err(CadError::Budget {
-                limite: format!("octets_max = {}", budgets.octets_max),
+                limite: format!("octets_max_brep = {}", budgets.octets_max_brep),
             });
         }
         if budgets.formes_max < 1 {
