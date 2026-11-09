@@ -225,6 +225,11 @@ pub struct CadBudgets {
     pub octets_max: usize,
     /// Nombre maximal de formes acceptées dans un fichier.
     pub formes_max: usize,
+    /// Taille maximale en octets d'un fichier BREP importé (défaut
+    /// 64 Mio, ADR-0038 D4) : le BREP textuel est compact et son
+    /// expansion en formes OCCT n'est bornée autrement par rien —
+    /// la vérification précède tout appel OCCT.
+    pub octets_max_brep: usize,
 }
 
 impl Default for CadBudgets {
@@ -232,6 +237,7 @@ impl Default for CadBudgets {
         Self {
             octets_max: 256 * 1024 * 1024,
             formes_max: 10_000,
+            octets_max_brep: 64 * 1024 * 1024,
         }
     }
 }
