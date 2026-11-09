@@ -540,8 +540,9 @@ fn erreur_de_travail(generation: u64, erreur: impl std::fmt::Display) -> Retour 
 /// chiffre dupliqué au desktop. STL, SVG et DXF lisent leurs
 /// budgets forge-io (256 Mio chacun aujourd'hui) ; un format
 /// inconnu refuse la lecture d'emblée (budget nul). STEP et BREP
-/// délégueront à `CadBudgets::default().octets_max` quand leur
-/// import atterrira dans ce fil de travail.
+/// délégueront à `CadBudgets` quand leur import atterrira dans ce
+/// fil de travail (ADR-0038 D4 : `octets_max` pour le STEP,
+/// `octets_max_brep` pour le BREP).
 pub(crate) fn budget_du_format(format: &str) -> u64 {
     match format {
         "stl" => stl::StlBudgets::default().max_bytes as u64,

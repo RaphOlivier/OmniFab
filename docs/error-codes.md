@@ -119,7 +119,7 @@ Code retiré (ADR-0037 D2) : OF-GEO-0006 « Chaînage de contour rompu » — l'
 | OF-CAD-0001 | Échec d'une opération OCCT | Construction, booléen, tessellation ou écriture refusés par le noyau CAO | Simplifier la géométrie ou vérifier l'installation OCCT (liaison dynamique, version >= 7.8) |
 | OF-CAD-0002 | Forme nulle, invalide ou entrée invalide | Dimensions non finies ou <= 0, contour dégénéré, booléen sans résultat, ou import non solide | Corriger la géométrie ou les entrées source |
 | OF-CAD-0003 | Fichier CAO illisible | STEP ou BREP refusé par le lecteur OCCT | Vérifier le fichier d'entrée |
-| OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets d'octets, de formes ou d'instances déclarées du parseur (garde-fou ADR-0009) | Vérifier le fichier, ou ajuster les budgets |
+| OF-CAD-0004 | Budget de ressources dépassé | Fichier dépassant les budgets du parseur : octets (STEP `octets_max`, BREP `octets_max_brep` — ADR-0038 D4), formes ou instances déclarées — `formes_max` = STEP only | Vérifier le fichier, ou ajuster les budgets |
 | OF-CAD-0005 | Feature en échec à la reconstruction | Le moteur CAO refuse l'extrusion ou le booléen d'une feature : contour impropre ou absent, profondeur qui n'évalue pas, soustraction sans corps courant | Corriger le croquis, la profondeur ou l'ordre des features |
 
 ## omnifab-desktop (WORK) — fil de travail de l'interface
