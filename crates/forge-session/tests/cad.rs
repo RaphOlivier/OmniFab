@@ -1643,6 +1643,10 @@ fn commande_de_feature_au_plafond_refusee_au_plan() {
     let mut session = Session::from_document("tests", document).expect("rejeu au plafond");
     assert_eq!(session.cad().features().len(), 10_000);
     let avant = session.document().events().len();
+    // curseur undo/redo du journal (ADR-0016) : un rejeu complet porte
+    // toutes les commandes — le refus au plan doit le laisser intact.
+    let undo_avant = session.can_undo();
+    let redo_avant = session.can_redo();
     let commande = AddFeature {
         croquis: 0,
         mode: ModeExtrusion::Addition,
@@ -1657,15 +1661,17 @@ fn commande_de_feature_au_plafond_refusee_au_plan() {
         erreur.to_string().contains("plafond"),
         "message attendu sur le plafond, obtenu : {erreur}"
     );
-    // refus au plan : rien au journal, piles intactes
+    // refus au plan : rien au journal, curseur undo/redo intact
     assert_eq!(session.document().events().len(), avant);
     assert_eq!(
-        session.undo().expect_err("rien à annuler").code(),
-        "OF-SES-0003"
+        session.can_undo(),
+        undo_avant,
+        "le refus n'écrit pas dans l'historique undo"
     );
     assert_eq!(
-        session.redo().expect_err("rien à rétablir").code(),
-        "OF-SES-0004"
+        session.can_redo(),
+        redo_avant,
+        "le refus ne purge pas la pile redo"
     );
 }
 
@@ -1760,9 +1766,7 @@ fn evenement_hors_domaine_ne_relance_pas_reconstruire() {
             let mut solveur = Systeme2D::new().expect("solveur");
             let regions = session.croquis_figes_pour_cad(&mut solveur);
             let profondeurs = session.profondeurs_pour_cad();
-            session
-                .cad()
-                .reconstruire(&moteur, &regions, &profondeurs);
+            session.cad().reconstruire(&moteur, &regions, &profondeurs);
             cle_cache = Some(cle);
         }
         // entre les deux tours : un événement du domaine des
@@ -1811,7 +1815,13 @@ fn feature_par_identifiant_en_acces_direct_aux_ids_denses() {
             couleur: None,
         })
         .expect("seconde feature posée");
-    assert!(session.cad().feature(0).is_some(), "id dense 0 : accès direct");
-    assert!(session.cad().feature(1).is_some(), "id dense 1 : accès direct");
+    assert!(
+        session.cad().feature(0).is_some(),
+        "id dense 0 : accès direct"
+    );
+    assert!(
+        session.cad().feature(1).is_some(),
+        "id dense 1 : accès direct"
+    );
     assert!(session.cad().feature(2).is_none(), "id hors bornes : None");
 }
